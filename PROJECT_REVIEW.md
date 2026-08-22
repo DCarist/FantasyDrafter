@@ -194,3 +194,4 @@ Adding a minimal `package.json` enables standard npm commands like `npm test` an
    - Add a "Starred / Queue" tab so the user can flag players they want to target in upcoming rounds without constantly searching.
 4. **Automated Data Fetcher:**
    - Currently, `merge-data.py` expects a pre-compiled JSON file. Providing a unified script to fetch live consensus rankings directly (e.g. from FantasyPros or Sleeper API) would streamline preseason data updates.
+
