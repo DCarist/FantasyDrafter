@@ -48,3 +48,4 @@ if (failedSuites > 0) {
 } else {
   process.exit(0);
 }
+

@@ -109,3 +109,4 @@ Ensure both the legacy baseline suite (`test-draft-logic.mjs`) and your new test
   - Required player fields: `name`, `pos`, `team`, `bye`, `rookie`.
   - Ranking bounds and validity.
   - Team bye map coverage (32 NFL teams).
+

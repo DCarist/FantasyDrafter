@@ -46,3 +46,4 @@ const success = finishSuite('League Setup & Draft Simulation');
 if (!success) {
   process.exit(1);
 }
+
