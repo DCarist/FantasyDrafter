@@ -2,196 +2,155 @@
 
 **Date:** August 22, 2026  
 **Project:** Ken's Draft Board (Superflex Dynasty Fantasy Football Drafter)  
-**Location:** `d:\Programming\FantasyDrafter`  
+**Repository:** `d:\Programming\FantasyDrafter`  
+**Git Branch:** `main` (clean working tree)  
 
 ---
 
 ## 1. Executive Summary
 
-**Fantasy Drafter** is a lightweight, zero-dependency, browser-based draft board and decision-support assistant designed for live fantasy football drafts. It is specifically tailored for **Superflex Dynasty** leagues employing **3rd-Round Reversal (3RR)** or standard snake draft orders.
+**Fantasy Drafter** is a high-performance, zero-dependency, browser-based draft board and decision-support assistant designed for live fantasy football drafts. It is specifically tailored for **Superflex Dynasty** and **Redraft** leagues employing **3rd-Round Reversal (3RR)** or standard snake draft orders.
 
-The application operates completely offline with static files, persisting draft progress to browser `localStorage`, and provides real-time value scoring (blending dynasty and redraft rankings with non-linear valuation curves), positional need tracking, bye-week clash warnings, player news blurbs, and full 18-week team schedules.
+The application operates completely offline with static files, persisting draft state to browser `localStorage`, and provides real-time value scoring (blending dynasty and redraft rankings with non-linear valuation curves), a 3-column dashboard layout (permanent user roster on left, player rankings in center, live on-the-clock / opponent inspector & draft log on right), custom league configuration, and an automated live consensus rankings pipeline.
 
 ---
 
-## 2. Architecture & File Overview
+## 2. Architecture & File Structure
 
-The codebase is organized into four distinct layers: **Data Layer**, **Pure Logic Layer**, **User Interface**, and **ETL/Data Pipeline**.
+The codebase is organized into modular layers: **Pure Logic Layer**, **Modular Testing Infrastructure**, **User Interface Layer**, and **Automated Data Pipelines**.
 
 ```
 FantasyDrafter/
-├── draft-board.html       # Single-page interactive UI (HTML5, CSS3, Vanilla JS)
-├── draft-logic.js         # Core draft math, scoring models, name normalization (UMD)
-├── test-draft-logic.mjs   # Unit test suite for pick math and scoring (Node.js)
-├── players-data.js        # Bundled data (~330+ players, schedules, bye weeks)
-├── merge-data.py          # Python ETL: Ingests raw ranking datasets into players-data.js
-├── patch-extras.py        # Python ETL: Ingests schedules and news blurbs
-└── .claude/
-    └── launch.json        # Dev server runner configuration (Python HTTP server)
+├── draft-board.html            # 3-column interactive UI (HTML5, CSS3, Vanilla JS)
+├── draft-logic.js              # Pure math, scoring models, team resolution, pick logic (UMD)
+├── players-data.js             # Active dataset (720+ NFL players, schedules, blurbs, ADP)
+├── players-data.json           # JSON export of rankings dataset
+├── update-rankings.py          # Live consensus rankings fetcher & ETL pipeline
+├── merge-data.py               # Local dataset merger (offline pipeline)
+├── patch-extras.py             # Schedules and news blurbs ingestion
+├── test-runner.mjs             # Automated multi-suite test runner
+├── test-draft-logic.mjs        # Baseline unit tests (preserved)
+├── package.json                # NPM configuration and workflow scripts
+├── .gitignore                  # Git ignore rules for OS, cache, and log files
+├── .claude/
+│   └── launch.json             # Dev server configuration (Python HTTP server)
+├── .agents/
+│   └── skills/
+│       └── feature-testing/
+│           └── SKILL.md        # Feature testing standards and runbook
+└── tests/
+    ├── test-helper.mjs         # Shared test assertions and suite utilities
+    ├── league-setup.test.mjs   # Multi-team 3RR draft simulation test suite
+    ├── data-integrity.test.mjs # Player data schema validation test suite
+    └── unlisted-picks.test.mjs # Custom unlisted picks and roster tracking test suite
 ```
 
-### Component Details
+### File Details & Responsibilities
 
-| File | Size / LOC | Language | Purpose & Functionality |
-| :--- | :--- | :--- | :--- |
-| **`draft-board.html`** | ~25 KB (455 lines) | HTML / CSS / JS | Main draft interface. Renders player table, search/filter bars, draft clock/turn tracker, "My Team" roster with positional counters and bye-week clash alerts, draft history log, and modal popups for player profiles, schedules, and search links. Uses `localStorage` (`kenDraftBoard-v1`) for state persistence. |
-| **`draft-logic.js`** | ~3 KB (85 lines) | JavaScript | Pure mathematical and algorithmic functions without DOM dependencies: `overallPick`, `slotForOverall`, `picksForSlot`, `roundIsForward`, `normalizeName`, `compositeScore`, and `rankToScore`. Exported as a CommonJS module for testing and loaded via `<script>` in the browser. |
-| **`test-draft-logic.mjs`** | ~3.5 KB (87 lines) | Node.js (ESM) | Unit test suite validating 3RR reversal mathematics against commissioner examples, round reversibility, 10- and 12-team slot mapping, name normalization, and non-linear score calculations. |
-| **`players-data.js`** | ~85 KB (3,537 lines) | JavaScript | Data container defining `window.DRAFT_DATA`. Holds structured records for ~330+ players (name, position, NFL team, bye week, age, rookie flag, Dynasty Superflex rank, Dynasty 1QB rank, Redraft rank, ADP, news blurb), 32-team 18-week schedules, and source metadata. |
-| **`merge-data.py`** | ~6.5 KB (173 lines) | Python 3 | Consolidates multiple ranking sources (Dynasty SF, Dynasty 1QB, Redraft consensus, ADP, Rookies, Byes) from raw JSON files, handles team code aliases (e.g., `JAC` &rarr; `JAX`, `OAK` &rarr; `LV`), resolves positional conflicts via majority vote, filters out K/DST, and outputs `players-data.js`. |
-| **`patch-extras.py`** | ~2.8 KB (79 lines) | Python 3 | Enriches `players-data.js` with 18-week NFL regular season schedules for all 32 teams and per-player news summaries. Cross-validates team bye weeks against schedule gaps. |
-| **`.claude/launch.json`** | 225 B (12 lines) | JSON | Configuration for local HTTP server execution on port 8517. |
+| File | Language | Purpose & Functionality |
+| :--- | :--- | :--- |
+| **`draft-board.html`** | HTML / CSS / JS | Main draft interface featuring a **3-column layout**: permanent user roster on left, ranking board in center, on-the-clock team inspector and draft log on right. Includes League Setup modal (teams 2–24, custom team names, slot reordering), unlisted pick modal, and player profile popups. |
+| **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical and algorithmic functions without DOM dependencies: `overallPick`, `slotForOverall`, `picksForSlot`, `roundIsForward`, `normalizeName`, `compositeScore`, `rankToScore`, `defaultTeams`, `teamForOverall`, and `resolvePickPlayer`. |
+| **`update-rankings.py`** | Python 3 | Automated ETL fetcher that pulls live consensus data across Dynasty SF, Dynasty 1QB, Redraft, Best-Ball ADP, and Rookies, compiling 720+ active players into `players-data.js`. |
+| **`test-runner.mjs`** | Node.js (ESM) | Discovers and executes all test suites (`test-draft-logic.mjs` and all `tests/*.test.mjs`), reporting comprehensive failure and pass metrics. |
+| **`tests/league-setup.test.mjs`** | Node.js (ESM) | Validates 8-, 10-, 12-, 14-, and 16-team 3RR draft simulations, pick allocations, slot reversibility, and team name resolution. |
+| **`tests/data-integrity.test.mjs`** | Node.js (ESM) | Validates `players-data.js` schema integrity, positions, NFL team codes, bye weeks (1–18), and rank metrics. |
+| **`tests/unlisted-picks.test.mjs`** | Node.js (ESM) | Tests custom player pick recording, position selection, NFL team attribution, custom bye weeks, and live team roster counters. |
+| **`test-draft-logic.mjs`** | Node.js (ESM) | Baseline unit tests verifying 3RR direction, slot-to-pick inversion, name normalization, and non-linear score curves. |
+| **`players-data.js`** | JavaScript | Data container (`window.DRAFT_DATA`) holding 720+ active NFL players with multi-format rankings, age, bye weeks, and schedules. |
+| **`package.json`** | JSON | Standard project metadata and run scripts (`npm test`, `npm run test:baseline`, `npm run update`, `npm start`). |
 
 ---
 
 ## 3. Current Feature Set & Capabilities
 
-### 3.1 3rd-Round Reversal (3RR) & Snake Draft Math
-- **3RR Formula:** Standard snake drafts alternate direction every round (R1 forward, R2 reverse, R3 forward, etc.). 3RR intentionally reverses Round 3 (R1 forward, R2 reverse, R3 **reverse again**, R4 forward, R5 reverse...) to balance the high value of top-3 draft picks in Superflex formats.
-- **Clock & On-the-Clock Detection:** Calculates the current round and pick (`fmtPick(overall, teams)` &rarr; `e.g. 1.02`), highlights when the user is on the clock, and displays a countdown to the user's upcoming 5 draft picks.
+### 3.1 3-Column Dashboard Layout
+- **Left Panel — "⭐ My Roster" (Always Visible):**
+  - Displays our team's roster, slot position, and total pick count.
+  - Lists all drafted players with position badges, player names, NFL team codes, and bye weeks.
+  - Live positional needs counter (`QB 1/2+`, `RB 2/4+`, `WR 3/5+`, `TE 1/1+`).
+  - Starter requirements guide (`QB · 2RB · 2WR · TE · 3FLEX · SF`).
+  - Bye-week clash warning alerts.
+- **Center Panel — "Player Pool & Draft Rankings":**
+  - Real-time search, position tabs (`ALL`, `QB`, `RB`, `WR`, `TE`, `ROOKIE`), sorting (`score`, `dyn`, `red`, `adp`), and "Hide taken" toggle.
+  - Dynamic draft buttons: displays **"Select our Player"** (green highlight) when user is on the clock, and **"Pick Player"** when an opponent is drafting.
+  - Non-linear composite scores, tier breaks (`T1`, `T2`, etc.), and ADP value indicators (`▼X vs ADP`).
+- **Right Panel — "🕒 On The Clock / League Inspector & Draft Log":**
+  - **Auto-Following On-The-Clock Inspector:** Displays the live roster and positional breakdown of whichever team is currently picking.
+  - **Full League Inspector:** Dropdown allows inspecting any team's roster and position count across the league at any time.
+  - **"Follow Clock" Quick Switch:** Instant button to resume auto-following the on-the-clock team.
+  - **Draft Log:** Reverse chronological history showing pick number, round.slot, drafting team, player name, position, and NFL team.
 
-### 3.2 Dynamic Valuation Engine
-- **Non-Linear Drop-off Model:** Computes player scores on a 0–100 scale using the power curve:
-  $$\text{Score} = 100 \times \left(1 - \frac{\text{Rank} - 1}{\text{Depth}}\right)^{1.5}$$
-  This models fantasy football reality: the gap between Rank 1 and Rank 10 is substantially greater than between Rank 150 and Rank 160.
-- **Win-Now vs. Dynasty Blending:** Real-time slider (0% to 100%) dynamically weights redraft consensus vs. dynasty rankings.
-- **Tight End Premium Support:** Optional toggle giving Tight Ends an automatic 8% score boost to reflect 1.5 PPR scoring.
-- **Visual Tier Breaks:** Dynamically injects visual separator lines and tier markers (`T1`, `T2`, etc.) in the player table when score drops between consecutive players exceed 4.0 points.
-- **Value vs. ADP Highlighting:** Flags players who have fallen $\ge 8$ spots past their consensus ADP with a green value tag (`▼X vs ADP`).
+### 3.2 Dynamic League Setup & Custom Teams
+- Accessible via the **⚙️ League Setup** header button:
+  - Custom League / Board Name with real-time branding updates.
+  - Team count selector (2 to 24 teams) and round count selector (1 to 40 rounds).
+  - Draft order toggle: **3rd-Round Reversal (3RR)** or **Normal Snake**.
+  - Interactive team manager: customize all team names, designate user slot, and reorder draft slots using `▲` / `▼` buttons.
 
-### 3.3 Roster Construction & Risk Mitigation
-- **Positional Quotas:** Tracks drafted players against Superflex league starter minimums (`QB: 2`, `RB: 4`, `WR: 5`, `TE: 1`).
-- **Bye Week Collision Detection:** Automatically scans the user's roster and generates a prominent warning box if two or more drafted starters share the same NFL bye week.
-- **Draft Log & State Recovery:**
-  - Full pick log recording both user picks and competitor picks.
-  - "Pick made by someone — player not on my list" button to record unknown/unranked draft selections without breaking pick sequencing.
-  - Undo pick, jump-to-pick, and draft reset capabilities.
-  - All state automatically persists to `localStorage`.
+### 3.3 Unlisted Pick & Custom Player Engine
+- Supports drafting sleepers or deep rookies not in the default rankings:
+  - Click `Unlisted pick for [Team Name] ➜` in the sidebar.
+  - **Quick Position Selector:** One-click assignment for `QB`, `RB`, `WR`, `TE`, `K`, `DST`, `OTHER`.
+  - **Custom Player Name (Optional):** Enter name or leave blank for automatic fallback (e.g. `Unlisted WR`).
+  - **NFL Team & Bye Week (Optional):** Assign NFL team and bye week (1–18) for clash tracking.
+  - Fully integrates into that team's roster, positional needs counters, and draft history log.
 
-### 3.4 Player Intelligence Modal
-- Clicking any player name opens a detailed modal with:
-  - Consensus ranks (Dyn SF, Dyn 1QB, Redraft, ADP, Age, Bye).
-  - Baked-in news summary.
-  - 18-week schedule matrix with bye weeks highlighted.
-  - Quick outbound search links to Google News, ESPN, and FantasyPros.
-
----
-
-## 4. Test Verification Results
-
-The test suite in [`test-draft-logic.mjs`](file:///d:/Programming/FantasyDrafter/test-draft-logic.mjs) was executed via Node.js:
-
-```
-> node test-draft-logic.mjs
-
-ok   slot 12 R1 = overall 12 (1.12)
-ok   slot 12 R2 = overall 13 (2.01)
-ok   slot 12 R3 = overall 25 (3.01)
-ok   slot 1 R1 = overall 1 (1.01)
-ok   slot 1 R2 = overall 24 (2.12)
-ok   slot 1 R3 = overall 36 (3.12)
-ok   Ken slot 2, 10 teams, first 8 rounds
-ok   Ken slot 2, 12 teams, first 6 rounds
-ok   slot 2 normal snake, 10 teams
-ok   3RR direction: F, R, R, F, R, F, R
-ok   slotForOverall inverts overallPick for every pick, 10 and 12 teams
-ok   all overall picks 1..N*rounds assigned exactly once
-ok   strips Jr.
-ok   strips apostrophe + double space
-ok   strips III
-ok   rank 1 scores 100
-ok   missing rank scores null
-ok   TE premium boosts TEs
-ok   missing redraft falls back to dynasty score
-
-All tests passed
-```
-
-**Status:** 19/19 tests passed with 0 failures.
+### 3.4 Live Consensus Rankings Pipeline
+- Run `python update-rankings.py` (or `npm run update`) to pull live daily consensus data:
+  - Dynasty Superflex & 1QB rankings from DynastyProcess / FantasyPros.
+  - Redraft consensus and Best-Ball ADP.
+  - 2026 Rookie rankings and NFL regular season schedules.
+  - Outputs 720+ active players into `players-data.js` and `players-data.json`.
 
 ---
 
-## 5. Local Environment Status & Findings
+## 4. Testing Infrastructure
 
-| Environment Tool | Installed Version | Status | Notes |
-| :--- | :--- | :--- | :--- |
-| **Git** | 2.x | Available | Directory is currently not initialized as a git repository. |
-| **Node.js** | v20.9.0 | Ready | Available on PATH; executes unit tests cleanly. |
-| **Python** | 3.12.0 (`python`, `py`) | Ready | Available on PATH. |
-| **Python3 alias** | N/A | Windows Redirect | On Windows, typing `python3` triggers the Windows Store App execution alias. Commands must use `python` or `py`. |
-
----
-
-## 6. Recommended Next Steps
-
-### Step 1: Initialize Git Repository
-Establish version control for the project with a clean `.gitignore`:
+The project includes an automated test runner following the **feature-testing** skill guidelines:
 
 ```powershell
-# 1. Create .gitignore (excluding OS files, caches, logs)
-@"
-# Byte-compiled / optimized files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Operating System Files
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-.DS_Store
-
-# Logs & temp files
-*.log
-"@ | Out-File -FilePath .gitignore -Encoding utf8
-
-# 2. Initialize repository and create initial commit
-git init -b main
-git add .
-git commit -m "feat: initial commit of fantasy draft board and logic"
+npm test
 ```
 
+### Test Suite Summary
+
+| Test Suite | File | Tests / Assertions | Status |
+| :--- | :--- | :--- | :--- |
+| **Baseline Draft Logic** | `test-draft-logic.mjs` | 23 assertions | ✅ Passing |
+| **Data Integrity** | `tests/data-integrity.test.mjs` | 721 player records validated | ✅ Passing |
+| **League Setup & 3RR** | `tests/league-setup.test.mjs` | 8/10/12/14/16-team simulations | ✅ Passing |
+| **Unlisted Picks & Roster Tracking** | `tests/unlisted-picks.test.mjs` | Custom resolution & team counts | ✅ Passing |
+
+**Total:** 4 suites passing (0 failures).
+
 ---
 
-### Step 2: Configure Local Execution for Windows
-1. **Fix `launch.json`**: Update `"runtimeExecutable": "python3"` to `"python"` in [`.claude/launch.json`](file:///d:/Programming/FantasyDrafter/.claude/launch.json).
-2. **Start Local Development Server**:
-   ```powershell
-   python -m http.server 8517 --bind 127.0.0.1
-   ```
-3. **Open in Browser**: Navigate to [http://127.0.0.1:8517/draft-board.html](http://127.0.0.1:8517/draft-board.html) (or open `draft-board.html` directly via file path).
+## 5. Development & Execution Quickstart
 
----
-
-### Step 3: Add `package.json` for Standardized Script Tooling
-Adding a minimal `package.json` enables standard npm commands like `npm test` and `npm start`:
-
-```json
-{
-  "name": "fantasy-drafter",
-  "version": "1.0.0",
-  "description": "Superflex dynasty fantasy football draft board",
-  "main": "draft-logic.js",
-  "type": "module",
-  "scripts": {
-    "test": "node test-draft-logic.mjs",
-    "start": "python -m http.server 8517 --bind 127.0.0.1"
-  },
-  "author": "",
-  "license": "MIT"
-}
+### 1. Run Unit Tests
+```powershell
+npm test
 ```
 
+### 2. Update to Latest Live Rankings
+```powershell
+npm run update
+```
+
+### 3. Launch Local Web Server
+```powershell
+npm start
+```
+Then open [http://127.0.0.1:8517/draft-board.html](http://127.0.0.1:8517/draft-board.html) in any web browser.
+
 ---
 
-### Step 4: Suggested Feature & Quality-of-Life Enhancements
+## 6. Recommended Future Enhancements
 
 1. **Draft State Export / Import (JSON / CSV):**
-   - Add a button to export the current draft log and team roster as a JSON file or copy to clipboard, allowing backups and sharing before clearing cache.
-2. **Draft Pick Trading Support:**
-   - In dynasty leagues, startup pick trading is common. Allow manual re-assignment of specific draft picks to different slots.
-3. **Queue / Target List:**
-   - Add a "Starred / Queue" tab so the user can flag players they want to target in upcoming rounds without constantly searching.
-4. **Automated Data Fetcher:**
-   - Currently, `merge-data.py` expects a pre-compiled JSON file. Providing a unified script to fetch live consensus rankings directly (e.g. from FantasyPros or Sleeper API) would streamline preseason data updates.
-
+   - Provide export/import buttons to save and restore drafts across different browsers or devices.
+2. **Draft Pick Trading:**
+   - Allow trading future picks between slots (e.g. Slot 1 trades Pick 2.11 to Slot 6 for Pick 3.06).
+3. **Queue / Target Shortlist:**
+   - Add a "Queue" tab so the user can star/flag top targets for upcoming rounds.
