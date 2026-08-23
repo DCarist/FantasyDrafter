@@ -555,7 +555,16 @@ function renderPool() {
   else if (ui.posFilter === 'ROOKIE') rows = rows.filter(p => p.rookie);
   else if (ui.posFilter === 'DST') rows = rows.filter(p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase()));
   else if (ui.posFilter !== 'ALL') rows = rows.filter(p => (p.pos || '').toUpperCase() === ui.posFilter);
-  if (q) rows = rows.filter(p => normalizeName(p.name).includes(q));
+
+  if (q) {
+    const qDst = resolveDstCanonical(q);
+    rows = rows.filter(p => {
+      if (qDst && p.pos === 'DST' && p.team === qDst.team) return true;
+      if (normalizeName(p.name).includes(q)) return true;
+      if (p.team && normalizeName(p.team) === q) return true;
+      return false;
+    });
+  }
 
   // Dynamic table headers
   if ($('th_dyn')) $('th_dyn').textContent = (s.qbFormat === '1qb') ? 'Dyn 1QB' : 'Dyn SF';

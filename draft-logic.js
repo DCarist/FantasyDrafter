@@ -47,6 +47,100 @@ function normalizeName(name) {
     .trim();
 }
 
+// Canonical NFL defense definitions across all 32 teams
+const NFL_DEFENSES = {
+  ARI: { name: 'Arizona Cardinals', city: 'Arizona', mascot: 'Cardinals' },
+  ATL: { name: 'Atlanta Falcons', city: 'Atlanta', mascot: 'Falcons' },
+  BAL: { name: 'Baltimore Ravens', city: 'Baltimore', mascot: 'Ravens' },
+  BUF: { name: 'Buffalo Bills', city: 'Buffalo', mascot: 'Bills' },
+  CAR: { name: 'Carolina Panthers', city: 'Carolina', mascot: 'Panthers' },
+  CHI: { name: 'Chicago Bears', city: 'Chicago', mascot: 'Bears' },
+  CIN: { name: 'Cincinnati Bengals', city: 'Cincinnati', mascot: 'Bengals' },
+  CLE: { name: 'Cleveland Browns', city: 'Cleveland', mascot: 'Browns' },
+  DAL: { name: 'Dallas Cowboys', city: 'Dallas', mascot: 'Cowboys' },
+  DEN: { name: 'Denver Broncos', city: 'Denver', mascot: 'Broncos' },
+  DET: { name: 'Detroit Lions', city: 'Detroit', mascot: 'Lions' },
+  GB:  { name: 'Green Bay Packers', city: 'Green Bay', mascot: 'Packers' },
+  HOU: { name: 'Houston Texans', city: 'Houston', mascot: 'Texans' },
+  IND: { name: 'Indianapolis Colts', city: 'Indianapolis', mascot: 'Colts' },
+  JAX: { name: 'Jacksonville Jaguars', city: 'Jacksonville', mascot: 'Jaguars' },
+  KC:  { name: 'Kansas City Chiefs', city: 'Kansas City', mascot: 'Chiefs' },
+  LV:  { name: 'Las Vegas Raiders', city: 'Las Vegas', mascot: 'Raiders' },
+  LAC: { name: 'Los Angeles Chargers', city: 'Los Angeles', mascot: 'Chargers' },
+  LAR: { name: 'Los Angeles Rams', city: 'Los Angeles', mascot: 'Rams' },
+  MIA: { name: 'Miami Dolphins', city: 'Miami', mascot: 'Dolphins' },
+  MIN: { name: 'Minnesota Vikings', city: 'Minnesota', mascot: 'Vikings' },
+  NE:  { name: 'New England Patriots', city: 'New England', mascot: 'Patriots' },
+  NO:  { name: 'New Orleans Saints', city: 'New Orleans', mascot: 'Saints' },
+  NYG: { name: 'New York Giants', city: 'New York Giants', mascot: 'Giants' },
+  NYJ: { name: 'New York Jets', city: 'New York Jets', mascot: 'Jets' },
+  PHI: { name: 'Philadelphia Eagles', city: 'Philadelphia', mascot: 'Eagles' },
+  PIT: { name: 'Pittsburgh Steelers', city: 'Pittsburgh', mascot: 'Steelers' },
+  SF:  { name: 'San Francisco 49ers', city: 'San Francisco', mascot: '49ers' },
+  SEA: { name: 'Seattle Seahawks', city: 'Seattle', mascot: 'Seahawks' },
+  TB:  { name: 'Tampa Bay Buccaneers', city: 'Tampa Bay', mascot: 'Buccaneers' },
+  TEN: { name: 'Tennessee Titans', city: 'Tennessee', mascot: 'Titans' },
+  WAS: { name: 'Washington Commanders', city: 'Washington', mascot: 'Commanders' }
+};
+
+function buildDstLookup() {
+  const map = {};
+  for (const [abbr, info] of Object.entries(NFL_DEFENSES)) {
+    const m = info.mascot.toLowerCase();
+    const c = info.city.toLowerCase();
+    const n = info.name.toLowerCase();
+    const a = abbr.toLowerCase();
+    const variants = [
+      n, `${n} dst`, `${n} defense`, `${n} def`,
+      m, `${m} dst`, `${m} defense`, `${m} def`,
+      `${c} dst`, `${c} defense`, `${c} def`,
+      `${a} dst`, `${a} defense`, `${a} def`
+    ];
+    if (abbr === 'NYG') variants.push('ny giants', 'ny giants dst', 'ny giants def');
+    if (abbr === 'NYJ') variants.push('ny jets', 'ny jets dst', 'ny jets def');
+    if (abbr === 'SF') variants.push('sf 49ers', 'sf 49ers dst', 'san francisco dst', '49ers dst');
+    if (abbr === 'GB') variants.push('gb packers', 'gb packers dst');
+    if (abbr === 'TB') variants.push('tb buccaneers', 'tb buccaneers dst', 'bucs dst');
+    if (abbr === 'KC') variants.push('kc chiefs', 'kc chiefs dst');
+    if (abbr === 'NE') variants.push('ne patriots', 'ne patriots dst', 'pats dst');
+    if (abbr === 'NO') variants.push('no saints', 'no saints dst');
+    if (abbr === 'LV') variants.push('lv raiders', 'lv raiders dst');
+    if (abbr === 'LAC') variants.push('la chargers', 'la chargers dst');
+    if (abbr === 'LAR') variants.push('la rams', 'la rams dst');
+
+    for (const v of variants) {
+      const clean = v.replace(/[.'’,"/-]/g, '').replace(/\s+/g, ' ').trim();
+      map[clean] = abbr;
+    }
+  }
+  return map;
+}
+
+const DST_LOOKUP_MAP = buildDstLookup();
+
+// Resolves any defense name or team variant into canonical { name, team, pos: 'DST' }
+function resolveDstCanonical(name, team) {
+  if (!name && !team) return null;
+  if (name) {
+    const clean = String(name).toLowerCase().replace(/[.'’,"/-]/g, '').replace(/\s+/g, ' ').trim();
+    const upper = clean.toUpperCase();
+    if (NFL_DEFENSES[upper]) {
+      return { name: NFL_DEFENSES[upper].name, team: upper, pos: 'DST' };
+    }
+    const match = DST_LOOKUP_MAP[clean];
+    if (match) {
+      return { name: NFL_DEFENSES[match].name, team: match, pos: 'DST' };
+    }
+  }
+  if (team) {
+    const t = String(team).toUpperCase().trim();
+    if (NFL_DEFENSES[t]) {
+      return { name: NFL_DEFENSES[t].name, team: t, pos: 'DST' };
+    }
+  }
+  return null;
+}
+
 // Supported league formats
 const FORMAT_OPTIONS = {
   scoring: {
@@ -491,5 +585,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getRedraftRank: getRedraftRank,
     computeFormatScore: computeFormatScore,
     getProspectRank: getProspectRank,
+    NFL_DEFENSES: NFL_DEFENSES,
+    resolveDstCanonical: resolveDstCanonical,
   };
 }

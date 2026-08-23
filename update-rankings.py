@@ -28,7 +28,106 @@ TEAM_FIX = {
     'KAN': 'KC', 'NWE': 'NE', 'NOR': 'NO', 'SFO': 'SF', 'TAM': 'TB', 'LVR': 'LV',
 }
 
-def norm_name(name):
+NFL_TEAMS = {
+    'ARI': {'name': 'Arizona Cardinals', 'city': 'Arizona', 'mascot': 'Cardinals'},
+    'ATL': {'name': 'Atlanta Falcons', 'city': 'Atlanta', 'mascot': 'Falcons'},
+    'BAL': {'name': 'Baltimore Ravens', 'city': 'Baltimore', 'mascot': 'Ravens'},
+    'BUF': {'name': 'Buffalo Bills', 'city': 'Buffalo', 'mascot': 'Bills'},
+    'CAR': {'name': 'Carolina Panthers', 'city': 'Carolina', 'mascot': 'Panthers'},
+    'CHI': {'name': 'Chicago Bears', 'city': 'Chicago', 'mascot': 'Bears'},
+    'CIN': {'name': 'Cincinnati Bengals', 'city': 'Cincinnati', 'mascot': 'Bengals'},
+    'CLE': {'name': 'Cleveland Browns', 'city': 'Cleveland', 'mascot': 'Browns'},
+    'DAL': {'name': 'Dallas Cowboys', 'city': 'Dallas', 'mascot': 'Cowboys'},
+    'DEN': {'name': 'Denver Broncos', 'city': 'Denver', 'mascot': 'Broncos'},
+    'DET': {'name': 'Detroit Lions', 'city': 'Detroit', 'mascot': 'Lions'},
+    'GB':  {'name': 'Green Bay Packers', 'city': 'Green Bay', 'mascot': 'Packers'},
+    'HOU': {'name': 'Houston Texans', 'city': 'Houston', 'mascot': 'Texans'},
+    'IND': {'name': 'Indianapolis Colts', 'city': 'Indianapolis', 'mascot': 'Colts'},
+    'JAX': {'name': 'Jacksonville Jaguars', 'city': 'Jacksonville', 'mascot': 'Jaguars'},
+    'KC':  {'name': 'Kansas City Chiefs', 'city': 'Kansas City', 'mascot': 'Chiefs'},
+    'LV':  {'name': 'Las Vegas Raiders', 'city': 'Las Vegas', 'mascot': 'Raiders'},
+    'LAC': {'name': 'Los Angeles Chargers', 'city': 'Los Angeles', 'mascot': 'Chargers'},
+    'LAR': {'name': 'Los Angeles Rams', 'city': 'Los Angeles', 'mascot': 'Rams'},
+    'MIA': {'name': 'Miami Dolphins', 'city': 'Miami', 'mascot': 'Dolphins'},
+    'MIN': {'name': 'Minnesota Vikings', 'city': 'Minnesota', 'mascot': 'Vikings'},
+    'NE':  {'name': 'New England Patriots', 'city': 'New England', 'mascot': 'Patriots'},
+    'NO':  {'name': 'New Orleans Saints', 'city': 'New Orleans', 'mascot': 'Saints'},
+    'NYG': {'name': 'New York Giants', 'city': 'New York Giants', 'mascot': 'Giants'},
+    'NYJ': {'name': 'New York Jets', 'city': 'New York Jets', 'mascot': 'Jets'},
+    'PHI': {'name': 'Philadelphia Eagles', 'city': 'Philadelphia', 'mascot': 'Eagles'},
+    'PIT': {'name': 'Pittsburgh Steelers', 'city': 'Pittsburgh', 'mascot': 'Steelers'},
+    'SF':  {'name': 'San Francisco 49ers', 'city': 'San Francisco', 'mascot': '49ers'},
+    'SEA': {'name': 'Seattle Seahawks', 'city': 'Seattle', 'mascot': 'Seahawks'},
+    'TB':  {'name': 'Tampa Bay Buccaneers', 'city': 'Tampa Bay', 'mascot': 'Buccaneers'},
+    'TEN': {'name': 'Tennessee Titans', 'city': 'Tennessee', 'mascot': 'Titans'},
+    'WAS': {'name': 'Washington Commanders', 'city': 'Washington', 'mascot': 'Commanders'},
+}
+
+def build_dst_map():
+    lookup = {}
+    for abbr, info in NFL_TEAMS.items():
+        m = info['mascot'].lower()
+        c = info['city'].lower()
+        n = info['name'].lower()
+        variants = [
+            n, f"{n} dst", f"{n} defense", f"{n} def",
+            m, f"{m} dst", f"{m} defense", f"{m} def",
+            f"{c} dst", f"{c} defense", f"{c} def",
+            f"{abbr.lower()} dst", f"{abbr.lower()} defense", f"{abbr.lower()} def",
+        ]
+        if abbr == 'NYG':
+            variants.extend(['ny giants', 'ny giants dst', 'ny giants def', 'new york giants dst', 'new york giants def'])
+        elif abbr == 'NYJ':
+            variants.extend(['ny jets', 'ny jets dst', 'ny jets def', 'new york jets dst', 'new york jets def'])
+        elif abbr == 'SF':
+            variants.extend(['sf 49ers', 'sf 49ers dst', 'san francisco dst', '49ers dst', '49ers def'])
+        elif abbr == 'GB':
+            variants.extend(['gb packers', 'gb packers dst'])
+        elif abbr == 'TB':
+            variants.extend(['tb buccaneers', 'tb buccaneers dst', 'tampa bay dst', 'bucs dst', 'bucs defense'])
+        elif abbr == 'KC':
+            variants.extend(['kc chiefs', 'kc chiefs dst', 'kansas city dst'])
+        elif abbr == 'NE':
+            variants.extend(['ne patriots', 'ne patriots dst', 'new england dst', 'pats dst', 'pats defense'])
+        elif abbr == 'NO':
+            variants.extend(['no saints', 'no saints dst', 'new orleans dst'])
+        elif abbr == 'LV':
+            variants.extend(['lv raiders', 'lv raiders dst', 'las vegas dst'])
+        elif abbr == 'LAC':
+            variants.extend(['la chargers', 'la chargers dst', 'los angeles chargers dst'])
+        elif abbr == 'LAR':
+            variants.extend(['la rams', 'la rams dst', 'los angeles rams dst'])
+
+        for variant in variants:
+            cleaned = re.sub(r"[.'’,\"-/]", '', variant)
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            lookup[cleaned] = abbr
+    return lookup
+
+DST_LOOKUP = build_dst_map()
+
+def resolve_dst(name, pos=None, team=None):
+    """Returns (canonical_name, team_abbr) if this name/pos represents an NFL team defense, else None."""
+    if not name:
+        return None
+    s = re.sub(r"[.'’,\"-/]", '', str(name).lower())
+    s = re.sub(r'\s+', ' ', s).strip()
+    
+    abbr = DST_LOOKUP.get(s)
+    if abbr:
+        return (NFL_TEAMS[abbr]['name'], abbr)
+    
+    if pos in ('DST', 'DEF', 'D/ST') and team:
+        t = norm_team(team)
+        if t in NFL_TEAMS:
+            return (NFL_TEAMS[t]['name'], t)
+            
+    return None
+
+def norm_name(name, pos=None, team=None):
+    dst = resolve_dst(name, pos, team)
+    if dst:
+        return f"dst_{dst[1].lower()}"
     s = str(name).lower()
     s = re.sub(r"[.'’,\"-]", '', s)
     s = re.sub(r'\b(jr|sr|ii|iii|iv|v)\b', '', s)
@@ -128,6 +227,11 @@ def main():
             if pos == 'DEF':
                 pos = 'DST'
             team = norm_team(r[5] if len(r) > 5 else '')
+            k = norm_name(name, pos, team)
+            dst_info = resolve_dst(name, pos, team)
+            canon_name = dst_info[0] if dst_info else name
+            canon_pos = 'DST' if dst_info else pos
+            canon_team = dst_info[1] if dst_info else team
             
             rookie_raw = r[13].strip() if len(r) > 13 else ''
             is_rookie = False
@@ -140,9 +244,9 @@ def main():
                     pass
 
             sheet_map[k] = {
-                'name': name,
-                'pos': pos,
-                'team': team,
+                'name': canon_name,
+                'pos': canon_pos,
+                'team': canon_team,
                 'is_rookie': is_rookie,
                 'rookie_rank': rookie_rank,
                 'yahoo': float_or_none(r[7] if len(r) > 7 else ''),
@@ -170,10 +274,6 @@ def main():
 
     for r in ecr_rows:
         name = r.get('player', '').strip()
-        k = norm_name(name)
-        if not k:
-            continue
-
         pos = r.get('pos', '').strip().upper()
         if pos == 'DEF':
             pos = 'DST'
@@ -181,16 +281,25 @@ def main():
             continue
 
         team = norm_team(r.get('team') or r.get('tm'))
+        k = norm_name(name, pos, team)
+        if not k:
+            continue
+
+        dst_info = resolve_dst(name, pos, team)
+        canon_name = dst_info[0] if dst_info else name
+        canon_pos = 'DST' if dst_info else pos
+        canon_team = dst_info[1] if dst_info else team
+
         bye_raw = r.get('bye')
-        if bye_raw and bye_raw != 'NA' and team:
+        if bye_raw and bye_raw != 'NA' and (canon_team or team):
             try:
-                byes[team] = int(bye_raw)
+                byes[canon_team or team] = int(bye_raw)
             except ValueError:
                 pass
 
         rec = players.setdefault(k, {
-            'name': name,
-            'pos': pos,
+            'name': canon_name,
+            'pos': canon_pos,
             'teams': [],
             'positions': [],
             'dynSF': None,
@@ -215,10 +324,16 @@ def main():
             'boris_std': None,
         })
 
-        if team:
-            rec['teams'].append(team)
-        if pos:
-            rec['positions'].append(pos)
+        if dst_info:
+            rec['name'] = dst_info[0]
+            rec['pos'] = 'DST'
+            rec['teams'].append(dst_info[1])
+            rec['positions'].append('DST')
+        else:
+            if team:
+                rec['teams'].append(team)
+            if pos:
+                rec['positions'].append(pos)
 
         page_type = r.get('page_type', '')
         try:
@@ -246,9 +361,14 @@ def main():
 
     # 6. Merge Google Sheet data
     for k, sdata in sheet_map.items():
+        dst_info = resolve_dst(sdata['name'], sdata['pos'], sdata['team'])
+        canon_name = dst_info[0] if dst_info else sdata['name']
+        canon_pos = 'DST' if dst_info else sdata['pos']
+        canon_team = dst_info[1] if dst_info else sdata['team']
+
         rec = players.setdefault(k, {
-            'name': sdata['name'],
-            'pos': sdata['pos'],
+            'name': canon_name,
+            'pos': canon_pos,
             'teams': [],
             'positions': [],
             'dynSF': None,
@@ -273,10 +393,16 @@ def main():
             'boris_std': None,
         })
 
-        if sdata['team']:
-            rec['teams'].append(sdata['team'])
-        if sdata['pos']:
-            rec['positions'].append(sdata['pos'])
+        if dst_info:
+            rec['name'] = dst_info[0]
+            rec['pos'] = 'DST'
+            rec['teams'].append(dst_info[1])
+            rec['positions'].append('DST')
+        else:
+            if sdata['team']:
+                rec['teams'].append(sdata['team'])
+            if sdata['pos']:
+                rec['positions'].append(sdata['pos'])
 
         if sdata['is_rookie']:
             rec['rookie'] = True
@@ -366,6 +492,13 @@ def main():
         # Determine primary position by majority vote
         pos_votes = Counter(rec['positions'])
         pos = pos_votes.most_common(1)[0][0] if pos_votes else rec.get('pos')
+
+        if k.startswith('dst_'):
+            team_abbr = k[4:].upper()
+            team = team_abbr
+            pos = 'DST'
+            if team_abbr in NFL_TEAMS:
+                rec['name'] = NFL_TEAMS[team_abbr]['name']
 
         if not pos or pos not in ('QB', 'RB', 'WR', 'TE', 'K', 'DST'):
             continue
