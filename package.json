@@ -4,7 +4,8 @@
   "description": "Superflex dynasty fantasy football draft board and decision assistant",
   "main": "draft-logic.js",
   "scripts": {
-    "test": "node test-draft-logic.mjs",
+    "test": "node test-runner.mjs",
+    "test:baseline": "node test-draft-logic.mjs",
     "start": "python -m http.server 8517 --bind 127.0.0.1",
     "update": "python update-rankings.py",
     "update-rankings": "python update-rankings.py"
@@ -18,3 +19,4 @@
   "author": "",
   "license": "MIT"
 }
+
