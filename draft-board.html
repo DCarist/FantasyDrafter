@@ -335,6 +335,7 @@ function openUnlistedPickModal() {
     + '</div>'
     + '<div class="setup-grid" style="margin-top:14px">'
     + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Player Name (Optional)</label><input type="text" id="unlisted_name_input" placeholder="e.g. Ray-Ray McCloud (Leave blank for Unlisted ' + unlistedSelectedPos + ')"></div>'
+    + '<div class="setup-field"><label>NFL Team (Optional)</label><input type="text" id="unlisted_team_input" placeholder="e.g. KC, PHI, FA" maxlength="6"></div>'
     + '<div class="setup-field"><label>NFL Bye Week (Optional)</label><input type="number" id="unlisted_bye_input" min="1" max="18" placeholder="e.g. 9"></div>'
     + '</div>'
     + '<div class="modal-actions" style="margin-top:18px">'
@@ -369,13 +370,15 @@ function selectUnlistedPos(pos) {
 
 function submitUnlistedPick() {
   const nameInput = $('unlisted_name_input');
+  const teamInput = $('unlisted_team_input');
   const byeInput = $('unlisted_bye_input');
   const name = nameInput ? nameInput.value.trim() : '';
+  const team = teamInput ? teamInput.value.trim().toUpperCase() : '';
   const bye = (byeInput && byeInput.value) ? parseInt(byeInput.value, 10) : null;
-  draftUnlistedPlayer(unlistedSelectedPos, name, bye);
+  draftUnlistedPlayer(unlistedSelectedPos, name, team, bye);
 }
 
-function draftUnlistedPlayer(pos, name, bye) {
+function draftUnlistedPlayer(pos, name, team, bye) {
   const who = teamForOverall(currentPick(), state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
   const posVal = (pos || 'WR').toUpperCase();
   const nameVal = (name && name.trim()) ? name.trim() : ('Unlisted ' + (posVal !== 'OTHER' ? posVal : 'Player'));
@@ -384,6 +387,7 @@ function draftUnlistedPlayer(pos, name, bye) {
     playerId: null,
     customName: nameVal,
     customPos: posVal,
+    customTeam: (team && team.trim()) ? team.trim().toUpperCase() : null,
     customBye: (bye && bye >= 1 && bye <= 18) ? bye : null,
     mine: who.isMe
   });
@@ -565,9 +569,11 @@ function renderMyRoster() {
     const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
     const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + e.overall + ')');
     const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
+    const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
     return '<div class="rosteritem"><span class="pk">' + fmtPick(e.overall, s.teams) + '</span>'
       + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
       + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
+      + teamBadge
       + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span></div>';
   }).join('') || '<div class="meta" style="padding:10px 0">No picks on your roster yet.</div>';
 
@@ -645,9 +651,11 @@ function renderInspectRoster() {
     const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
     const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + e.overall + ')');
     const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
+    const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
     return '<div class="rosteritem"><span class="pk">' + fmtPick(e.overall, s.teams) + '</span>'
       + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
       + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
+      + teamBadge
       + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span></div>';
   }).join('') || '<div class="meta" style="padding:10px 0">No picks made by this team yet.</div>';
 
@@ -672,14 +680,16 @@ function renderLog() {
   const s = state.settings;
   $('log').innerHTML = state.log.slice().reverse().map(e => {
     const p = resolvePickPlayer(e, byId);
-    const pos = p.pos ? ' <span class="meta">(' + p.pos + ')</span>' : '';
+    const posTeam = (p.pos || (p.team && p.team !== '—'))
+      ? ' <span class="meta">(' + p.pos + (p.team && p.team !== '—' ? ' · ' + p.team : '') + ')</span>'
+      : '';
     const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot);
     const isMe = e.mine || tInfo.isMe;
     const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(unlisted)</span>' : '';
     return '<div class="logitem' + (isMe ? ' mine' : '') + '">'
       + '<span class="meta">#' + e.overall + ' (' + fmtPick(e.overall, s.teams) + ')</span> '
       + '<b style="color:' + (isMe ? 'var(--good)' : 'var(--text)') + '">' + tInfo.name + (isMe ? ' (You)' : '') + '</b>: '
-      + p.name + pos + unlistedBadge + (isMe ? ' ✅' : '') + '</div>';
+      + p.name + posTeam + unlistedBadge + (isMe ? ' ✅' : '') + '</div>';
   }).join('') || '<div class="meta">Draft hasn\'t started.</div>';
 }
 
@@ -782,6 +792,7 @@ function showUnlistedPlayer(overall) {
     + '<div class="statrow">'
     + '<span class="stat">Drafted By<b>' + tInfo.name + (isMine ? ' (You)' : '') + '</b></span>'
     + '<span class="stat">Pick<b>#' + entry.overall + ' (' + fmtPick(entry.overall, state.settings.teams) + ')</b></span>'
+    + ((p.team && p.team !== '—') ? '<span class="stat">NFL Team<b>' + p.team + '</b></span>' : '')
     + (p.bye ? '<span class="stat">Bye Week<b>Week ' + p.bye + '</b></span>' : '')
     + '</div>'
     + '<div class="blurbnote">This selection was recorded as an unlisted pick and is tracked on this team\'s roster and positional counts.</div>'

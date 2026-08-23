@@ -108,7 +108,7 @@ function resolvePickPlayer(entry, players) {
   if (!entry) return null;
   if (entry.playerId != null && players) {
     const p = (typeof players === 'function') ? players(entry.playerId) : players[entry.playerId];
-    if (p) return p;
+    if (p) return Object.assign({ team: p.team || '—' }, p);
   }
   const pos = (entry.customPos || 'OTHER').toUpperCase();
   const name = entry.customName ? entry.customName.trim() : ('Unlisted ' + (pos !== 'OTHER' ? pos : 'Player'));
@@ -116,6 +116,7 @@ function resolvePickPlayer(entry, players) {
     id: entry.playerId != null ? entry.playerId : null,
     name: name,
     pos: pos,
+    team: entry.customTeam ? entry.customTeam.trim().toUpperCase() : '—',
     bye: entry.customBye || null,
     isUnlisted: true,
   };

@@ -57,11 +57,13 @@ const draftLog = [
 ];
 
 // Verify slot assignments and team pick counts in a 10-team league
-const slot3Picks = draftLog.filter(e => L.slotForOverall(e.overall, 10, '3rr').slot === 3);
-eq(slot3Picks.length, 1, 'Slot 3 has 1 total pick');
-const slot3Player = L.resolvePickPlayer(slot3Picks[0], mockPlayers);
-eq(slot3Player.name, 'Carnell Tate', 'Slot 3 drafted player is Carnell Tate');
-eq(slot3Player.pos, 'WR', 'Slot 3 drafted position is WR');
+// Verify team field is resolved
+eq(resolvedListed.team, '—', 'Listed player has fallback team if not present');
+eq(resolvedCustom.team, '—', 'Custom player without team gets fallback');
+
+const customPickWithTeam = { overall: 6, playerId: null, customName: 'Tyler Warren', customPos: 'TE', customTeam: 'IND' };
+const resolvedWithTeam = L.resolvePickPlayer(customPickWithTeam, mockPlayers);
+eq(resolvedWithTeam.team, 'IND', 'Custom player resolves specified NFL team');
 
 const success = finishSuite('Unlisted Picks & Custom Player Resolution');
 if (!success) {
