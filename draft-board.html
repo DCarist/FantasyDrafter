@@ -349,6 +349,7 @@ function renderHeader() {
     $('nextpicks').innerHTML = myPicks.length
       ? 'Your next picks: ' + myPicks.slice(0, 5).map((p, i) => i === 0 ? '<b>#' + p + ' (in ' + (p - pick) + ')</b>' : '#' + p).join(', ')
       : 'No picks left';
+    if ($('unknownbtn')) $('unknownbtn').textContent = 'Unlisted pick for ' + who.name + ' ➜';
   }
 }
 
@@ -378,6 +379,8 @@ function renderPool() {
   rows.sort((a, b) => key(a) - key(b));
 
   const pick = currentPick();
+  const onClock = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
+  const isOurPick = onClock.isMe;
   const showTiers = ui.sort === 'score' && !q && ui.posFilter !== 'ROOKIE';
   let html = '', prevScore = null, tier = 1;
   rows.slice(0, 250).forEach((p, idx) => {
@@ -402,8 +405,11 @@ function renderPool() {
         + (isMine ? '✅ ' : '') + tInfo.name + ' · '
         + fmtPick(pickEntry.overall, state.settings.teams) + ' (#' + pickEntry.overall + ')</span></td>';
     } else {
-      actionCell = '<td style="white-space:nowrap"><button class="act mine" onclick="draftPlayer(' + p.id + ',true)">Mine</button> '
-        + '<button class="act gone" onclick="draftPlayer(' + p.id + ',false)">Gone</button></td>';
+      if (isOurPick) {
+        actionCell = '<td style="white-space:nowrap"><button class="act mine" title="Draft ' + p.name.replace(/"/g, '&quot;') + ' for our team" onclick="draftPlayer(' + p.id + ',true)">Select our Player</button></td>';
+      } else {
+        actionCell = '<td style="white-space:nowrap"><button class="act" title="Record pick for ' + onClock.name.replace(/"/g, '&quot;') + '" onclick="draftPlayer(' + p.id + ',false)">Pick Player</button></td>';
+      }
     }
 
     html += '<tr class="' + tierRow + (isTaken ? ' takenrow' : '') + '">'
