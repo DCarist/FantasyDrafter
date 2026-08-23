@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Automated Rankings Updater for Ken's Fantasy Drafter.
 
-Fetches the latest live consensus rankings (Dynasty Superflex, Dynasty 1QB,
-Redraft Consensus, ADP, Rookie rankings, and Bye weeks) from live open datasets,
-merges them with existing blurbs and schedules, and writes updated players-data.js.
+Fetches and merges rankings across multiple league formats:
+- Dynasty Superflex & Dynasty 1QB
+- Redraft 1QB (PPR, Half-PPR, Standard)
+- Redraft Superflex/2QB (PPR, Half-PPR, Standard)
+- Rookie draft rankings & prospect evaluations
+- Platform-specific consensus (Yahoo, ESPN, Boris Chen, FantasyPros, DynastyProcess)
+- NFL bye weeks, ages, schedules, and blurbs.
 
 Usage:
     python update-rankings.py
@@ -26,7 +30,7 @@ TEAM_FIX = {
 
 def norm_name(name):
     s = str(name).lower()
-    s = re.sub(r"[.'’,-]", '', s)
+    s = re.sub(r"[.'’,\"-]", '', s)
     s = re.sub(r'\b(jr|sr|ii|iii|iv|v)\b', '', s)
     return re.sub(r'\s+', ' ', s).strip()
 
@@ -35,6 +39,24 @@ def norm_team(team):
         return None
     t = str(team).upper().strip()
     return TEAM_FIX.get(t, t)
+
+def float_or_none(val):
+    if val is None or val == '' or val == 'NA':
+        return None
+    try:
+        v = float(str(val).strip().replace(',', ''))
+        return round(v, 1) if v > 0 else None
+    except ValueError:
+        return None
+
+def int_or_none(val):
+    if val is None or val == '' or val == 'NA':
+        return None
+    try:
+        v = int(float(str(val).strip().replace(',', '')))
+        return v if v > 0 else None
+    except ValueError:
+        return None
 
 def fetch_url(url):
     print(f"Fetching: {url}")
@@ -87,7 +109,61 @@ def main():
         if k:
             values_map[k] = r
 
-    # 4. Group ECR records by page_type
+    # 4. Fetch Google Sheet CSV (MainPaste)
+    sheet_url = "http://docs.google.com/spreadsheets/d/1dLvZB3w4KewKPF_Gx5vTDY47Ua-oYVicmOdYwf_RKnQ/gviz/tq?tqx=out:csv&sheet=MainPaste"
+    sheet_csv_text = fetch_url(sheet_url)
+    sheet_reader = csv.reader(io.StringIO(sheet_csv_text))
+    sheet_rows = list(sheet_reader)
+    print(f"Received {len(sheet_rows)} Google Sheet rows.")
+
+    sheet_map = {}
+    if len(sheet_rows) > 2:
+        for r in sheet_rows[2:]:
+            name = (r[0] if len(r) > 0 else '') or (r[1] if len(r) > 1 else '') or (r[3] if len(r) > 3 else '')
+            name = name.strip()
+            if not name:
+                continue
+            k = norm_name(name)
+            pos = r[4].strip().upper() if len(r) > 4 else ''
+            if pos == 'DEF':
+                pos = 'DST'
+            team = norm_team(r[5] if len(r) > 5 else '')
+            
+            rookie_raw = r[13].strip() if len(r) > 13 else ''
+            is_rookie = False
+            rookie_rank = None
+            if rookie_raw and rookie_raw.lower() != 'vet':
+                is_rookie = True
+                try:
+                    rookie_rank = int(float(rookie_raw))
+                except ValueError:
+                    pass
+
+            sheet_map[k] = {
+                'name': name,
+                'pos': pos,
+                'team': team,
+                'is_rookie': is_rookie,
+                'rookie_rank': rookie_rank,
+                'yahoo': float_or_none(r[7] if len(r) > 7 else ''),
+                'espn_ppr': float_or_none(r[8] if len(r) > 8 else ''),
+                'fp_std': float_or_none(r[9] if len(r) > 9 else ''),
+                'fp_ppr': float_or_none(r[10] if len(r) > 10 else ''),
+                'fp_half': float_or_none(r[11] if len(r) > 11 else ''),
+                'dyn_1qb': float_or_none(r[12] if len(r) > 12 else ''),
+                'espn_std': float_or_none(r[14] if len(r) > 14 else ''),
+                'dyn_2qb': float_or_none(r[15] if len(r) > 15 else ''),
+                'fp_2qb_std': float_or_none(r[16] if len(r) > 16 else ''),
+                'fp_2qb_ppr': float_or_none(r[17] if len(r) > 17 else ''),
+                'fp_2qb_half': float_or_none(r[18] if len(r) > 18 else ''),
+                'boris_name': r[28].strip() if len(r) > 28 else '',
+                'boris_ppr': float_or_none(r[29] if len(r) > 29 else ''),
+                'boris_half': float_or_none(r[30] if len(r) > 30 else ''),
+                'boris_std': float_or_none(r[31] if len(r) > 31 else ''),
+            }
+        print(f"Parsed {len(sheet_map)} player records from Google Sheet.")
+
+    # 5. Build player records from ECR, Sheet, and Values
     players = {}  # norm_name -> dict
     byes = dict(existing_byes)
     rookies = set()
@@ -122,8 +198,21 @@ def main():
             'redraft': None,
             'adp': None,
             'rookie': False,
+            'rookieRank': None,
             'age': None,
-            'blurb': existing_blurbs.get(k)
+            'blurb': existing_blurbs.get(k),
+            'red_1qb_ppr': None,
+            'red_1qb_half': None,
+            'red_1qb_std': None,
+            'red_sf_ppr': None,
+            'red_sf_half': None,
+            'red_sf_std': None,
+            'yahoo': None,
+            'espn_ppr': None,
+            'espn_std': None,
+            'boris_ppr': None,
+            'boris_half': None,
+            'boris_std': None,
         })
 
         if team:
@@ -135,21 +224,107 @@ def main():
         try:
             rank_val = float(r.get('ecr', '0'))
             if rank_val > 0:
+                rank_rounded = round(rank_val, 1)
                 if page_type == 'dynasty-op':
-                    rec['dynSF'] = round(rank_val, 1)
+                    rec['dynSF'] = rank_rounded
                 elif page_type == 'dynasty-overall':
-                    rec['dyn1QB'] = round(rank_val, 1)
+                    rec['dyn1QB'] = rank_rounded
                 elif page_type == 'redraft-overall':
-                    rec['redraft'] = round(rank_val, 1)
+                    rec['redraft'] = rank_rounded
+                    if rec['red_1qb_half'] is None:
+                        rec['red_1qb_half'] = rank_rounded
+                elif page_type == 'redraft-op':
+                    if rec['red_sf_ppr'] is None:
+                        rec['red_sf_ppr'] = rank_rounded
                 elif page_type == 'best-overall':
-                    rec['adp'] = round(rank_val, 1)
+                    rec['adp'] = rank_rounded
                 elif page_type == 'dynasty-rk':
                     rec['rookie'] = True
                     rookies.add(k)
         except ValueError:
             pass
 
-    # 5. Enrich with values.csv data (ages, draft year for rookies, fallback dynasty ranks)
+    # 6. Merge Google Sheet data
+    for k, sdata in sheet_map.items():
+        rec = players.setdefault(k, {
+            'name': sdata['name'],
+            'pos': sdata['pos'],
+            'teams': [],
+            'positions': [],
+            'dynSF': None,
+            'dyn1QB': None,
+            'redraft': None,
+            'adp': None,
+            'rookie': False,
+            'rookieRank': None,
+            'age': None,
+            'blurb': existing_blurbs.get(k),
+            'red_1qb_ppr': None,
+            'red_1qb_half': None,
+            'red_1qb_std': None,
+            'red_sf_ppr': None,
+            'red_sf_half': None,
+            'red_sf_std': None,
+            'yahoo': None,
+            'espn_ppr': None,
+            'espn_std': None,
+            'boris_ppr': None,
+            'boris_half': None,
+            'boris_std': None,
+        })
+
+        if sdata['team']:
+            rec['teams'].append(sdata['team'])
+        if sdata['pos']:
+            rec['positions'].append(sdata['pos'])
+
+        if sdata['is_rookie']:
+            rec['rookie'] = True
+            rookies.add(k)
+        if sdata['rookie_rank'] is not None:
+            rec['rookieRank'] = sdata['rookie_rank']
+
+        # Dynasty ranks
+        if sdata['dyn_2qb'] is not None:
+            rec['dynSF'] = sdata['dyn_2qb']
+        if sdata['dyn_1qb'] is not None:
+            rec['dyn1QB'] = sdata['dyn_1qb']
+
+        # Redraft 1QB ranks
+        if sdata['fp_ppr'] is not None:
+            rec['red_1qb_ppr'] = sdata['fp_ppr']
+        if sdata['fp_half'] is not None:
+            rec['red_1qb_half'] = sdata['fp_half']
+        if sdata['fp_std'] is not None:
+            rec['red_1qb_std'] = sdata['fp_std']
+
+        # Redraft Superflex ranks
+        if sdata['fp_2qb_ppr'] is not None:
+            rec['red_sf_ppr'] = sdata['fp_2qb_ppr']
+        if sdata['fp_2qb_half'] is not None:
+            rec['red_sf_half'] = sdata['fp_2qb_half']
+        if sdata['fp_2qb_std'] is not None:
+            rec['red_sf_std'] = sdata['fp_2qb_std']
+
+        # Platform ranks
+        if sdata['yahoo'] is not None:
+            rec['yahoo'] = sdata['yahoo']
+        if sdata['espn_ppr'] is not None:
+            rec['espn_ppr'] = sdata['espn_ppr']
+        if sdata['espn_std'] is not None:
+            rec['espn_std'] = sdata['espn_std']
+        if sdata['boris_ppr'] is not None:
+            rec['boris_ppr'] = sdata['boris_ppr']
+        if sdata['boris_half'] is not None:
+            rec['boris_half'] = sdata['boris_half']
+        if sdata['boris_std'] is not None:
+            rec['boris_std'] = sdata['boris_std']
+
+        # Default consensus redraft fallback
+        if rec['redraft'] is None:
+            rec['redraft'] = rec['red_1qb_half'] or rec['red_1qb_ppr'] or rec['red_1qb_std']
+
+    # 7. Enrich with values.csv data (ages, draft year for rookies, fallback dynasty ranks)
     for k, rec in players.items():
         v = values_map.get(k)
         if v:
@@ -164,6 +339,7 @@ def main():
                     yr = int(float(v['draft_year']))
                     if yr >= 2026:
                         rec['rookie'] = True
+                        rookies.add(k)
                 except ValueError:
                     pass
 
@@ -179,9 +355,8 @@ def main():
                 except ValueError:
                     pass
 
-    # 6. Finalize records and resolve team/position conflicts
+    # 8. Finalize records, resolve team/position conflicts, and apply fallbacks
     out = []
-    current_year = date.today().year
 
     for k, rec in players.items():
         # Determine primary team by majority vote
@@ -200,8 +375,30 @@ def main():
         if dyn_sf is None and pos != 'QB' and rec.get('dyn1QB') is not None:
             dyn_sf = rec['dyn1QB']
 
-        # Keep only players with at least one active ranking
-        if dyn_sf is None and rec.get('redraft') is None and rec.get('adp') is None:
+        # If 1QB dynasty is missing for non-QB, dyn_sf is a fine stand-in
+        dyn_1qb = rec.get('dyn1QB')
+        if dyn_1qb is None and pos != 'QB' and dyn_sf is not None:
+            dyn_1qb = dyn_sf
+
+        # If QB is missing Superflex rank but has 1QB rank, fallback to 1QB rank
+        if dyn_sf is None and rec.get('dyn1QB') is not None:
+            dyn_sf = rec['dyn1QB']
+        if dyn_1qb is None and rec.get('dynSF') is not None:
+            dyn_1qb = rec['dynSF']
+
+        # Fill redraft format fallbacks
+        red_1qb_half = rec.get('red_1qb_half') or rec.get('redraft') or rec.get('red_1qb_ppr') or rec.get('red_1qb_std') or rec.get('espn_ppr') or rec.get('yahoo')
+        red_1qb_ppr = rec.get('red_1qb_ppr') or rec.get('espn_ppr') or red_1qb_half
+        red_1qb_std = rec.get('red_1qb_std') or rec.get('espn_std') or red_1qb_half
+
+        red_sf_ppr = rec.get('red_sf_ppr') or (red_1qb_ppr if pos != 'QB' else None)
+        red_sf_half = rec.get('red_sf_half') or (red_1qb_half if pos != 'QB' else None)
+        red_sf_std = rec.get('red_sf_std') or (red_1qb_std if pos != 'QB' else None)
+
+        redraft_consensus = rec.get('redraft') or red_1qb_half or red_1qb_ppr or red_1qb_std or red_sf_half or red_sf_ppr
+
+        # Keep only players with at least one active ranking metric
+        if dyn_sf is None and dyn_1qb is None and redraft_consensus is None and rec.get('adp') is None:
             continue
 
         out.append({
@@ -211,15 +408,28 @@ def main():
             'bye': byes.get(team),
             'age': rec.get('age'),
             'rookie': bool(rec.get('rookie')),
+            'rookieRank': rec.get('rookieRank'),
             'dynSF': dyn_sf,
-            'dyn1QB': rec.get('dyn1QB'),
-            'redraft': rec.get('redraft'),
+            'dyn1QB': dyn_1qb,
+            'redraft': redraft_consensus,
             'adp': rec.get('adp'),
+            'red_1qb_ppr': red_1qb_ppr,
+            'red_1qb_half': red_1qb_half,
+            'red_1qb_std': red_1qb_std,
+            'red_sf_ppr': red_sf_ppr,
+            'red_sf_half': red_sf_half,
+            'red_sf_std': red_sf_std,
+            'yahoo': rec.get('yahoo'),
+            'espn_ppr': rec.get('espn_ppr'),
+            'espn_std': rec.get('espn_std'),
+            'boris_ppr': rec.get('boris_ppr'),
+            'boris_half': rec.get('boris_half'),
+            'boris_std': rec.get('boris_std'),
             'blurb': rec.get('blurb')
         })
 
     # Sort by best available rank
-    out.sort(key=lambda p: min(x for x in (p['dynSF'], p['redraft'], p['adp'], 9999) if x is not None))
+    out.sort(key=lambda p: min(x for x in (p['dynSF'], p['dyn1QB'], p['redraft'], p['adp'], 9999) if x is not None))
 
     payload = {
         'generated': date.today().isoformat(),
@@ -231,11 +441,12 @@ def main():
             'dynasty1QB': ['https://www.fantasypros.com/nfl/rankings/dynasty-overall.php'],
             'redraft': ['https://www.fantasypros.com/nfl/rankings/consensus-cheatsheets.php'],
             'adp': ['https://www.fantasypros.com/nfl/adp/best-ball-overall.php'],
+            'googleSheet': [sheet_url],
             'provider': ['https://github.com/dynastyprocess/data']
         }
     }
 
-    # 7. Write updated players-data.js
+    # 9. Write updated players-data.js
     with open('players-data.js', 'w', encoding='utf-8') as f:
         f.write('// Generated by update-rankings.py — do not hand-edit.\n')
         f.write('window.DRAFT_DATA = ')
@@ -246,20 +457,26 @@ def main():
     with open('players-data.json', 'w', encoding='utf-8') as f:
         json.dump(payload, f, indent=2)
 
-    # 8. Report Summary
+    # 10. Report Summary
     print("\n=== Update Complete ===")
     print(f"Total active players merged: {len(out)}")
     both = sum(1 for p in out if p['dynSF'] and p['redraft'])
     print(f"Players with both Dynasty SF and Redraft ranks: {both}")
-    print(f"Rookies identified: {sum(1 for p in out if p['rookie'])}")
+    rookies_count = sum(1 for p in out if p['rookie'])
+    print(f"Rookies identified: {rookies_count}")
     print(f"Teams with verified bye weeks: {len(byes)}")
     print(f"Generated timestamp: {payload['generated']}")
 
     print("\nTop 12 Players by Dynasty Superflex:")
     top_sf = sorted([p for p in out if p['dynSF']], key=lambda p: p['dynSF'])[:12]
     for p in top_sf:
-        r_tag = ' (R)' if p['rookie'] else ''
+        r_tag = f" (Rk #{p['rookieRank']})" if p['rookie'] and p['rookieRank'] else (' (R)' if p['rookie'] else '')
         print(f"  {p['dynSF']:>4.1f}  {p['name']:<24} {p['pos']:<3} {p['team'] or '?':<4} Bye {p['bye'] or '?'}  Age {p['age'] or '?'}{r_tag}")
+
+    print("\nTop 8 Rookies by Superflex Value:")
+    top_rk = sorted([p for p in out if p['rookie'] and p['dynSF']], key=lambda p: p['dynSF'])[:8]
+    for p in top_rk:
+        print(f"  DynSF: {p['dynSF']:>4.1f} | Dyn1QB: {p['dyn1QB'] or '—':>4} | Draft Rk: #{p['rookieRank'] or '—':<2} | {p['name']:<22} {p['pos']:<3} {p['team'] or '?'}")
 
 if __name__ == '__main__':
     main()

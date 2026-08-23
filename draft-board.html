@@ -160,7 +160,9 @@
     <label class="set">Teams <b id="hdrteams" style="color:var(--text)">12</b></label>
     <label class="set">Rounds <input type="number" id="rounds" min="1" max="40"></label>
     <label class="set">Order <select id="mode"><option value="3rr">3rd-Round Reversal</option><option value="snake">Normal snake</option></select></label>
-    <label class="set"><input type="checkbox" id="teprem"> TE premium (1.5 PPR)</label>
+    <label class="set">Scoring <select id="hdrscoring"><option value="half">0.5 Half-PPR</option><option value="ppr">Full PPR</option><option value="std">Standard</option></select></label>
+    <label class="set">QB Mode <select id="hdrqb"><option value="sf">Superflex (2QB)</option><option value="1qb">1 QB</option></select></label>
+    <label class="set"><input type="checkbox" id="teprem"> TE prem</label>
     <label class="set">Win-now <input type="range" id="blend" min="0" max="100" step="5"> Dynasty <span id="blendval" style="color:var(--text)"></span></label>
   </div>
 </header>
@@ -197,8 +199,9 @@
       <input id="search" type="search" placeholder="Search player…">
       <label class="set">Sort <select id="sortsel">
         <option value="score">Draft score</option>
-        <option value="dyn">Dynasty SF</option>
-        <option value="red">Redraft</option>
+        <option value="dyn">Dynasty rank</option>
+        <option value="red">Redraft rank</option>
+        <option value="rookie">Rookie / Prospect rank</option>
         <option value="adp">ADP</option>
       </select></label>
       <label class="set"><input type="checkbox" id="hidetaken"> Hide taken</label>
@@ -207,7 +210,7 @@
       <table>
         <thead><tr>
           <th>#</th><th>Player</th><th>Pos</th><th>Team</th><th>Bye</th>
-          <th class="num">Dyn SF</th><th class="num">Redraft</th><th class="num">ADP</th><th class="num">Score</th><th></th>
+          <th class="num" id="th_dyn">Dyn SF</th><th class="num" id="th_red">Redraft</th><th class="num">ADP</th><th class="num">Score</th><th></th>
         </tr></thead>
         <tbody id="pool"></tbody>
       </table>
@@ -248,6 +251,8 @@ const DEFAULTS = {
   slot: 2,
   rounds: 25,
   mode: '3rr',
+  scoring: 'half',
+  qbFormat: 'sf',
   teprem: false,
   blend: 60,
   teamNames: [
@@ -267,6 +272,9 @@ function normalizeState(s) {
   const tCount = Math.max(2, Math.min(32, parseInt(s.settings.teams, 10) || 12));
   s.settings.teams = tCount;
   if (!s.settings.slot || s.settings.slot < 1 || s.settings.slot > tCount) s.settings.slot = 1;
+
+  if (!['ppr', 'half', 'std'].includes(s.settings.scoring)) s.settings.scoring = 'half';
+  if (!['sf', '1qb'].includes(s.settings.qbFormat)) s.settings.qbFormat = 'sf';
 
   if (!Array.isArray(s.settings.teamNames)) s.settings.teamNames = [];
   const names = [];
@@ -516,14 +524,27 @@ function scored() {
   const s = state.settings;
   const blend = s.blend / 100;
   return PLAYERS.map(p => {
-    const dynScore = rankToScore(p.dynSF, 220);
-    const redScore = rankToScore(p.redraft, 200);
-    const score = compositeScore({ pos: p.pos, dynScore: dynScore, redScore: redScore }, blend, s.teprem);
-    return Object.assign({ score: score }, p);
+    const dynRank = getDynastyRank(p, s.qbFormat);
+    const redRank = getRedraftRank(p, s.qbFormat, s.scoring);
+    const prospectRank = getProspectRank(p, s.qbFormat, s.scoring);
+    const score = computeFormatScore(p, {
+      blend: blend,
+      qbFormat: s.qbFormat,
+      scoring: s.scoring,
+      tePremium: s.teprem,
+      depth: 250
+    });
+    return Object.assign({
+      activeDyn: dynRank,
+      activeRed: redRank,
+      prospectRank: prospectRank,
+      score: score
+    }, p);
   });
 }
 
 function renderPool() {
+  const s = state.settings;
   const taken = takenMap();
   const pickOf = new Map();
   for (const e of state.log) if (e.playerId != null) pickOf.set(e.playerId, e);
@@ -536,7 +557,21 @@ function renderPool() {
   else if (ui.posFilter !== 'ALL') rows = rows.filter(p => (p.pos || '').toUpperCase() === ui.posFilter);
   if (q) rows = rows.filter(p => normalizeName(p.name).includes(q));
 
-  const key = { score: p => -(p.score ?? -1), dyn: p => p.dynSF ?? 9999, red: p => p.redraft ?? 9999, adp: p => p.adp ?? 9999 }[ui.sort];
+  // Dynamic table headers
+  if ($('th_dyn')) $('th_dyn').textContent = (s.qbFormat === '1qb') ? 'Dyn 1QB' : 'Dyn SF';
+  if ($('th_red')) {
+    const scTag = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'STD' : 'Half');
+    $('th_red').textContent = 'Red (' + (s.qbFormat === '1qb' ? scTag : 'SF ' + scTag) + ')';
+  }
+
+  const key = {
+    score: p => -(p.score ?? -1),
+    dyn: p => p.activeDyn ?? 9999,
+    red: p => p.activeRed ?? 9999,
+    rookie: p => (p.rookie ? (p.prospectRank ?? p.activeDyn ?? 999) : 9999),
+    adp: p => p.adp ?? 9999
+  }[ui.sort] || (p => -(p.score ?? -1));
+
   rows.sort((a, b) => key(a) - key(b));
 
   const pick = currentPick();
@@ -555,7 +590,8 @@ function renderPool() {
     if (p.score != null) prevScore = p.score;
     const posClass = ['QB','RB','WR','TE'].includes(p.pos) ? p.pos : 'other';
     const value = !isTaken && p.adp && p.adp - pick >= 8 ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>' : '';
-    const rookie = p.rookie ? '<span class="rookietag">R</span>' : '';
+    const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
+    const rookie = p.rookie ? '<span class="rookietag" title="Rookie Draft Rank' + rookieRankStr + '">R' + rookieRankStr + '</span>' : '';
     const age = p.age ? ' <span class="meta">' + p.age + 'y</span>' : '';
     const watched = isWatched(state.watchlist, p.id);
     const starBtn = !isTaken
@@ -598,8 +634,8 @@ function renderPool() {
       + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
       + '<td class="meta">' + (p.team || '—') + '</td>'
       + byeCell
-      + '<td class="num rk">' + (p.dynSF ?? '—') + '</td>'
-      + '<td class="num rk">' + (p.redraft ?? '—') + '</td>'
+      + '<td class="num rk">' + (p.activeDyn ?? '—') + '</td>'
+      + '<td class="num rk">' + (p.activeRed ?? '—') + '</td>'
       + '<td class="num rk">' + (p.adp ? p.adp.toFixed(0) : '—') + '</td>'
       + '<td class="num score">' + (p.score != null ? p.score.toFixed(1) : '—') + '</td>'
       + actionCell
@@ -792,20 +828,10 @@ function setFilter(t) { ui.posFilter = t; renderTabs(); renderPool(); }
 
 function renderWatchlistPanel() {
   const taken = takenMap();
-  const watchedAvailable = (state.watchlist || [])
-    .filter(id => !taken.has(id))
-    .map(id => byId(id))
-    .filter(Boolean);
-
-  const s = state.settings;
-  const blend = s.blend / 100;
-  const scoredWatched = watchedAvailable.map(p => {
-    const dynScore = rankToScore(p.dynSF, 220);
-    const redScore = rankToScore(p.redraft, 200);
-    const score = compositeScore({ pos: p.pos, dynScore: dynScore, redScore: redScore }, blend, s.teprem);
-    return Object.assign({ score: score }, p);
-  });
-  scoredWatched.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const allScored = scored();
+  const scoredWatched = allScored
+    .filter(p => isWatched(state.watchlist, p.id) && !taken.has(p.id))
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
 
   $('mywatchlistcount').textContent = scoredWatched.length ? scoredWatched.length + ' players' : 'Empty';
 
@@ -825,7 +851,8 @@ function renderWatchlistPanel() {
     }
 
     const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
-    const rookieBadge = p.rookie ? '<span class="rookietag">R</span>' : '';
+    const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
+    const rookieBadge = p.rookie ? '<span class="rookietag">R' + rookieRankStr + '</span>' : '';
 
     return '<div class="rosteritem" style="padding:4px 0">'
       + '<button type="button" class="watchbtn active" title="Remove from Watchlist" onclick="toggleWatch(' + p.id + ', event)" style="font-size:13px">★</button>'
@@ -839,10 +866,13 @@ function renderWatchlistPanel() {
 
 function renderBanner() {
   const d = window.DRAFT_DATA;
+  const s = state.settings;
+  const qbStr = s.qbFormat === '1qb' ? '1-QB' : 'Superflex';
+  const scStr = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'Standard' : 'Half-PPR');
   $('databanner').innerHTML = d.players.length ? '' :
     '<div class="warnbox">⏳ Rankings are still being fetched — the board works, but the player list is empty until the data lands.</div>';
   $('sources').textContent = d.players.length
-    ? d.players.length + ' players · data gathered ' + (d.generated || '') + ' · Dyn SF = dynasty superflex rank · Redraft/ADP are 1-QB based (composite score corrects for superflex)'
+    ? d.players.length + ' players · data gathered ' + (d.generated || '') + ' · Mode: ' + qbStr + ' (' + scStr + ') · Blended rankings synced'
     : '';
 }
 
@@ -861,6 +891,17 @@ function render() {
 function showPlayer(id) {
   const p = byId(id);
   if (!p) return;
+  const s = state.settings;
+  const activeDyn = getDynastyRank(p, s.qbFormat);
+  const activeRed = getRedraftRank(p, s.qbFormat, s.scoring);
+  const activeScore = computeFormatScore(p, {
+    blend: s.blend / 100,
+    qbFormat: s.qbFormat,
+    scoring: s.scoring,
+    tePremium: s.teprem,
+    depth: 250
+  });
+
   const taken = takenMap();
   const posClass = ['QB','RB','WR','TE'].includes(p.pos) ? p.pos : 'other';
 
@@ -879,8 +920,15 @@ function showPlayer(id) {
   }
 
   const stats = [
-    ['Dyn SF', p.dynSF], ['Dyn 1QB', p.dyn1QB], ['Redraft', p.redraft],
-    ['ADP', p.adp ? p.adp.toFixed(0) : null], ['Age', p.age], ['Bye', p.bye],
+    ['Active Mode (' + (s.qbFormat === '1qb' ? '1QB' : 'SF') + ' ' + s.scoring.toUpperCase() + ')', activeScore != null ? activeScore.toFixed(1) + ' pts' : null],
+    ['Dynasty ' + (s.qbFormat === '1qb' ? '1QB' : 'SF'), activeDyn],
+    ['Redraft (' + s.scoring.toUpperCase() + ')', activeRed],
+    ['Dyn SF', p.dynSF], ['Dyn 1QB', p.dyn1QB],
+    ['1QB PPR', p.red_1qb_ppr], ['1QB Half', p.red_1qb_half], ['1QB Std', p.red_1qb_std],
+    ['SF PPR', p.red_sf_ppr], ['SF Half', p.red_sf_half], ['SF Std', p.red_sf_std],
+    ['Rookie Draft Rank', p.rookieRank ? '#' + p.rookieRank : (p.rookie ? 'Rookie' : null)],
+    ['ADP', p.adp ? p.adp.toFixed(0) : null], ['Age', p.age ? p.age + 'y' : null], ['Bye', p.bye ? 'Wk ' + p.bye : null],
+    ['ESPN', p.espn_ppr || p.espn_std], ['Yahoo', p.yahoo], ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std]
   ].filter(x => x[1] != null)
    .map(x => '<span class="stat">' + x[0] + '<b>' + x[1] + '</b></span>').join('');
   const snapDate = window.DRAFT_DATA.extrasGenerated || window.DRAFT_DATA.generated || '';
@@ -985,7 +1033,7 @@ function openLeagueSetup() {
     return rows;
   }
 
-  $('modalbox').innerHTML =
+    $('modalbox').innerHTML =
     '<h3>⚙️ League Setup & Draft Positions'
     + '<button class="close" onclick="closeModal()">×</button></h3>'
     + '<div class="setup-grid">'
@@ -993,6 +1041,8 @@ function openLeagueSetup() {
     + '<div class="setup-field"><label>Total Teams</label><input type="number" id="setup_team_count" min="2" max="32" value="' + s.teams + '"></div>'
     + '<div class="setup-field"><label>Total Draft Rounds</label><input type="number" id="setup_rounds_count" min="1" max="50" value="' + s.rounds + '"></div>'
     + '<div class="setup-field"><label>Draft Order</label><select id="setup_mode_select"><option value="3rr"' + (s.mode === '3rr' ? ' selected' : '') + '>3rd-Round Reversal (3RR)</option><option value="snake"' + (s.mode === 'snake' ? ' selected' : '') + '>Normal Snake</option></select></div>'
+    + '<div class="setup-field"><label>Scoring Format</label><select id="setup_scoring_select"><option value="half"' + (s.scoring === 'half' ? ' selected' : '') + '>Half-PPR (0.5)</option><option value="ppr"' + (s.scoring === 'ppr' ? ' selected' : '') + '>Full PPR (1.0)</option><option value="std"' + (s.scoring === 'std' ? ' selected' : '') + '>Standard (0 PPR)</option></select></div>'
+    + '<div class="setup-field"><label>QB Format</label><select id="setup_qb_select"><option value="sf"' + (s.qbFormat === 'sf' ? ' selected' : '') + '>Superflex (2QB/SF)</option><option value="1qb"' + (s.qbFormat === '1qb' ? ' selected' : '') + '>1 QB (Single QB)</option></select></div>'
     + '</div>'
     + '<h4 style="margin-top:14px">📋 Roster Positions & Starting Lineup</h4>'
     + '<div class="setup-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">'
@@ -1145,6 +1195,8 @@ function saveLeagueSetup() {
   s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
   s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
   s.mode = $('setup_mode_select').value;
+  s.scoring = $('setup_scoring_select').value;
+  s.qbFormat = $('setup_qb_select').value;
   s.slot = setupMySlot;
   s.teamNames = setupDraftNames.slice(0, s.teams);
   while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
@@ -1176,6 +1228,8 @@ function bindHeaderControls() {
   const s = state.settings;
   $('rounds').value = s.rounds;
   $('mode').value = s.mode;
+  if ($('hdrscoring')) $('hdrscoring').value = s.scoring;
+  if ($('hdrqb')) $('hdrqb').value = s.qbFormat;
   $('teprem').checked = s.teprem;
   $('blend').value = s.blend;
   $('blendval').textContent = s.blend + '%';
@@ -1186,6 +1240,14 @@ function bindSettings() {
   const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
   on('hdrslot', 'change', () => {
     state.settings.slot = +$('hdrslot').value || 1;
+    save(); render();
+  });
+  on('hdrscoring', 'change', () => {
+    state.settings.scoring = $('hdrscoring').value;
+    save(); render();
+  });
+  on('hdrqb', 'change', () => {
+    state.settings.qbFormat = $('hdrqb').value;
     save(); render();
   });
   on('rounds', 'change', () => {

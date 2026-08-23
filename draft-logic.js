@@ -47,6 +47,98 @@ function normalizeName(name) {
     .trim();
 }
 
+// Supported league formats
+const FORMAT_OPTIONS = {
+  scoring: {
+    ppr: 'Full PPR (1.0)',
+    half: 'Half-PPR (0.5)',
+    std: 'Standard (0 PPR)',
+  },
+  qb: {
+    sf: 'Superflex (2QB/SF)',
+    '1qb': '1 QB (Single QB)',
+  }
+};
+
+// Resolves active Dynasty ranking based on QB mode (Superflex vs 1QB)
+function getDynastyRank(player, qbFormat) {
+  if (!player) return null;
+  const is1QB = (qbFormat === '1qb' || qbFormat === '1QB');
+  if (is1QB) {
+    if (player.dyn1QB != null) return player.dyn1QB;
+    if (player.dyn_1qb != null) return player.dyn_1qb;
+    return player.pos !== 'QB' ? (player.dynSF ?? player.dyn_sf ?? null) : null;
+  }
+  // Superflex / 2QB mode
+  if (player.dynSF != null) return player.dynSF;
+  if (player.dyn_sf != null) return player.dyn_sf;
+  return player.pos !== 'QB' ? (player.dyn1QB ?? player.dyn_1qb ?? null) : null;
+}
+
+// Resolves active Redraft ranking based on QB mode and Scoring mode (PPR, Half, STD)
+function getRedraftRank(player, qbFormat, scoringFormat) {
+  if (!player) return null;
+  const is1QB = (qbFormat === '1qb' || qbFormat === '1QB');
+  const scoring = String(scoringFormat || 'half').toLowerCase();
+
+  if (is1QB) {
+    if (scoring === 'ppr' || scoring === '1.0' || scoring === '1') {
+      return player.red_1qb_ppr ?? player.redraft ?? player.red_1qb_half ?? player.red_1qb_std ?? player.adp ?? null;
+    }
+    if (scoring === 'std' || scoring === 'standard' || scoring === '0') {
+      return player.red_1qb_std ?? player.redraft ?? player.red_1qb_half ?? player.red_1qb_ppr ?? player.adp ?? null;
+    }
+    // Default 0.5 Half-PPR
+    return player.red_1qb_half ?? player.redraft ?? player.red_1qb_ppr ?? player.red_1qb_std ?? player.adp ?? null;
+  }
+
+  // Superflex / 2QB mode
+  if (scoring === 'ppr' || scoring === '1.0' || scoring === '1') {
+    if (player.red_sf_ppr != null) return player.red_sf_ppr;
+    if (player.pos !== 'QB') return player.red_1qb_ppr ?? player.redraft ?? player.red_1qb_half ?? null;
+    return player.red_sf_half ?? player.red_sf_std ?? player.dynSF ?? null;
+  }
+  if (scoring === 'std' || scoring === 'standard' || scoring === '0') {
+    if (player.red_sf_std != null) return player.red_sf_std;
+    if (player.pos !== 'QB') return player.red_1qb_std ?? player.redraft ?? player.red_1qb_half ?? null;
+    return player.red_sf_half ?? player.red_sf_ppr ?? player.dynSF ?? null;
+  }
+  // Default 0.5 Half-PPR in SF
+  if (player.red_sf_half != null) return player.red_sf_half;
+  if (player.pos !== 'QB') return player.red_1qb_half ?? player.redraft ?? player.red_1qb_ppr ?? null;
+  return player.red_sf_ppr ?? player.red_sf_std ?? player.dynSF ?? null;
+}
+
+// Format-aware Composite Draft Score (0-100 scale)
+function computeFormatScore(player, options) {
+  if (!player) return null;
+  const opt = options || {};
+  const blend = (opt.blend != null) ? opt.blend : 0.6; // 0 (pure redraft) to 1 (pure dynasty)
+  const qbFormat = opt.qbFormat || 'sf';
+  const scoring = opt.scoring || opt.scoringFormat || 'half';
+  const tePremium = !!opt.tePremium;
+  const depth = opt.depth || 250;
+
+  const dynRank = getDynastyRank(player, qbFormat);
+  const redRank = getRedraftRank(player, qbFormat, scoring);
+
+  const dynScore = rankToScore(dynRank, depth);
+  const redScore = rankToScore(redRank, depth);
+
+  return compositeScore({ pos: player.pos, dynScore: dynScore, redScore: redScore }, blend, tePremium);
+}
+
+// Format-adjusted Prospect / Rookie rank calculation
+function getProspectRank(player, qbFormat, scoringFormat) {
+  if (!player || !player.rookie) return null;
+  const is1QB = (qbFormat === '1qb' || qbFormat === '1QB');
+  if (is1QB && player.rookieRank != null) {
+    return player.rookieRank;
+  }
+  // If in Superflex mode or no explicit rookieRank, use active dynasty rank
+  return getDynastyRank(player, qbFormat);
+}
+
 // Composite draft score, 0-100 scale.
 // dynastyScore / redraftScore are each already 0-100 (100 = best available anywhere).
 // blend: 0 = pure win-now (redraft), 1 = pure dynasty. TE premium gives TEs a bump.
@@ -357,5 +449,10 @@ if (typeof module !== 'undefined' && module.exports) {
     DEFAULT_ROSTER_SLOTS: DEFAULT_ROSTER_SLOTS,
     formatLineupSummary: formatLineupSummary,
     assignRosterSlots: assignRosterSlots,
+    FORMAT_OPTIONS: FORMAT_OPTIONS,
+    getDynastyRank: getDynastyRank,
+    getRedraftRank: getRedraftRank,
+    computeFormatScore: computeFormatScore,
+    getProspectRank: getProspectRank,
   };
 }
