@@ -1,0 +1,67 @@
+// Test suite for Draft Watchlist management and auto-removal
+import { createRequire } from 'module';
+import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+
+const require = createRequire(import.meta.url);
+const L = require('../draft-logic.js');
+
+resetFailures();
+printSuiteHeader('Draft Watchlist Management');
+
+// --- 1. isWatched tests ---
+eq(L.isWatched([], 10), false, 'Empty watchlist returns isWatched=false');
+eq(L.isWatched([5, 10, 15], 10), true, 'isWatched=true when player in watchlist');
+eq(L.isWatched([5, 10, 15], 20), false, 'isWatched=false when player not in watchlist');
+eq(L.isWatched(null, 10), false, 'Null watchlist returns isWatched=false');
+eq(L.isWatched([5, 10], null), false, 'Null playerId returns isWatched=false');
+
+// --- 2. toggleWatchlist tests ---
+const list1 = L.toggleWatchlist([], 10);
+eq(list1, [10], 'Toggling unlisted player into empty list adds it');
+
+const list2 = L.toggleWatchlist(list1, 20);
+eq(list2, [10, 20], 'Toggling another player adds to list');
+
+const list3 = L.toggleWatchlist(list2, 10);
+eq(list3, [20], 'Toggling existing player removes it from list');
+
+const list4 = L.toggleWatchlist(list3, 20);
+eq(list4, [], 'Toggling last player empties list');
+
+// Edge cases
+eq(L.toggleWatchlist(null, 5), [5], 'Toggling with null list initializes and adds player');
+eq(L.toggleWatchlist([5, 10], null), [5, 10], 'Toggling null playerId preserves list');
+
+// --- 3. cleanWatchlist tests (auto-removal on draft pick) ---
+const activeWatchlist = [1, 5, 8, 12, 15];
+
+// Case A: Pick player #8
+const cleaned1 = L.cleanWatchlist(activeWatchlist, [8]);
+eq(cleaned1, [1, 5, 12, 15], 'cleanWatchlist removes drafted player #8');
+
+// Case B: Pick non-watched player #99
+const cleaned2 = L.cleanWatchlist(activeWatchlist, [99]);
+eq(cleaned2, [1, 5, 8, 12, 15], 'cleanWatchlist leaves list unchanged when non-watched player picked');
+
+// Case C: Multiple picks (e.g. from jumpTo or bulk draft log)
+const cleaned3 = L.cleanWatchlist(activeWatchlist, [1, 12, 99]);
+eq(cleaned3, [5, 8, 15], 'cleanWatchlist removes multiple drafted players in one call');
+
+// Case D: Map or Set input for taken players
+const takenSet = new Set([5, 15]);
+const cleaned4 = L.cleanWatchlist(activeWatchlist, takenSet);
+eq(cleaned4, [1, 8, 12], 'cleanWatchlist supports Set as taken container');
+
+const takenMap = new Map([[5, 'me'], [12, 'other']]);
+const cleaned5 = L.cleanWatchlist(activeWatchlist, takenMap);
+eq(cleaned5, [1, 8, 15], 'cleanWatchlist supports Map as taken container');
+
+// Edge cases
+eq(L.cleanWatchlist(null, [1, 2]), [], 'cleanWatchlist on null returns empty array');
+eq(L.cleanWatchlist([1, 2], null), [1, 2], 'cleanWatchlist with null taken container preserves list');
+
+const success = finishSuite('Draft Watchlist Management');
+if (!success) {
+  process.exit(1);
+}
+

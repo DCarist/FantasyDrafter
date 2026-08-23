@@ -122,6 +122,221 @@ function resolvePickPlayer(entry, players) {
   };
 }
 
+// Resolves all player objects currently drafted to a given user/slot's roster.
+function getMyRosterPlayers(log, players, mySlot, teamsCount, mode) {
+  if (!Array.isArray(log)) return [];
+  const myPicks = log.filter(e => {
+    if (e.mine === true) return true;
+    if (mySlot != null && teamsCount != null && mode != null) {
+      return slotForOverall(e.overall, teamsCount, mode).slot === mySlot;
+    }
+    return false;
+  });
+  return myPicks.map(e => resolvePickPlayer(e, players)).filter(Boolean);
+}
+
+// Determines if a candidate player has a bye clash with the current roster.
+// Returns { type: 'same-pos' | 'other-pos' | 'none', samePos: [...], otherPos: [...] }
+function getByeClashStatus(candidate, myRosterPlayers) {
+  if (!candidate || candidate.bye == null || !Array.isArray(myRosterPlayers) || myRosterPlayers.length === 0) {
+    return { type: 'none', samePos: [], otherPos: [] };
+  }
+
+  const candBye = parseInt(candidate.bye, 10);
+  if (isNaN(candBye) || candBye <= 0) {
+    return { type: 'none', samePos: [], otherPos: [] };
+  }
+
+  const candPos = (candidate.pos || '').toUpperCase();
+  const candId = candidate.id;
+
+  const samePos = [];
+  const otherPos = [];
+
+  for (const p of myRosterPlayers) {
+    if (!p || p.bye == null) continue;
+    // Skip if comparing candidate against themselves on the roster
+    if (candId != null && p.id != null && p.id === candId) continue;
+
+    const pBye = parseInt(p.bye, 10);
+    if (pBye === candBye) {
+      const pPos = (p.pos || '').toUpperCase();
+      if (pPos === candPos && candPos !== '') {
+        samePos.push(p);
+      } else {
+        otherPos.push(p);
+      }
+    }
+  }
+
+  let type = 'none';
+  if (samePos.length > 0) {
+    type = 'same-pos';
+  } else if (otherPos.length > 0) {
+    type = 'other-pos';
+  }
+
+  return {
+    type: type,
+    samePos: samePos,
+    otherPos: otherPos,
+  };
+}
+
+// Checks whether a playerId is on the watchlist.
+function isWatched(watchlist, playerId) {
+  if (!Array.isArray(watchlist) || playerId == null) return false;
+  return watchlist.includes(playerId);
+}
+
+// Toggles a playerId on or off the watchlist. Returns a new array.
+function toggleWatchlist(watchlist, playerId) {
+  if (playerId == null) return Array.isArray(watchlist) ? watchlist.slice() : [];
+  const list = Array.isArray(watchlist) ? watchlist.slice() : [];
+  const idx = list.indexOf(playerId);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+  } else {
+    list.push(playerId);
+  }
+  return list;
+}
+
+// Removes any drafted/taken player IDs from the watchlist. Returns a new array.
+function cleanWatchlist(watchlist, takenContainer) {
+  if (!Array.isArray(watchlist)) return [];
+  if (!takenContainer) return watchlist.slice();
+
+  let hasTaken;
+  if (takenContainer instanceof Set || takenContainer instanceof Map) {
+    hasTaken = id => takenContainer.has(id);
+  } else if (Array.isArray(takenContainer)) {
+    const s = new Set(takenContainer);
+    hasTaken = id => s.has(id);
+  } else {
+    hasTaken = id => !!takenContainer[id];
+  }
+
+  return watchlist.filter(id => !hasTaken(id));
+}
+
+const DEFAULT_ROSTER_SLOTS = {
+  qb: 1,
+  rb: 2,
+  wr: 2,
+  te: 1,
+  flex: 3,
+  superflex: 1,
+  k: 0,
+  dst: 0,
+  bench: 15
+};
+
+// Generates a human-readable lineup summary string (e.g. "QB · 2RB · 2WR · TE · 3FLEX · SF · 15 BN")
+function formatLineupSummary(rosterSlots) {
+  const s = Object.assign({}, DEFAULT_ROSTER_SLOTS, rosterSlots);
+  const parts = [];
+  const add = (count, label) => {
+    if (!count || count <= 0) return;
+    parts.push((count > 1 ? count : '') + label);
+  };
+  add(s.qb, 'QB');
+  add(s.rb, 'RB');
+  add(s.wr, 'WR');
+  add(s.te, 'TE');
+  add(s.flex, 'FLEX');
+  add(s.superflex, 'SF');
+  add(s.k, 'K');
+  add(s.dst, 'D/ST');
+  if (s.bench && s.bench > 0) parts.push(s.bench + ' BN');
+  return parts.join(' · ') || 'No Starters Configured';
+}
+
+// Allocates drafted players into starter slots first (by position, flex, superflex) and then bench.
+function assignRosterSlots(draftedPlayers, rosterSlots) {
+  const s = Object.assign({}, DEFAULT_ROSTER_SLOTS, rosterSlots);
+  const pool = Array.isArray(draftedPlayers) ? draftedPlayers.slice() : [];
+
+  const starterSlots = [];
+  const addSlot = (type, label) => starterSlots.push({ slotType: type, label: label, player: null });
+
+  for (let i = 0; i < (s.qb || 0); i++) addSlot('QB', 'QB');
+  for (let i = 0; i < (s.rb || 0); i++) addSlot('RB', 'RB');
+  for (let i = 0; i < (s.wr || 0); i++) addSlot('WR', 'WR');
+  for (let i = 0; i < (s.te || 0); i++) addSlot('TE', 'TE');
+  for (let i = 0; i < (s.flex || 0); i++) addSlot('FLEX', 'FLEX');
+  for (let i = 0; i < (s.superflex || 0); i++) addSlot('SF', 'SF');
+  for (let i = 0; i < (s.k || 0); i++) addSlot('K', 'K');
+  for (let i = 0; i < (s.dst || 0); i++) addSlot('DST', 'D/ST');
+
+  // Helper to extract first matching player from pool
+  const extractMatch = predicate => {
+    const idx = pool.findIndex(predicate);
+    if (idx !== -1) {
+      return pool.splice(idx, 1)[0];
+    }
+    return null;
+  };
+
+  const isDst = p => {
+    const pos = (p.pos || '').toUpperCase();
+    return pos === 'DST' || pos === 'DEF' || pos === 'D/ST';
+  };
+
+  // 1. Primary Position Starters
+  for (const slot of starterSlots) {
+    if (slot.player) continue;
+    if (slot.slotType === 'QB') slot.player = extractMatch(p => (p.pos || '').toUpperCase() === 'QB');
+    else if (slot.slotType === 'RB') slot.player = extractMatch(p => (p.pos || '').toUpperCase() === 'RB');
+    else if (slot.slotType === 'WR') slot.player = extractMatch(p => (p.pos || '').toUpperCase() === 'WR');
+    else if (slot.slotType === 'TE') slot.player = extractMatch(p => (p.pos || '').toUpperCase() === 'TE');
+    else if (slot.slotType === 'K') slot.player = extractMatch(p => (p.pos || '').toUpperCase() === 'K');
+    else if (slot.slotType === 'DST') slot.player = extractMatch(isDst);
+  }
+
+  // 2. Regular FLEX Starters (RB / WR / TE)
+  for (const slot of starterSlots) {
+    if (slot.player || slot.slotType !== 'FLEX') continue;
+    slot.player = extractMatch(p => ['RB', 'WR', 'TE'].includes((p.pos || '').toUpperCase()));
+  }
+
+  // 3. Superflex Starters (QB / RB / WR / TE)
+  for (const slot of starterSlots) {
+    if (slot.player || slot.slotType !== 'SF') continue;
+    slot.player = extractMatch(p => ['QB', 'RB', 'WR', 'TE'].includes((p.pos || '').toUpperCase()));
+  }
+
+  // 4. Remaining players go to bench
+  const bench = pool.map(p => ({
+    slotType: 'BN',
+    label: 'BN',
+    player: p
+  }));
+
+  // Calculate positional counts
+  const counts = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
+  if (Array.isArray(draftedPlayers)) {
+    for (const p of draftedPlayers) {
+      if (!p) continue;
+      const pos = (p.pos || '').toUpperCase();
+      if (isDst(p)) counts.DST++;
+      else if (counts[pos] != null) counts[pos]++;
+    }
+  }
+
+  const totalStarters = starterSlots.length;
+  const totalBench = Math.max(0, s.bench || 0);
+
+  return {
+    starters: starterSlots,
+    bench: bench,
+    counts: counts,
+    totalStarters: totalStarters,
+    totalBench: totalBench,
+    rosterSlots: s
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     roundIsForward: roundIsForward,
@@ -134,5 +349,13 @@ if (typeof module !== 'undefined' && module.exports) {
     defaultTeams: defaultTeams,
     teamForOverall: teamForOverall,
     resolvePickPlayer: resolvePickPlayer,
+    getMyRosterPlayers: getMyRosterPlayers,
+    getByeClashStatus: getByeClashStatus,
+    isWatched: isWatched,
+    toggleWatchlist: toggleWatchlist,
+    cleanWatchlist: cleanWatchlist,
+    DEFAULT_ROSTER_SLOTS: DEFAULT_ROSTER_SLOTS,
+    formatLineupSummary: formatLineupSummary,
+    assignRosterSlots: assignRosterSlots,
   };
 }

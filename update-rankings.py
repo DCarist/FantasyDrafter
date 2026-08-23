@@ -99,8 +99,10 @@ def main():
             continue
 
         pos = r.get('pos', '').strip().upper()
-        if pos in ('K', 'DST', 'DEF', 'DB', 'DL', 'LB', 'IDP'):
-            continue  # Offense only (Superflex league format)
+        if pos == 'DEF':
+            pos = 'DST'
+        if pos in ('DB', 'DL', 'LB', 'IDP'):
+            continue
 
         team = norm_team(r.get('team') or r.get('tm'))
         bye_raw = r.get('bye')
@@ -190,7 +192,7 @@ def main():
         pos_votes = Counter(rec['positions'])
         pos = pos_votes.most_common(1)[0][0] if pos_votes else rec.get('pos')
 
-        if not pos or pos not in ('QB', 'RB', 'WR', 'TE'):
+        if not pos or pos not in ('QB', 'RB', 'WR', 'TE', 'K', 'DST'):
             continue
 
         # If non-QB is missing a Superflex rank, Dynasty 1QB is a fine stand-in

@@ -22,7 +22,7 @@ assert(Object.keys(data.byes).length === 32, `32 NFL teams in bye map (found ${O
 // Validate player structure
 let validRanks = 0;
 let validPositions = 0;
-const validPosSet = new Set(['QB', 'RB', 'WR', 'TE']);
+const validPosSet = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DST']);
 
 for (const p of data.players) {
   assert(p.name && typeof p.name === 'string', `Player has valid name: ${p.name}`);
@@ -34,7 +34,7 @@ for (const p of data.players) {
   }
 }
 
-eq(validPositions, data.players.length, 'All players have standard offensive fantasy positions (QB/RB/WR/TE)');
+eq(validPositions, data.players.length, 'All players have standard fantasy positions (QB/RB/WR/TE/K/DST)');
 eq(validRanks, data.players.length, 'All players have at least one valid ranking metric');
 
 const success = finishSuite('Data Pipeline & Schema Integrity');

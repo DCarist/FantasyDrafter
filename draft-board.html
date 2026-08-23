@@ -8,7 +8,7 @@
   :root {
     --bg: #12151c; --panel: #1a1f2a; --panel2: #202636; --border: #2c3550;
     --text: #e8ecf4; --dim: #8b96ad; --accent: #4f8ff7; --good: #3ddc84; --warn: #ffb454; --bad: #ff6470;
-    --qb: #e05a6d; --rb: #3ddc84; --wr: #58a6ff; --te: #ffb454;
+    --qb: #e05a6d; --rb: #3ddc84; --wr: #58a6ff; --te: #ffb454; --k: #c084fc; --dst: #a3e635;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -45,6 +45,7 @@
   .meta { color: var(--dim); font-size: 11.5px; }
   .pos { display: inline-block; min-width: 30px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1.5px 5px; color: #10131a; }
   .pos.QB { background: var(--qb); } .pos.RB { background: var(--rb); } .pos.WR { background: var(--wr); } .pos.TE { background: var(--te); }
+  .pos.K { background: var(--k); } .pos.DST, .pos.DEF, .pos['D/ST'] { background: var(--dst); }
   .pos.other { background: var(--dim); }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .score { font-weight: 700; }
@@ -65,10 +66,22 @@
   button.small:hover { color: var(--text); }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); margin-bottom: 8px; }
   .side .panel + .panel { margin-top: 14px; }
+  .roster-sec-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); margin: 8px 0 4px; padding-bottom: 2px; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; }
   .rosteritem { display: flex; align-items: center; gap: 7px; padding: 3.5px 0; font-size: 13px; }
+  .rosteritem.starter-slot { border-left: 2px solid rgba(79, 143, 247, 0.4); padding-left: 4px; }
+  .rosteritem.empty-slot { opacity: .45; }
+  .rosteritem.bench-slot { border-left: 2px solid rgba(139, 150, 173, 0.25); padding-left: 4px; }
+  .slot-label-tag { font-size: 11px; font-weight: 700; color: var(--accent); min-width: 36px; display: inline-block; }
+  .slot-label-tag.bench { color: var(--dim); }
   .rosteritem .pk { color: var(--dim); font-size: 11px; min-width: 34px; }
   .rosteritem .bye { margin-left: auto; color: var(--dim); font-size: 11.5px; }
   .bye.clash { color: var(--bad); font-weight: 700; }
+  .byetag { display: inline-block; font-size: 11.5px; border-radius: 4px; padding: 1px 5px; line-height: 1.25; text-align: center; }
+  .byetag.bye-same-pos { background: rgba(255, 100, 112, 0.18); color: #ff6470; border: 1px solid rgba(255, 100, 112, 0.45); font-weight: 700; }
+  .byetag.bye-other-pos { background: rgba(255, 180, 84, 0.14); color: #ffb454; border: 1px solid rgba(255, 180, 84, 0.35); font-weight: 600; }
+  .watchbtn { border: none; background: none; cursor: pointer; font-size: 15px; color: var(--dim); padding: 0 4px 0 0; line-height: 1; vertical-align: middle; transition: color 0.15s, transform 0.1s; }
+  .watchbtn:hover { color: #f59e0b; transform: scale(1.25); }
+  .watchbtn.active { color: #f59e0b; }
   .needs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .need { font-size: 11.5px; padding: 2px 8px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--border); color: var(--dim); }
   .need.short { border-color: var(--warn); color: var(--warn); }
@@ -153,7 +166,7 @@
 </header>
 
 <main>
-  <!-- Left Side: Always shows OUR roster & team composition -->
+  <!-- Left Side: Always shows OUR roster & team composition, plus Watchlist -->
   <aside class="side left-side">
     <div class="panel">
       <div class="roster-header">
@@ -161,9 +174,18 @@
           ⭐ My Roster
         </h2>
       </div>
-      <div id="myroster" style="max-height: 48vh; overflow-y: auto;"></div>
+      <div id="myroster" style="max-height: 38vh; overflow-y: auto;"></div>
       <div class="needs" id="myneeds"></div>
       <div id="mybyewarn"></div>
+    </div>
+    <div class="panel">
+      <div class="roster-header">
+        <h2 style="color:var(--warn); display:flex; align-items:center; gap:6px; margin:0">
+          ⭐ Watchlist
+        </h2>
+        <span id="mywatchlistcount" class="meta" style="font-size:12px; font-weight:normal"></span>
+      </div>
+      <div id="leftwatchlist" style="max-height: 28vh; overflow-y: auto;"></div>
     </div>
   </aside>
 
@@ -231,7 +253,8 @@ const DEFAULTS = {
   teamNames: [
     "Team 1", "Ken", "Team 3", "Team 4", "Team 5", "Team 6",
     "Team 7", "Team 8", "Team 9", "Team 10", "Team 11", "Team 12"
-  ]
+  ],
+  rosterSlots: Object.assign({}, DEFAULT_ROSTER_SLOTS)
 };
 
 let state = load();
@@ -256,7 +279,22 @@ function normalizeState(s) {
     }
   }
   s.settings.teamNames = names;
+
+  s.settings.rosterSlots = Object.assign({}, DEFAULT_ROSTER_SLOTS, s.settings.rosterSlots);
+  for (const k of Object.keys(DEFAULT_ROSTER_SLOTS)) {
+    s.settings.rosterSlots[k] = Math.max(0, parseInt(s.settings.rosterSlots[k], 10) || 0);
+  }
+  const startersCount = (s.settings.rosterSlots.qb || 0) + (s.settings.rosterSlots.rb || 0) +
+                        (s.settings.rosterSlots.wr || 0) + (s.settings.rosterSlots.te || 0) +
+                        (s.settings.rosterSlots.flex || 0) + (s.settings.rosterSlots.superflex || 0) +
+                        (s.settings.rosterSlots.k || 0) + (s.settings.rosterSlots.dst || 0);
+  const totalRounds = startersCount + (s.settings.rosterSlots.bench || 0);
+  if (totalRounds > 0) {
+    s.settings.rounds = totalRounds;
+  }
+
   if (!Array.isArray(s.log)) s.log = [];
+  if (!Array.isArray(s.watchlist)) s.watchlist = [];
   return s;
 }
 
@@ -268,7 +306,7 @@ function load() {
       return normalizeState(s);
     }
   } catch (e) { /* fallback on error */ }
-  return normalizeState({ settings: Object.assign({}, DEFAULTS), log: [] });
+  return normalizeState({ settings: Object.assign({}, DEFAULTS), log: [], watchlist: [] });
 }
 
 function save() {
@@ -302,7 +340,17 @@ function currentPick() { return state.log.length + 1; }
 // ---------- Actions ----------
 function draftPlayer(id, mine) {
   state.log.push({ overall: currentPick(), playerId: id, mine: !!mine });
+  state.watchlist = cleanWatchlist(state.watchlist, [id]);
   save(); render();
+}
+
+function toggleWatch(id, e) {
+  if (e) e.stopPropagation();
+  state.watchlist = toggleWatchlist(state.watchlist, id);
+  save();
+  renderTabs();
+  renderPool();
+  renderWatchlistPanel();
 }
 
 let unlistedSelectedPos = 'WR';
@@ -406,6 +454,8 @@ function jumpTo(pick) {
   while (state.log.length < pick - 1) {
     state.log.push({ overall: state.log.length + 1, playerId: null, customName: 'Skipped pick', customPos: 'OTHER', mine: false });
   }
+  const taken = takenMap();
+  state.watchlist = cleanWatchlist(state.watchlist, taken);
   save(); render();
 }
 function resetDraft() {
@@ -480,8 +530,10 @@ function renderPool() {
   const q = normalizeName(ui.search || '');
   let rows = scored();
   if (ui.hideTaken) rows = rows.filter(p => !taken.has(p.id));
-  if (ui.posFilter === 'ROOKIE') rows = rows.filter(p => p.rookie);
-  else if (ui.posFilter !== 'ALL') rows = rows.filter(p => p.pos === ui.posFilter);
+  if (ui.posFilter === 'WATCHLIST') rows = rows.filter(p => isWatched(state.watchlist, p.id));
+  else if (ui.posFilter === 'ROOKIE') rows = rows.filter(p => p.rookie);
+  else if (ui.posFilter === 'DST') rows = rows.filter(p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase()));
+  else if (ui.posFilter !== 'ALL') rows = rows.filter(p => (p.pos || '').toUpperCase() === ui.posFilter);
   if (q) rows = rows.filter(p => normalizeName(p.name).includes(q));
 
   const key = { score: p => -(p.score ?? -1), dyn: p => p.dynSF ?? 9999, red: p => p.redraft ?? 9999, adp: p => p.adp ?? 9999 }[ui.sort];
@@ -490,7 +542,8 @@ function renderPool() {
   const pick = currentPick();
   const onClock = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
   const isOurPick = onClock.isMe;
-  const showTiers = ui.sort === 'score' && !q && ui.posFilter !== 'ROOKIE';
+  const myRoster = getMyRosterPlayers(state.log, byId, state.settings.slot, state.settings.teams, state.settings.mode);
+  const showTiers = ui.sort === 'score' && !q && ui.posFilter !== 'ROOKIE' && ui.posFilter !== 'WATCHLIST';
   let html = '', prevScore = null, tier = 1;
   rows.slice(0, 250).forEach((p, idx) => {
     const isTaken = taken.has(p.id);
@@ -504,6 +557,10 @@ function renderPool() {
     const value = !isTaken && p.adp && p.adp - pick >= 8 ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>' : '';
     const rookie = p.rookie ? '<span class="rookietag">R</span>' : '';
     const age = p.age ? ' <span class="meta">' + p.age + 'y</span>' : '';
+    const watched = isWatched(state.watchlist, p.id);
+    const starBtn = !isTaken
+      ? '<button type="button" class="watchbtn' + (watched ? ' active' : '') + '" title="' + (watched ? 'Remove from Watchlist' : 'Add to Watchlist') + '" onclick="toggleWatch(' + p.id + ', event)">' + (watched ? '★' : '☆') + '</button>'
+      : '';
 
     let actionCell = '';
     if (isTaken) {
@@ -521,12 +578,26 @@ function renderPool() {
       }
     }
 
+    let byeCell = '<td class="meta">' + (p.bye || '—') + '</td>';
+    if (p.bye) {
+      const byeClash = getByeClashStatus(p, myRoster);
+      if (byeClash.type === 'same-pos') {
+        const names = byeClash.samePos.map(x => x.name).join(', ');
+        const tip = 'Same-position bye clash with ' + names + ' (' + p.pos + ', Week ' + p.bye + ')';
+        byeCell = '<td><span class="byetag bye-same-pos" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ ' + p.bye + '</span></td>';
+      } else if (byeClash.type === 'other-pos') {
+        const names = byeClash.otherPos.map(x => x.name + ' (' + x.pos + ')').join(', ');
+        const tip = 'Bye week coincides with ' + names + ' (Week ' + p.bye + ')';
+        byeCell = '<td><span class="byetag bye-other-pos" title="' + tip.replace(/"/g, '&quot;') + '">' + p.bye + '</span></td>';
+      }
+    }
+
     html += '<tr class="' + tierRow + (isTaken ? ' takenrow' : '') + '">'
       + '<td class="rk">' + (idx + 1) + (tierRow ? ' <span class="tierlabel">T' + tier + '</span>' : '') + '</td>'
-      + '<td class="clickname" onclick="showPlayer(' + p.id + ')"><span class="pname">' + p.name + '</span>' + rookie + age + value + '</td>'
+      + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + rookie + age + value + '</td>'
       + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
       + '<td class="meta">' + (p.team || '—') + '</td>'
-      + '<td class="meta">' + (p.bye || '—') + '</td>'
+      + byeCell
       + '<td class="num rk">' + (p.dynSF ?? '—') + '</td>'
       + '<td class="num rk">' + (p.redraft ?? '—') + '</td>'
       + '<td class="num rk">' + (p.adp ? p.adp.toFixed(0) : '—') + '</td>'
@@ -534,7 +605,92 @@ function renderPool() {
       + actionCell
       + '</tr>';
   });
-  $('pool').innerHTML = html || '<tr><td colspan="10" class="empty">' + (PLAYERS.length ? 'No players match.' : 'Player data not loaded yet.') + '</td></tr>';
+  let emptyMsg = PLAYERS.length ? 'No players match.' : 'Player data not loaded yet.';
+  if (ui.posFilter === 'WATCHLIST' && PLAYERS.length) {
+    emptyMsg = 'Your watchlist is empty. Click the ☆ star on any player to add them to your watchlist.';
+  }
+  $('pool').innerHTML = html || '<tr><td colspan="10" class="empty">' + emptyMsg + '</td></tr>';
+}
+
+function renderRosterSection(resolvedPicks, rosterSlots, teamsCount) {
+  const playersWithEntry = resolvedPicks.map(x => Object.assign({ entry: x.entry }, x.player));
+  const allocation = assignRosterSlots(playersWithEntry, rosterSlots);
+
+  const byBye = {};
+  for (const { player } of resolvedPicks) {
+    if (player.bye) {
+      (byBye[player.bye] = byBye[player.bye] || []).push(player.name);
+    }
+  }
+
+  const order = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+  const formatSlot = (item, isStarter) => {
+    const p = item.player;
+    if (!p) {
+      return '<div class="rosteritem starter-slot empty-slot">'
+        + '<span class="slot-label-tag">[' + item.label + ']</span>'
+        + '<span class="meta" style="font-style:italic">Open Starter Slot</span>'
+        + '</div>';
+    }
+    const posUpper = (p.pos || '').toUpperCase();
+    const posClass = order.includes(posUpper) ? posUpper : (['DEF', 'D/ST'].includes(posUpper) ? 'DST' : 'other');
+    const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
+    const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + (p.entry ? p.entry.overall : 0) + ')');
+    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
+    const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
+    const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + fmtPick(p.entry.overall, teamsCount) + '</span>' : '';
+
+    return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + '">'
+      + '<span class="slot-label-tag' + (isStarter ? '' : ' bench') + '">[' + item.label + ']</span>'
+      + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
+      + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
+      + teamBadge
+      + pkStr
+      + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span>'
+      + '</div>';
+  };
+
+  const filledStartersCount = allocation.starters.filter(s => s.player !== null).length;
+  let html = '<div class="roster-sec-title"><span>Starters</span><span>' + filledStartersCount + ' / ' + allocation.totalStarters + '</span></div>';
+  html += allocation.starters.map(s => formatSlot(s, true)).join('');
+
+  html += '<div class="roster-sec-title" style="margin-top:10px"><span>Bench</span><span>' + allocation.bench.length + ' / ' + allocation.totalBench + '</span></div>';
+  if (allocation.bench.length > 0) {
+    html += allocation.bench.map(b => formatSlot(b, false)).join('');
+  } else {
+    html += '<div class="meta" style="font-size:11.5px; padding:3px 0">No bench players yet.</div>';
+  }
+
+  // Positional requirements & needs calculation
+  const reqs = {
+    QB: (rosterSlots.qb || 0) + (rosterSlots.superflex ? 1 : 0),
+    RB: (rosterSlots.rb || 0) + (rosterSlots.flex ? 1 : 0),
+    WR: (rosterSlots.wr || 0) + (rosterSlots.flex ? 1 : 0),
+    TE: (rosterSlots.te || 0) + (rosterSlots.flex ? 1 : 0),
+    K: (rosterSlots.k || 0),
+    DST: (rosterSlots.dst || 0)
+  };
+
+  const needsList = [];
+  for (const pos of ['QB', 'RB', 'WR', 'TE', 'K', 'DST']) {
+    const target = reqs[pos];
+    if (target > 0 || (allocation.counts[pos] && allocation.counts[pos] > 0)) {
+      const c = allocation.counts[pos] || 0;
+      const cls = c >= target ? 'ok' : (resolvedPicks.length >= 6 && c === 0 ? 'short' : '');
+      needsList.push('<span class="need ' + cls + '">' + (pos === 'DST' ? 'D/ST' : pos) + ' ' + c + '/' + target + '+</span>');
+    }
+  }
+
+  const clashWeeks = Object.keys(byBye).filter(w => byBye[w].length >= 2);
+  const byeWarnHtml = clashWeeks.length
+    ? '<div class="warnbox" style="margin-top:10px">Bye overlap — week ' + clashWeeks.map(w => w + ': ' + byBye[w].join(', ')).join(' · week ') + '</div>'
+    : '';
+
+  return {
+    rosterHtml: html,
+    needsHtml: needsList.join('') + '<span class="need">Lineup: ' + formatLineupSummary(rosterSlots) + '</span>',
+    byeWarnHtml: byeWarnHtml
+  };
 }
 
 function renderMyRoster() {
@@ -550,47 +706,10 @@ function renderMyRoster() {
     player: resolvePickPlayer(e, byId)
   }));
 
-  const byBye = {};
-  for (const { player } of resolvedPicks) {
-    if (player.bye) {
-      (byBye[player.bye] = byBye[player.bye] || []).push(player.name);
-    }
-  }
-  const clashWeeks = Object.keys(byBye).filter(w => byBye[w].length >= 2);
-
-  const order = ['QB','RB','WR','TE'];
-  const sorted = resolvedPicks.slice().sort((a, b) => {
-    const pa = order.indexOf(a.player.pos), pb = order.indexOf(b.player.pos);
-    return (pa === -1 ? 9 : pa) - (pb === -1 ? 9 : pb) || a.entry.overall - b.entry.overall;
-  });
-
-  $('myroster').innerHTML = sorted.map(({ entry: e, player: p }) => {
-    const posClass = order.includes(p.pos) ? p.pos : 'other';
-    const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
-    const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + e.overall + ')');
-    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
-    const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
-    return '<div class="rosteritem"><span class="pk">' + fmtPick(e.overall, s.teams) + '</span>'
-      + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
-      + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
-      + teamBadge
-      + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span></div>';
-  }).join('') || '<div class="meta" style="padding:10px 0">No picks on your roster yet.</div>';
-
-  const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
-  for (const { player: p } of resolvedPicks) {
-    if (counts[p.pos] != null) counts[p.pos]++;
-  }
-  const targets = { QB: 2, RB: 4, WR: 5, TE: 1 };
-  $('myneeds').innerHTML = order.map(pos => {
-    const c = counts[pos], t = targets[pos];
-    const cls = c >= t ? 'ok' : (myPicks.length >= 6 && c === 0 ? 'short' : '');
-    return '<span class="need ' + cls + '">' + pos + ' ' + c + '/' + t + '+</span>';
-  }).join('') + '<span class="need">Starters: QB·2RB·2WR·TE·3FLEX·SF</span>';
-
-  $('mybyewarn').innerHTML = clashWeeks.length
-    ? '<div class="warnbox" style="margin-top:10px">Bye overlap — week ' + clashWeeks.map(w => w + ': ' + byBye[w].join(', ')).join(' · week ') + '</div>'
-    : '';
+  const res = renderRosterSection(resolvedPicks, s.rosterSlots, s.teams);
+  $('myroster').innerHTML = res.rosterHtml;
+  $('myneeds').innerHTML = res.needsHtml;
+  $('mybyewarn').innerHTML = res.byeWarnHtml;
 }
 
 function renderInspectRoster() {
@@ -624,56 +743,15 @@ function renderInspectRoster() {
 
   // Filter all picks belonging to target slot
   const teamPicks = state.log.filter(e => slotForOverall(e.overall, s.teams, s.mode).slot === targetSlot);
-
-  // Map each pick to player object using resolvePickPlayer
   const resolvedPicks = teamPicks.map(e => ({
     entry: e,
     player: resolvePickPlayer(e, byId)
   }));
 
-  // Bye-week clashes among team picks
-  const byBye = {};
-  for (const { player } of resolvedPicks) {
-    if (player.bye) {
-      (byBye[player.bye] = byBye[player.bye] || []).push(player.name);
-    }
-  }
-  const clashWeeks = Object.keys(byBye).filter(w => byBye[w].length >= 2);
-
-  const order = ['QB','RB','WR','TE'];
-  const sorted = resolvedPicks.slice().sort((a, b) => {
-    const pa = order.indexOf(a.player.pos), pb = order.indexOf(b.player.pos);
-    return (pa === -1 ? 9 : pa) - (pb === -1 ? 9 : pb) || a.entry.overall - b.entry.overall;
-  });
-
-  $('roster').innerHTML = sorted.map(({ entry: e, player: p }) => {
-    const posClass = order.includes(p.pos) ? p.pos : 'other';
-    const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
-    const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + e.overall + ')');
-    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
-    const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
-    return '<div class="rosteritem"><span class="pk">' + fmtPick(e.overall, s.teams) + '</span>'
-      + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
-      + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
-      + teamBadge
-      + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span></div>';
-  }).join('') || '<div class="meta" style="padding:10px 0">No picks made by this team yet.</div>';
-
-  // Positional counts
-  const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
-  for (const { player: p } of resolvedPicks) {
-    if (counts[p.pos] != null) counts[p.pos]++;
-  }
-  const targets = { QB: 2, RB: 4, WR: 5, TE: 1 };
-  $('needs').innerHTML = order.map(pos => {
-    const c = counts[pos], t = targets[pos];
-    const cls = c >= t ? 'ok' : (teamPicks.length >= 6 && c === 0 ? 'short' : '');
-    return '<span class="need ' + cls + '">' + pos + ' ' + c + (isTargetMine ? '/' + t + '+' : '') + '</span>';
-  }).join('') + (isTargetMine ? '<span class="need">Starters: QB·2RB·2WR·TE·3FLEX·SF</span>' : '<span class="need">Roster: ' + teamPicks.length + ' picks</span>');
-
-  $('byewarn').innerHTML = clashWeeks.length
-    ? '<div class="warnbox" style="margin-top:10px">Bye overlap — week ' + clashWeeks.map(w => w + ': ' + byBye[w].join(', ')).join(' · week ') + '</div>'
-    : '';
+  const res = renderRosterSection(resolvedPicks, s.rosterSlots, s.teams);
+  $('roster').innerHTML = res.rosterHtml;
+  $('needs').innerHTML = res.needsHtml;
+  $('byewarn').innerHTML = res.byeWarnHtml;
 }
 
 function renderLog() {
@@ -694,11 +772,70 @@ function renderLog() {
 }
 
 function renderTabs() {
-  const tabs = ['ALL','QB','RB','WR','TE','ROOKIE'];
+  const taken = takenMap();
+  const watchCount = (state.watchlist || []).filter(id => !taken.has(id)).length;
+  const tabs = [
+    { id: 'ALL', label: 'ALL' },
+    { id: 'QB', label: 'QB' },
+    { id: 'RB', label: 'RB' },
+    { id: 'WR', label: 'WR' },
+    { id: 'TE', label: 'TE' },
+    { id: 'K', label: 'K' },
+    { id: 'DST', label: 'D/ST' },
+    { id: 'ROOKIE', label: 'Rookies' },
+    { id: 'WATCHLIST', label: '⭐ Watchlist' + (watchCount ? ' (' + watchCount + ')' : '') },
+  ];
   $('postabs').innerHTML = tabs.map(t =>
-    '<span class="tab' + (ui.posFilter === t ? ' on' : '') + '" onclick="setFilter(\'' + t + '\')">' + (t === 'ROOKIE' ? 'Rookies' : t) + '</span>').join('');
+    '<span class="tab' + (ui.posFilter === t.id ? ' on' : '') + '" onclick="setFilter(\'' + t.id + '\')">' + t.label + '</span>').join('');
 }
 function setFilter(t) { ui.posFilter = t; renderTabs(); renderPool(); }
+
+function renderWatchlistPanel() {
+  const taken = takenMap();
+  const watchedAvailable = (state.watchlist || [])
+    .filter(id => !taken.has(id))
+    .map(id => byId(id))
+    .filter(Boolean);
+
+  const s = state.settings;
+  const blend = s.blend / 100;
+  const scoredWatched = watchedAvailable.map(p => {
+    const dynScore = rankToScore(p.dynSF, 220);
+    const redScore = rankToScore(p.redraft, 200);
+    const score = compositeScore({ pos: p.pos, dynScore: dynScore, redScore: redScore }, blend, s.teprem);
+    return Object.assign({ score: score }, p);
+  });
+  scoredWatched.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+
+  $('mywatchlistcount').textContent = scoredWatched.length ? scoredWatched.length + ' players' : 'Empty';
+
+  const myRoster = getMyRosterPlayers(state.log, byId, state.settings.slot, state.settings.teams, state.settings.mode);
+  const order = ['QB','RB','WR','TE'];
+
+  $('leftwatchlist').innerHTML = scoredWatched.map(p => {
+    const posClass = order.includes(p.pos) ? p.pos : 'other';
+    const byeClash = getByeClashStatus(p, myRoster);
+    let byeHtml = p.bye ? '<span class="bye">bye ' + p.bye + '</span>' : '<span class="bye">—</span>';
+    if (p.bye && byeClash.type === 'same-pos') {
+      const names = byeClash.samePos.map(x => x.name).join(', ');
+      byeHtml = '<span class="bye clash" title="Same-position bye clash with ' + names + '">⚠️ ' + p.bye + '</span>';
+    } else if (p.bye && byeClash.type === 'other-pos') {
+      const names = byeClash.otherPos.map(x => x.name + ' (' + x.pos + ')').join(', ');
+      byeHtml = '<span class="bye" style="color:var(--warn); font-weight:600" title="Bye coincides with ' + names + '">' + p.bye + '</span>';
+    }
+
+    const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
+    const rookieBadge = p.rookie ? '<span class="rookietag">R</span>' : '';
+
+    return '<div class="rosteritem" style="padding:4px 0">'
+      + '<button type="button" class="watchbtn active" title="Remove from Watchlist" onclick="toggleWatch(' + p.id + ', event)" style="font-size:13px">★</button>'
+      + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
+      + '<span class="pname" onclick="showPlayer(' + p.id + ')" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">' + p.name + rookieBadge + '</span>'
+      + teamBadge
+      + byeHtml
+      + '</div>';
+  }).join('') || '<div class="meta" style="padding:10px 0">No players on watchlist.<br>Click the ☆ on any player to track them.</div>';
+}
 
 function renderBanner() {
   const d = window.DRAFT_DATA;
@@ -711,8 +848,10 @@ function renderBanner() {
 
 function render() {
   renderHeader();
+  renderTabs();
   renderPool();
   renderMyRoster();
+  renderWatchlistPanel();
   renderInspectRoster();
   renderLog();
   renderBanner();
@@ -759,13 +898,31 @@ function showPlayer(id) {
     + '<a target="_blank" href="https://www.espn.com/search/_/q/' + encodeURIComponent(p.name) + '">ESPN</a>'
     + '<a target="_blank" href="https://www.google.com/search?q=' + encodeURIComponent(p.name) + '+site%3Afantasypros.com">FantasyPros</a>'
     + '</div>';
+
+  const myRoster = getMyRosterPlayers(state.log, byId, state.settings.slot, state.settings.teams, state.settings.mode);
+  const byeClash = getByeClashStatus(p, myRoster);
+  let byeAlert = '';
+  if (byeClash.type === 'same-pos') {
+    const names = byeClash.samePos.map(x => x.name).join(', ');
+    byeAlert = '<div class="warnbox" style="margin-top:10px; background:#3d2026; border-color:var(--bad); color:var(--bad)">⚠️ <b>Same-Position Bye Clash:</b> Shares Week ' + p.bye + ' bye with your ' + p.pos + ' (' + names + ')</div>';
+  } else if (byeClash.type === 'other-pos') {
+    const names = byeClash.otherPos.map(x => x.name + ' (' + x.pos + ')').join(', ');
+    byeAlert = '<div style="margin-top:10px; padding:8px 10px; background:#33261a; border:1px solid var(--warn); color:var(--warn); border-radius:8px; font-size:12.5px">⚡ <b>Roster Bye Overlap:</b> Shares Week ' + p.bye + ' bye with ' + names + '</div>';
+  }
+
+  const watched = isWatched(state.watchlist, p.id);
+  const watchModalBtn = !taken.has(id)
+    ? '<button type="button" class="act' + (watched ? ' primary' : '') + '" onclick="toggleWatch(' + p.id + '); showPlayer(' + p.id + ');" style="margin-left:auto; font-size:12px">' + (watched ? '★ In Watchlist' : '☆ Add to Watchlist') + '</button>'
+    : '';
+
   $('modalbox').innerHTML =
     '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
     + (p.rookie ? '<span class="rookietag">R</span>' : '')
     + ' <span class="meta">' + (p.team || '') + '</span>' + status
+    + watchModalBtn
     + '<button class="close" onclick="closeModal()">×</button></h3>'
     + '<div class="statrow">' + stats + '</div>'
-    + blurb + schedHtml + links;
+    + byeAlert + blurb + schedHtml + links;
   $('overlay').classList.add('show');
 }
 
@@ -808,6 +965,7 @@ function openLeagueSetup() {
   const s = state.settings;
   setupDraftNames = s.teamNames.slice();
   setupMySlot = s.slot;
+  const rs = Object.assign({}, DEFAULT_ROSTER_SLOTS, s.rosterSlots);
 
   function renderSetupTable(teamsCount) {
     let rows = '';
@@ -832,11 +990,24 @@ function openLeagueSetup() {
     + '<button class="close" onclick="closeModal()">×</button></h3>'
     + '<div class="setup-grid">'
     + '<div class="setup-field" style="grid-column: 1 / -1;"><label>League / Board Name</label><input type="text" id="setup_league_name" value="' + (s.leagueName || "Ken's Draft Board").replace(/"/g, '&quot;') + '"></div>'
-    + '<div class="setup-field"><label>Total Teams</label><input type="number" id="setup_team_count" min="4" max="24" value="' + s.teams + '"></div>'
-    + '<div class="setup-field"><label>Total Rounds</label><input type="number" id="setup_rounds_count" min="1" max="40" value="' + s.rounds + '"></div>'
+    + '<div class="setup-field"><label>Total Teams</label><input type="number" id="setup_team_count" min="2" max="32" value="' + s.teams + '"></div>'
+    + '<div class="setup-field"><label>Total Draft Rounds</label><input type="number" id="setup_rounds_count" min="1" max="50" value="' + s.rounds + '"></div>'
     + '<div class="setup-field"><label>Draft Order</label><select id="setup_mode_select"><option value="3rr"' + (s.mode === '3rr' ? ' selected' : '') + '>3rd-Round Reversal (3RR)</option><option value="snake"' + (s.mode === 'snake' ? ' selected' : '') + '>Normal Snake</option></select></div>'
     + '</div>'
-    + '<h4>Draft Order & Team Names</h4>'
+    + '<h4 style="margin-top:14px">📋 Roster Positions & Starting Lineup</h4>'
+    + '<div class="setup-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">'
+    + '<div class="setup-field"><label>QB Starters</label><input type="number" id="setup_roster_qb" min="0" max="6" value="' + (rs.qb ?? 1) + '"></div>'
+    + '<div class="setup-field"><label>RB Starters</label><input type="number" id="setup_roster_rb" min="0" max="8" value="' + (rs.rb ?? 2) + '"></div>'
+    + '<div class="setup-field"><label>WR Starters</label><input type="number" id="setup_roster_wr" min="0" max="8" value="' + (rs.wr ?? 2) + '"></div>'
+    + '<div class="setup-field"><label>TE Starters</label><input type="number" id="setup_roster_te" min="0" max="6" value="' + (rs.te ?? 1) + '"></div>'
+    + '<div class="setup-field"><label>Flex (RB/WR/TE)</label><input type="number" id="setup_roster_flex" min="0" max="8" value="' + (rs.flex ?? 3) + '"></div>'
+    + '<div class="setup-field"><label>Superflex (QB/RB/WR/TE)</label><input type="number" id="setup_roster_superflex" min="0" max="6" value="' + (rs.superflex ?? 1) + '"></div>'
+    + '<div class="setup-field"><label>Kicker (K)</label><input type="number" id="setup_roster_k" min="0" max="4" value="' + (rs.k ?? 0) + '"></div>'
+    + '<div class="setup-field"><label>Defense (D/ST)</label><input type="number" id="setup_roster_dst" min="0" max="4" value="' + (rs.dst ?? 0) + '"></div>'
+    + '<div class="setup-field"><label>Bench Depth</label><input type="number" id="setup_roster_bench" min="0" max="40" value="' + (rs.bench ?? 15) + '"></div>'
+    + '</div>'
+    + '<div id="setup_roster_summary" style="margin: 8px 0; padding: 7px 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--dim)"></div>'
+    + '<h4 style="margin-top:14px">Draft Order & Team Names</h4>'
     + '<div class="meta" style="margin-bottom:6px">Assign team names to each draft slot, designate your team, or use the ▲▼ buttons to reorder positions.</div>'
     + '<div class="setup-teams-wrap"><table class="team-table"><tbody id="setup_teams_body">'
     + renderSetupTable(s.teams)
@@ -854,9 +1025,46 @@ function openLeagueSetup() {
 
   $('overlay').classList.add('show');
 
+  function updateRosterMath(fromRounds) {
+    const qb = Math.max(0, parseInt($('setup_roster_qb').value, 10) || 0);
+    const rb = Math.max(0, parseInt($('setup_roster_rb').value, 10) || 0);
+    const wr = Math.max(0, parseInt($('setup_roster_wr').value, 10) || 0);
+    const te = Math.max(0, parseInt($('setup_roster_te').value, 10) || 0);
+    const flex = Math.max(0, parseInt($('setup_roster_flex').value, 10) || 0);
+    const sf = Math.max(0, parseInt($('setup_roster_superflex').value, 10) || 0);
+    const k = Math.max(0, parseInt($('setup_roster_k').value, 10) || 0);
+    const dst = Math.max(0, parseInt($('setup_roster_dst').value, 10) || 0);
+    const starters = qb + rb + wr + te + flex + sf + k + dst;
+
+    if (fromRounds) {
+      const rounds = Math.max(1, parseInt($('setup_rounds_count').value, 10) || 1);
+      const bench = Math.max(0, rounds - starters);
+      $('setup_roster_bench').value = bench;
+    } else {
+      const bench = Math.max(0, parseInt($('setup_roster_bench').value, 10) || 0);
+      $('setup_rounds_count').value = starters + bench;
+    }
+
+    const currentBench = Math.max(0, parseInt($('setup_roster_bench').value, 10) || 0);
+    const totalRounds = starters + currentBench;
+    $('setup_roster_summary').innerHTML = '📋 <b style="color:var(--text)">Lineup:</b> ' + formatLineupSummary({ qb, rb, wr, te, flex, superflex: sf, k, dst, bench: currentBench }) + ' · <b style="color:var(--good)">' + starters + ' Starters</b> + <b style="color:var(--warn)">' + currentBench + ' Bench</b> = <b style="color:var(--accent)">' + totalRounds + ' Draft Rounds</b>';
+  }
+
+  updateRosterMath(false);
+
+  const rosterInputIds = [
+    'setup_roster_qb', 'setup_roster_rb', 'setup_roster_wr', 'setup_roster_te',
+    'setup_roster_flex', 'setup_roster_superflex', 'setup_roster_k', 'setup_roster_dst',
+    'setup_roster_bench'
+  ];
+  for (const id of rosterInputIds) {
+    $(id).addEventListener('input', () => updateRosterMath(false));
+  }
+  $('setup_rounds_count').addEventListener('input', () => updateRosterMath(true));
+
   $('setup_team_count').addEventListener('input', () => {
     syncSetupInputsFromDom();
-    const newCount = Math.max(2, Math.min(24, parseInt($('setup_team_count').value, 10) || 12));
+    const newCount = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     while (setupDraftNames.length < newCount) setupDraftNames.push('Team ' + (setupDraftNames.length + 1));
     if (setupMySlot > newCount) setupMySlot = 1;
     $('setup_teams_body').innerHTML = renderSetupTable(newCount);
@@ -864,7 +1072,7 @@ function openLeagueSetup() {
 }
 
 function syncSetupInputsFromDom() {
-  const count = Math.max(2, Math.min(24, parseInt($('setup_team_count').value, 10) || 12));
+  const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
   for (let i = 1; i <= count; i++) {
     const input = $('team_input_' + i);
     if (input) {
@@ -876,7 +1084,7 @@ function syncSetupInputsFromDom() {
 function changeSetupMySlot(slot) {
   syncSetupInputsFromDom();
   setupMySlot = slot;
-  const count = Math.max(2, Math.min(24, parseInt($('setup_team_count').value, 10) || 12));
+  const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
   for (let i = 1; i <= count; i++) {
     const row = $('setup_row_' + i);
     if (row) row.className = (i === slot) ? 'is-me' : '';
@@ -885,7 +1093,7 @@ function changeSetupMySlot(slot) {
 
 function moveSetupTeam(slot, delta) {
   syncSetupInputsFromDom();
-  const count = Math.max(2, Math.min(24, parseInt($('setup_team_count').value, 10) || 12));
+  const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
   const targetSlot = slot + delta;
   if (targetSlot < 1 || targetSlot > count) return;
 
@@ -899,7 +1107,7 @@ function moveSetupTeam(slot, delta) {
   else if (setupMySlot === targetSlot) setupMySlot = slot;
 
   // Re-render table
-  const countVal = Math.max(2, Math.min(24, parseInt($('setup_team_count').value, 10) || 12));
+  const countVal = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
   $('setup_teams_body').innerHTML = (function() {
     let rows = '';
     for (let i = 1; i <= countVal; i++) {
@@ -920,7 +1128,7 @@ function moveSetupTeam(slot, delta) {
 }
 
 function resetSetupDefaults() {
-  const count = Math.max(2, Math.min(24, parseInt($('setup_team_count').value, 10) || 12));
+  const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
   setupDraftNames = [];
   for (let i = 1; i <= count; i++) {
     setupDraftNames.push(i === setupMySlot ? 'Ken' : ('Team ' + i));
@@ -935,12 +1143,27 @@ function saveLeagueSetup() {
   syncSetupInputsFromDom();
   const s = state.settings;
   s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
-  s.teams = Math.max(2, Math.min(24, parseInt($('setup_team_count').value, 10) || 12));
-  s.rounds = Math.max(1, Math.min(40, parseInt($('setup_rounds_count').value, 10) || 25));
+  s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
   s.mode = $('setup_mode_select').value;
   s.slot = setupMySlot;
   s.teamNames = setupDraftNames.slice(0, s.teams);
   while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
+
+  s.rosterSlots = {
+    qb: Math.max(0, parseInt($('setup_roster_qb').value, 10) || 0),
+    rb: Math.max(0, parseInt($('setup_roster_rb').value, 10) || 0),
+    wr: Math.max(0, parseInt($('setup_roster_wr').value, 10) || 0),
+    te: Math.max(0, parseInt($('setup_roster_te').value, 10) || 0),
+    flex: Math.max(0, parseInt($('setup_roster_flex').value, 10) || 0),
+    superflex: Math.max(0, parseInt($('setup_roster_superflex').value, 10) || 0),
+    k: Math.max(0, parseInt($('setup_roster_k').value, 10) || 0),
+    dst: Math.max(0, parseInt($('setup_roster_dst').value, 10) || 0),
+    bench: Math.max(0, parseInt($('setup_roster_bench').value, 10) || 0)
+  };
+
+  const starters = s.rosterSlots.qb + s.rosterSlots.rb + s.rosterSlots.wr + s.rosterSlots.te +
+                   s.rosterSlots.flex + s.rosterSlots.superflex + s.rosterSlots.k + s.rosterSlots.dst;
+  s.rounds = Math.max(1, starters + s.rosterSlots.bench);
 
   save();
   closeModal();
@@ -965,7 +1188,14 @@ function bindSettings() {
     state.settings.slot = +$('hdrslot').value || 1;
     save(); render();
   });
-  on('rounds', 'change', () => { state.settings.rounds = +$('rounds').value || 25; save(); render(); });
+  on('rounds', 'change', () => {
+    state.settings.rounds = Math.max(1, +$('rounds').value || 25);
+    const rs = state.settings.rosterSlots || DEFAULT_ROSTER_SLOTS;
+    const starters = (rs.qb || 0) + (rs.rb || 0) + (rs.wr || 0) + (rs.te || 0) +
+                     (rs.flex || 0) + (rs.superflex || 0) + (rs.k || 0) + (rs.dst || 0);
+    state.settings.rosterSlots.bench = Math.max(0, state.settings.rounds - starters);
+    save(); render();
+  });
   on('mode', 'change', () => { state.settings.mode = $('mode').value; save(); render(); });
   on('teprem', 'change', () => { state.settings.teprem = $('teprem').checked; save(); render(); });
   on('blend', 'input', () => {
