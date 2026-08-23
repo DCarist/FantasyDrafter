@@ -150,6 +150,44 @@ eq(computeTotalRounds(defaultSlots), 25, '10 starters + 15 bench = 25 rounds');
 eq(computeTotalRounds(customSlots), 20, '12 starters + 8 bench = 20 rounds');
 eq(computeTotalRounds(zeroBenchSlots), 7, '7 starters + 0 bench = 7 rounds');
 
+// --- 8. Roster Slot HTML Rendering (Labels on empty slots, position badges on selected players) ---
+const emptyQbSlot = { slotType: 'QB', label: 'QB', player: null };
+const emptyQbHtml = L.formatRosterSlotHtml(emptyQbSlot, true, 12);
+assert(emptyQbHtml.includes('starter-slot empty-slot'), 'Empty starter slot has empty-slot class');
+assert(emptyQbHtml.includes('<span class="slot-label-tag">[QB]</span>'), 'Empty slot renders [QB] tag');
+assert(emptyQbHtml.includes('Open Starter Slot'), 'Empty slot renders "Open Starter Slot"');
+assert(!emptyQbHtml.includes('<span class="pos'), 'Empty slot does NOT have pos badge');
+
+const emptySfSlot = { slotType: 'SF', label: 'SF', player: null };
+const emptySfHtml = L.formatRosterSlotHtml(emptySfSlot, true, 12);
+assert(emptySfHtml.includes('<span class="slot-label-tag">[SF]</span>'), 'Empty Superflex renders [SF] tag');
+
+const filledQbSlot = {
+  slotType: 'QB',
+  label: 'QB',
+  player: { id: 10, name: 'Jalen Hurts', pos: 'QB', team: 'PHI', bye: 10, entry: { overall: 4 } }
+};
+const filledQbHtml = L.formatRosterSlotHtml(filledQbSlot, true, 12);
+assert(filledQbHtml.includes('starter-slot'), 'Filled starter slot has starter-slot class');
+assert(!filledQbHtml.includes('empty-slot'), 'Filled starter slot does not have empty-slot class');
+assert(!filledQbHtml.includes('slot-label-tag'), 'Filled starter slot does NOT have slot-label-tag [QB]');
+assert(!filledQbHtml.includes('[QB]'), 'Filled starter slot does NOT have bracketed [QB]');
+assert(filledQbHtml.includes('<span class="pos QB">QB</span>'), 'Filled starter slot begins with inline position badge');
+assert(filledQbHtml.includes('Jalen Hurts'), 'Filled starter slot displays player name');
+assert(filledQbHtml.includes('PHI'), 'Filled starter slot displays NFL team');
+assert(filledQbHtml.includes('1.04'), 'Filled starter slot displays formatted pick');
+
+const filledBenchSlot = {
+  slotType: 'BN',
+  label: 'BN',
+  player: { id: 30, name: 'Jared Goff', pos: 'QB', team: 'DET', bye: 6, entry: { overall: 30 } }
+};
+const filledBenchHtml = L.formatRosterSlotHtml(filledBenchSlot, false, 12);
+assert(filledBenchHtml.includes('bench-slot'), 'Filled bench slot has bench-slot class');
+assert(!filledBenchHtml.includes('slot-label-tag'), 'Filled bench slot does NOT have slot-label-tag [BN]');
+assert(!filledBenchHtml.includes('[BN]'), 'Filled bench slot does NOT have bracketed [BN]');
+assert(filledBenchHtml.includes('<span class="pos QB">QB</span>'), 'Filled bench slot renders position badge inline');
+
 const success = finishSuite('Starter Slots & Bench Roster Allocation');
 if (!success) {
   process.exit(1);

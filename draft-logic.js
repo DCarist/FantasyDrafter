@@ -429,6 +429,41 @@ function assignRosterSlots(draftedPlayers, rosterSlots) {
   };
 }
 
+// Formats overall pick number into round.pick format (e.g. 1.04)
+function fmtPick(overall, teams) {
+  if (!overall || !teams || teams <= 0) return '—';
+  const r = Math.ceil(overall / teams);
+  const i = overall - (r - 1) * teams;
+  return r + '.' + String(i).padStart(2, '0');
+}
+
+// Formats an individual starter or bench slot item as HTML
+function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
+  const p = item.player;
+  if (!p) {
+    return '<div class="rosteritem starter-slot empty-slot">'
+      + '<span class="slot-label-tag">[' + item.label + ']</span>'
+      + '<span class="meta" style="font-style:italic">Open Starter Slot</span>'
+      + '</div>';
+  }
+  const order = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+  const posUpper = (p.pos || '').toUpperCase();
+  const posClass = order.includes(posUpper) ? posUpper : (['DEF', 'D/ST'].includes(posUpper) ? 'DST' : 'other');
+  const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
+  const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + (p.entry ? p.entry.overall : 0) + ')');
+  const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
+  const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
+  const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + fmtPick(p.entry.overall, teamsCount) + '</span>' : '';
+
+  return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + '">'
+    + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
+    + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
+    + teamBadge
+    + pkStr
+    + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span>'
+    + '</div>';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     roundIsForward: roundIsForward,
@@ -449,6 +484,8 @@ if (typeof module !== 'undefined' && module.exports) {
     DEFAULT_ROSTER_SLOTS: DEFAULT_ROSTER_SLOTS,
     formatLineupSummary: formatLineupSummary,
     assignRosterSlots: assignRosterSlots,
+    fmtPick: fmtPick,
+    formatRosterSlotHtml: formatRosterSlotHtml,
     FORMAT_OPTIONS: FORMAT_OPTIONS,
     getDynastyRank: getDynastyRank,
     getRedraftRank: getRedraftRank,

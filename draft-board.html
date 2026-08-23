@@ -43,7 +43,7 @@
   .tierlabel { color: var(--accent); font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
   .pname { font-weight: 600; white-space: nowrap; }
   .meta { color: var(--dim); font-size: 11.5px; }
-  .pos { display: inline-block; min-width: 30px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1.5px 5px; color: #10131a; }
+  .pos { display: inline-block; min-width: 34px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 4px; padding: 1.5px 5px; color: #10131a; }
   .pos.QB { background: var(--qb); } .pos.RB { background: var(--rb); } .pos.WR { background: var(--wr); } .pos.TE { background: var(--te); }
   .pos.K { background: var(--k); } .pos.DST, .pos.DEF, .pos['D/ST'] { background: var(--dst); }
   .pos.other { background: var(--dim); }
@@ -71,7 +71,7 @@
   .rosteritem.starter-slot { border-left: 2px solid rgba(79, 143, 247, 0.4); padding-left: 4px; }
   .rosteritem.empty-slot { opacity: .45; }
   .rosteritem.bench-slot { border-left: 2px solid rgba(139, 150, 173, 0.25); padding-left: 4px; }
-  .slot-label-tag { font-size: 11px; font-weight: 700; color: var(--accent); min-width: 36px; display: inline-block; }
+  .slot-label-tag { font-size: 11px; font-weight: 700; color: var(--accent); min-width: 34px; text-align: center; display: inline-block; }
   .slot-label-tag.bench { color: var(--dim); }
   .rosteritem .pk { color: var(--dim); font-size: 11px; min-width: 34px; }
   .rosteritem .bye { margin-left: auto; color: var(--dim); font-size: 11.5px; }
@@ -659,32 +659,7 @@ function renderRosterSection(resolvedPicks, rosterSlots, teamsCount) {
     }
   }
 
-  const order = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
-  const formatSlot = (item, isStarter) => {
-    const p = item.player;
-    if (!p) {
-      return '<div class="rosteritem starter-slot empty-slot">'
-        + '<span class="slot-label-tag">[' + item.label + ']</span>'
-        + '<span class="meta" style="font-style:italic">Open Starter Slot</span>'
-        + '</div>';
-    }
-    const posUpper = (p.pos || '').toUpperCase();
-    const posClass = order.includes(posUpper) ? posUpper : (['DEF', 'D/ST'].includes(posUpper) ? 'DST' : 'other');
-    const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
-    const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + (p.entry ? p.entry.overall : 0) + ')');
-    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
-    const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
-    const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + fmtPick(p.entry.overall, teamsCount) + '</span>' : '';
-
-    return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + '">'
-      + '<span class="slot-label-tag' + (isStarter ? '' : ' bench') + '">[' + item.label + ']</span>'
-      + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
-      + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
-      + teamBadge
-      + pkStr
-      + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span>'
-      + '</div>';
-  };
+  const formatSlot = (item, isStarter) => formatRosterSlotHtml(item, isStarter, teamsCount, byBye);
 
   const filledStartersCount = allocation.starters.filter(s => s.player !== null).length;
   let html = '<div class="roster-sec-title"><span>Starters</span><span>' + filledStartersCount + ' / ' + allocation.totalStarters + '</span></div>';
