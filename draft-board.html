@@ -26,8 +26,10 @@
   .clock.soon { border-color: var(--warn); color: var(--warn); }
   .nextpicks { color: var(--dim); font-size: 12.5px; }
   .nextpicks b { color: var(--text); }
-  main { display: grid; grid-template-columns: 1fr 330px; gap: 14px; padding: 14px 16px; max-width: 1540px; margin: 0 auto; }
-  @media (max-width: 1020px) { main { grid-template-columns: 1fr; } }
+  main { display: grid; grid-template-columns: 280px 1fr 310px; gap: 14px; padding: 14px 16px; max-width: 1780px; margin: 0 auto; }
+  @media (max-width: 1300px) { main { grid-template-columns: 260px 1fr 290px; gap: 10px; padding: 10px 12px; } }
+  @media (max-width: 1080px) { main { grid-template-columns: 1fr 310px; } .left-side { grid-column: 1 / -1; } }
+  @media (max-width: 768px) { main { grid-template-columns: 1fr; } }
   .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
   .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
   .tabs { display: flex; gap: 4px; }
@@ -151,7 +153,22 @@
 </header>
 
 <main>
-  <section class="panel">
+  <!-- Left Side: Always shows OUR roster & team composition -->
+  <aside class="side left-side">
+    <div class="panel">
+      <div class="roster-header">
+        <h2 id="myrosterheader" style="color:var(--good); display:flex; align-items:center; gap:6px; margin:0">
+          ⭐ My Roster
+        </h2>
+      </div>
+      <div id="myroster" style="max-height: 48vh; overflow-y: auto;"></div>
+      <div class="needs" id="myneeds"></div>
+      <div id="mybyewarn"></div>
+    </div>
+  </aside>
+
+  <!-- Center: Player Pool / Draft Board -->
+  <section class="panel pool-panel">
     <div id="databanner"></div>
     <div class="toolbar">
       <div class="tabs" id="postabs"></div>
@@ -175,19 +192,21 @@
     </div>
   </section>
 
-  <aside class="side">
+  <!-- Right Side: On-Clock Team Roster / League Inspector & Draft Log -->
+  <aside class="side right-side">
     <div class="panel">
       <div class="roster-header">
         <select id="rosterTeamSelect" class="roster-select"></select>
-        <button class="small" id="myrosterquickbtn" style="display:none; white-space:nowrap" onclick="selectRosterSlot(state.settings.slot)">View mine</button>
+        <button class="small" id="onclockquickbtn" style="display:none; white-space:nowrap" onclick="selectRosterSlot(null)">Follow Clock</button>
       </div>
-      <div id="roster"></div>
+      <div id="clockteamlabel" style="font-size:11.5px; color:var(--dim); margin-bottom:6px"></div>
+      <div id="roster" style="max-height: 38vh; overflow-y: auto;"></div>
       <div class="needs" id="needs"></div>
       <div id="byewarn"></div>
     </div>
     <div class="panel">
       <h2>Draft Log</h2>
-      <button class="act gone" id="unknownbtn" style="width:100%; margin-bottom:8px">Pick made by someone — player not on my list ➜</button>
+      <button class="act gone" id="unknownbtn" style="width:100%; margin-bottom:8px">Unlisted pick ➜</button>
       <div id="log" style="max-height: 30vh; overflow-y: auto;"></div>
     </div>
   </aside>
@@ -392,8 +411,8 @@ function resetDraft() {
 }
 
 function selectRosterSlot(slot) {
-  viewingRosterSlot = slot;
-  renderRoster();
+  viewingRosterSlot = (slot === 'clock' || slot == null || slot === '') ? null : parseInt(slot, 10);
+  renderInspectRoster();
 }
 
 // ---------- Rendering ----------
@@ -514,23 +533,88 @@ function renderPool() {
   $('pool').innerHTML = html || '<tr><td colspan="10" class="empty">' + (PLAYERS.length ? 'No players match.' : 'Player data not loaded yet.') + '</td></tr>';
 }
 
-function renderRoster() {
+function renderMyRoster() {
   const s = state.settings;
-  const targetSlot = (viewingRosterSlot != null) ? viewingRosterSlot : s.slot;
-  const isViewingMyTeam = (targetSlot === s.slot);
+  const targetSlot = s.slot;
+  const myTeamName = getTeamName(targetSlot);
+  const myPicks = state.log.filter(e => slotForOverall(e.overall, s.teams, s.mode).slot === targetSlot);
 
-  // Populate Roster Dropdown (counts all picks for slot i)
-  let selectHtml = '';
+  $('myrosterheader').innerHTML = '⭐ ' + myTeamName + ' <span class="meta" style="font-size:12px; margin-left:auto; font-weight:normal">Slot ' + targetSlot + ' · ' + myPicks.length + ' picks</span>';
+
+  const resolvedPicks = myPicks.map(e => ({
+    entry: e,
+    player: resolvePickPlayer(e, byId)
+  }));
+
+  const byBye = {};
+  for (const { player } of resolvedPicks) {
+    if (player.bye) {
+      (byBye[player.bye] = byBye[player.bye] || []).push(player.name);
+    }
+  }
+  const clashWeeks = Object.keys(byBye).filter(w => byBye[w].length >= 2);
+
+  const order = ['QB','RB','WR','TE'];
+  const sorted = resolvedPicks.slice().sort((a, b) => {
+    const pa = order.indexOf(a.player.pos), pb = order.indexOf(b.player.pos);
+    return (pa === -1 ? 9 : pa) - (pb === -1 ? 9 : pb) || a.entry.overall - b.entry.overall;
+  });
+
+  $('myroster').innerHTML = sorted.map(({ entry: e, player: p }) => {
+    const posClass = order.includes(p.pos) ? p.pos : 'other';
+    const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
+    const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + e.overall + ')');
+    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
+    return '<div class="rosteritem"><span class="pk">' + fmtPick(e.overall, s.teams) + '</span>'
+      + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
+      + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
+      + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span></div>';
+  }).join('') || '<div class="meta" style="padding:10px 0">No picks on your roster yet.</div>';
+
+  const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+  for (const { player: p } of resolvedPicks) {
+    if (counts[p.pos] != null) counts[p.pos]++;
+  }
+  const targets = { QB: 2, RB: 4, WR: 5, TE: 1 };
+  $('myneeds').innerHTML = order.map(pos => {
+    const c = counts[pos], t = targets[pos];
+    const cls = c >= t ? 'ok' : (myPicks.length >= 6 && c === 0 ? 'short' : '');
+    return '<span class="need ' + cls + '">' + pos + ' ' + c + '/' + t + '+</span>';
+  }).join('') + '<span class="need">Starters: QB·2RB·2WR·TE·3FLEX·SF</span>';
+
+  $('mybyewarn').innerHTML = clashWeeks.length
+    ? '<div class="warnbox" style="margin-top:10px">Bye overlap — week ' + clashWeeks.map(w => w + ': ' + byBye[w].join(', ')).join(' · week ') + '</div>'
+    : '';
+}
+
+function renderInspectRoster() {
+  const s = state.settings;
+  const pick = currentPick();
+  const onClockTeam = teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot);
+  const targetSlot = (viewingRosterSlot != null) ? viewingRosterSlot : onClockTeam.slot;
+  const isFollowingClock = (viewingRosterSlot == null || viewingRosterSlot === onClockTeam.slot);
+  const isTargetMine = (targetSlot === s.slot);
+
+  // Populate Dropdown
+  let selectHtml = '<option value="clock"' + (viewingRosterSlot == null ? ' selected' : '') + '>⚡ [Auto: On The Clock — ' + onClockTeam.name + ' (Slot ' + onClockTeam.slot + ')]</option>';
   for (let i = 1; i <= s.teams; i++) {
+    const isClock = (i === onClockTeam.slot);
     const isMe = (i === s.slot);
-    const isSelected = (i === targetSlot);
+    const isSelected = (viewingRosterSlot === i);
     const count = state.log.filter(e => slotForOverall(e.overall, s.teams, s.mode).slot === i).length;
     selectHtml += '<option value="' + i + '"' + (isSelected ? ' selected' : '') + '>'
-      + (isMe ? '⭐ ' : '') + getTeamName(i) + ' (Slot ' + i + ' · ' + count + ' picks)' + (isMe ? ' [You]' : '')
+      + (isClock ? '🕒 ' : (isMe ? '⭐ ' : '')) + getTeamName(i) + ' (Slot ' + i + ' · ' + count + ' picks)' + (isMe ? ' [You]' : '')
       + '</option>';
   }
   $('rosterTeamSelect').innerHTML = selectHtml;
-  $('myrosterquickbtn').style.display = isViewingMyTeam ? 'none' : 'inline-block';
+  $('onclockquickbtn').style.display = (viewingRosterSlot != null && viewingRosterSlot !== onClockTeam.slot) ? 'inline-block' : 'none';
+
+  // Label
+  if (isFollowingClock) {
+    $('clockteamlabel').innerHTML = '🕒 <b style="color:var(--accent)">On The Clock:</b> <span style="color:var(--text); font-weight:600">' + onClockTeam.name + '</span>' + (onClockTeam.isMe ? ' <span style="color:var(--good); font-weight:700">(Your Turn!)</span>' : ' (Slot ' + onClockTeam.slot + ')');
+  } else {
+    $('clockteamlabel').innerHTML = '👥 <b style="color:var(--dim)">Inspecting:</b> <span style="color:var(--text); font-weight:600">' + getTeamName(targetSlot) + '</span> (Slot ' + targetSlot + ') · <a href="javascript:void(0)" onclick="selectRosterSlot(null)" style="color:var(--accent); text-decoration:underline">Back to On-Clock</a>';
+  }
 
   // Filter all picks belonging to target slot
   const teamPicks = state.log.filter(e => slotForOverall(e.overall, s.teams, s.mode).slot === targetSlot);
@@ -560,14 +644,14 @@ function renderRoster() {
     const posClass = order.includes(p.pos) ? p.pos : 'other';
     const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
     const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + e.overall + ')');
-    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10.5px">(unlisted)</span>' : '';
+    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
     return '<div class="rosteritem"><span class="pk">' + fmtPick(e.overall, s.teams) + '</span>'
       + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
       + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
       + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span></div>';
-  }).join('') || '<div class="meta" style="padding:10px 0">' + (isViewingMyTeam ? 'No picks on your roster yet.' : 'No picks made by this team yet.') + '</div>';
+  }).join('') || '<div class="meta" style="padding:10px 0">No picks made by this team yet.</div>';
 
-  // Positional counts (updates with unlisted picks too!)
+  // Positional counts
   const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
   for (const { player: p } of resolvedPicks) {
     if (counts[p.pos] != null) counts[p.pos]++;
@@ -576,8 +660,8 @@ function renderRoster() {
   $('needs').innerHTML = order.map(pos => {
     const c = counts[pos], t = targets[pos];
     const cls = c >= t ? 'ok' : (teamPicks.length >= 6 && c === 0 ? 'short' : '');
-    return '<span class="need ' + cls + '">' + pos + ' ' + c + (isViewingMyTeam ? '/' + t + '+' : '') + '</span>';
-  }).join('') + (isViewingMyTeam ? '<span class="need">Starters: QB·2RB·2WR·TE·3FLEX·SF</span>' : '');
+    return '<span class="need ' + cls + '">' + pos + ' ' + c + (isTargetMine ? '/' + t + '+' : '') + '</span>';
+  }).join('') + (isTargetMine ? '<span class="need">Starters: QB·2RB·2WR·TE·3FLEX·SF</span>' : '<span class="need">Roster: ' + teamPicks.length + ' picks</span>');
 
   $('byewarn').innerHTML = clashWeeks.length
     ? '<div class="warnbox" style="margin-top:10px">Bye overlap — week ' + clashWeeks.map(w => w + ': ' + byBye[w].join(', ')).join(' · week ') + '</div>'
@@ -618,7 +702,8 @@ function renderBanner() {
 function render() {
   renderHeader();
   renderPool();
-  renderRoster();
+  renderMyRoster();
+  renderInspectRoster();
   renderLog();
   renderBanner();
 }
@@ -886,7 +971,7 @@ function bindSettings() {
   on('jumpbtn', 'click', () => { const v = +$('jumppick').value; if (v) jumpTo(v); });
   on('setupbtn', 'click', openLeagueSetup);
   on('rosterTeamSelect', 'change', () => {
-    selectRosterSlot(+$('rosterTeamSelect').value);
+    selectRosterSlot($('rosterTeamSelect').value);
   });
   on('overlay', 'click', e => { if (e.target.id === 'overlay') closeModal(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
