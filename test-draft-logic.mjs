@@ -79,6 +79,22 @@ eq(L.compositeScore(te, 0.5, true) > L.compositeScore(te, 0.5, false), true, 'TE
 const wr = { pos: 'WR', dynScore: 80, redScore: null };
 eq(L.compositeScore(wr, 0.5, false), 80, 'missing redraft falls back to dynasty score');
 
+// --- Team resolution ---
+const sampleTeams = ['Apex Legends', 'Ken', 'Touchdown Kings', 'Gridiron Gurus'];
+eq(L.defaultTeams(4, 2, 'Ken'), [
+  { slot: 1, name: 'Team 1' },
+  { slot: 2, name: 'Ken' },
+  { slot: 3, name: 'Team 3' },
+  { slot: 4, name: 'Team 4' }
+], 'defaultTeams creates slots with custom name for mySlot');
+
+eq(L.teamForOverall(1, 4, '3rr', sampleTeams, 2), { round: 1, slot: 1, name: 'Apex Legends', isMe: false }, 'Pick 1 is slot 1 Apex Legends');
+eq(L.teamForOverall(2, 4, '3rr', sampleTeams, 2), { round: 1, slot: 2, name: 'Ken', isMe: true }, 'Pick 2 is slot 2 Ken (isMe=true)');
+// Round 2 is reverse: pick 5 is slot 4 (Gridiron Gurus), pick 6 is slot 3, pick 7 is slot 2 (Ken)
+eq(L.teamForOverall(7, 4, '3rr', sampleTeams, 2), { round: 2, slot: 2, name: 'Ken', isMe: true }, 'Pick 7 is round 2 slot 2 Ken');
+// Round 3 in 3RR is reverse AGAIN: pick 9 is slot 4 (Gridiron Gurus), pick 10 is slot 3, pick 11 is slot 2 (Ken)
+eq(L.teamForOverall(11, 4, '3rr', sampleTeams, 2), { round: 3, slot: 2, name: 'Ken', isMe: true }, 'Pick 11 in 3RR is round 3 slot 2 Ken');
+
 if (failures > 0) {
   console.error(`\n${failures} test(s) FAILED`);
   process.exit(1);

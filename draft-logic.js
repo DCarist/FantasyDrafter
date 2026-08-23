@@ -71,6 +71,38 @@ function rankToScore(rank, depth) {
   return 100 * Math.pow(1 - frac, 1.5);
 }
 
+// Generate default team list for a given league size.
+function defaultTeams(count, mySlot, myName) {
+  const list = [];
+  for (let i = 1; i <= count; i++) {
+    const isMe = (i === mySlot);
+    const name = isMe ? (myName || 'My Team') : ('Team ' + i);
+    list.push({ slot: i, name: name });
+  }
+  return list;
+}
+
+// Get team info for an overall pick given team name mappings.
+// teamNames can be an array of strings (0-indexed for slot 1..N) or a map/object.
+function teamForOverall(overall, teamsCount, mode, teamNames, mySlot) {
+  const { round, slot } = slotForOverall(overall, teamsCount, mode);
+  let name;
+  if (Array.isArray(teamNames)) {
+    name = teamNames[slot - 1];
+  } else if (teamNames && typeof teamNames === 'object') {
+    name = teamNames[slot] || teamNames[String(slot)];
+  }
+  if (!name || !name.trim()) {
+    name = (slot === mySlot) ? 'My Team' : ('Team ' + slot);
+  }
+  return {
+    round: round,
+    slot: slot,
+    name: name.trim(),
+    isMe: slot === mySlot,
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     roundIsForward: roundIsForward,
@@ -80,5 +112,7 @@ if (typeof module !== 'undefined' && module.exports) {
     normalizeName: normalizeName,
     compositeScore: compositeScore,
     rankToScore: rankToScore,
+    defaultTeams: defaultTeams,
+    teamForOverall: teamForOverall,
   };
 }
