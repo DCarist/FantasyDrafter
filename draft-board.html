@@ -285,10 +285,94 @@ function draftPlayer(id, mine) {
   state.log.push({ overall: currentPick(), playerId: id, mine: !!mine });
   save(); render();
 }
-function unknownPick() {
-  state.log.push({ overall: currentPick(), playerId: null, mine: false });
-  save(); render();
+
+let unlistedSelectedPos = 'WR';
+
+function openUnlistedPickModal() {
+  const pick = currentPick();
+  const totalPicks = state.settings.teams * state.settings.rounds;
+  if (pick > totalPicks) {
+    alert('The draft is already complete!');
+    return;
+  }
+  const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
+  unlistedSelectedPos = 'WR';
+
+  const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'OTHER'];
+  const posButtons = positions.map(pos =>
+    '<button type="button" class="tab' + (pos === unlistedSelectedPos ? ' on' : '') + '" id="unlisted_pos_' + pos + '" onclick="selectUnlistedPos(\'' + pos + '\')">' + pos + '</button>'
+  ).join('');
+
+  $('modalbox').innerHTML =
+    '<h3>📝 Record Unlisted Pick'
+    + '<button class="close" onclick="closeModal()">×</button></h3>'
+    + '<div style="margin: 10px 0; font-size: 13px; color: var(--dim)">'
+    + 'Drafting for: <b style="color: ' + (who.isMe ? 'var(--good)' : 'var(--text)') + '; font-size: 14px">' + who.name + (who.isMe ? ' (Your Team)' : '') + '</b> '
+    + '· Pick <b>#' + pick + ' (' + fmtPick(pick, state.settings.teams) + ')</b>'
+    + '</div>'
+    + '<div style="margin-top: 12px">'
+    + '<label style="display:block; font-size:12px; color:var(--dim); margin-bottom:6px">Select Position <b style="color:var(--warn)">*</b></label>'
+    + '<div class="tabs" style="flex-wrap:wrap; gap:6px" id="unlisted_pos_tabs">' + posButtons + '</div>'
+    + '</div>'
+    + '<div class="setup-grid" style="margin-top:14px">'
+    + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Player Name (Optional)</label><input type="text" id="unlisted_name_input" placeholder="e.g. Ray-Ray McCloud (Leave blank for Unlisted ' + unlistedSelectedPos + ')"></div>'
+    + '<div class="setup-field"><label>NFL Bye Week (Optional)</label><input type="number" id="unlisted_bye_input" min="1" max="18" placeholder="e.g. 9"></div>'
+    + '</div>'
+    + '<div class="modal-actions" style="margin-top:18px">'
+    + '<button type="button" class="act" onclick="closeModal()">Cancel</button>'
+    + '<button type="button" class="act primary" onclick="submitUnlistedPick()">Confirm & Draft Player</button>'
+    + '</div>';
+
+  $('overlay').classList.add('show');
+  setTimeout(() => {
+    const input = $('unlisted_name_input');
+    if (input) {
+      input.focus();
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') submitUnlistedPick();
+      });
+    }
+  }, 60);
 }
+
+function selectUnlistedPos(pos) {
+  unlistedSelectedPos = pos;
+  const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'OTHER'];
+  for (const p of positions) {
+    const btn = $('unlisted_pos_' + p);
+    if (btn) btn.className = 'tab' + (p === pos ? ' on' : '');
+  }
+  const input = $('unlisted_name_input');
+  if (input && !input.value.trim()) {
+    input.placeholder = 'e.g. Ray-Ray McCloud (Leave blank for Unlisted ' + pos + ')';
+  }
+}
+
+function submitUnlistedPick() {
+  const nameInput = $('unlisted_name_input');
+  const byeInput = $('unlisted_bye_input');
+  const name = nameInput ? nameInput.value.trim() : '';
+  const bye = (byeInput && byeInput.value) ? parseInt(byeInput.value, 10) : null;
+  draftUnlistedPlayer(unlistedSelectedPos, name, bye);
+}
+
+function draftUnlistedPlayer(pos, name, bye) {
+  const who = teamForOverall(currentPick(), state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
+  const posVal = (pos || 'WR').toUpperCase();
+  const nameVal = (name && name.trim()) ? name.trim() : ('Unlisted ' + (posVal !== 'OTHER' ? posVal : 'Player'));
+  state.log.push({
+    overall: currentPick(),
+    playerId: null,
+    customName: nameVal,
+    customPos: posVal,
+    customBye: (bye && bye >= 1 && bye <= 18) ? bye : null,
+    mine: who.isMe
+  });
+  save();
+  closeModal();
+  render();
+}
+
 function undo() {
   state.log.pop();
   save(); render();
@@ -296,7 +380,9 @@ function undo() {
 function jumpTo(pick) {
   pick = Math.max(1, Math.floor(pick));
   while (state.log.length > pick - 1) state.log.pop();
-  while (state.log.length < pick - 1) state.log.push({ overall: state.log.length + 1, playerId: null, mine: false });
+  while (state.log.length < pick - 1) {
+    state.log.push({ overall: state.log.length + 1, playerId: null, customName: 'Skipped pick', customPos: 'OTHER', mine: false });
+  }
   save(); render();
 }
 function resetDraft() {
@@ -433,12 +519,12 @@ function renderRoster() {
   const targetSlot = (viewingRosterSlot != null) ? viewingRosterSlot : s.slot;
   const isViewingMyTeam = (targetSlot === s.slot);
 
-  // Populate Roster Dropdown
+  // Populate Roster Dropdown (counts all picks for slot i)
   let selectHtml = '';
   for (let i = 1; i <= s.teams; i++) {
     const isMe = (i === s.slot);
     const isSelected = (i === targetSlot);
-    const count = state.log.filter(e => e.playerId != null && slotForOverall(e.overall, s.teams, s.mode).slot === i).length;
+    const count = state.log.filter(e => slotForOverall(e.overall, s.teams, s.mode).slot === i).length;
     selectHtml += '<option value="' + i + '"' + (isSelected ? ' selected' : '') + '>'
       + (isMe ? '⭐ ' : '') + getTeamName(i) + ' (Slot ' + i + ' · ' + count + ' picks)' + (isMe ? ' [You]' : '')
       + '</option>';
@@ -446,38 +532,45 @@ function renderRoster() {
   $('rosterTeamSelect').innerHTML = selectHtml;
   $('myrosterquickbtn').style.display = isViewingMyTeam ? 'none' : 'inline-block';
 
-  // Filter picks for target slot
-  const teamPicks = state.log.filter(e => e.playerId != null && slotForOverall(e.overall, s.teams, s.mode).slot === targetSlot);
+  // Filter all picks belonging to target slot
+  const teamPicks = state.log.filter(e => slotForOverall(e.overall, s.teams, s.mode).slot === targetSlot);
+
+  // Map each pick to player object using resolvePickPlayer
+  const resolvedPicks = teamPicks.map(e => ({
+    entry: e,
+    player: resolvePickPlayer(e, byId)
+  }));
 
   // Bye-week clashes among team picks
   const byBye = {};
-  for (const e of teamPicks) {
-    const b = byId(e.playerId).bye;
-    if (b) (byBye[b] = byBye[b] || []).push(byId(e.playerId).name);
+  for (const { player } of resolvedPicks) {
+    if (player.bye) {
+      (byBye[player.bye] = byBye[player.bye] || []).push(player.name);
+    }
   }
   const clashWeeks = Object.keys(byBye).filter(w => byBye[w].length >= 2);
 
   const order = ['QB','RB','WR','TE'];
-  const sorted = teamPicks.slice().sort((a, b) => {
-    const pa = order.indexOf(byId(a.playerId).pos), pb = order.indexOf(byId(b.playerId).pos);
-    return (pa === -1 ? 9 : pa) - (pb === -1 ? 9 : pb) || a.overall - b.overall;
+  const sorted = resolvedPicks.slice().sort((a, b) => {
+    const pa = order.indexOf(a.player.pos), pb = order.indexOf(b.player.pos);
+    return (pa === -1 ? 9 : pa) - (pb === -1 ? 9 : pb) || a.entry.overall - b.entry.overall;
   });
 
-  $('roster').innerHTML = sorted.map(e => {
-    const p = byId(e.playerId);
+  $('roster').innerHTML = sorted.map(({ entry: e, player: p }) => {
     const posClass = order.includes(p.pos) ? p.pos : 'other';
     const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
+    const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + e.overall + ')');
+    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10.5px">(unlisted)</span>' : '';
     return '<div class="rosteritem"><span class="pk">' + fmtPick(e.overall, s.teams) + '</span>'
       + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
-      + '<span class="pname" onclick="showPlayer(' + p.id + ')">' + p.name + '</span>'
-      + '<span class="bye' + (clash ? ' clash' : '') + '">bye ' + (p.bye || '?') + '</span></div>';
+      + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
+      + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span></div>';
   }).join('') || '<div class="meta" style="padding:10px 0">' + (isViewingMyTeam ? 'No picks on your roster yet.' : 'No picks made by this team yet.') + '</div>';
 
-  // Positional counts
+  // Positional counts (updates with unlisted picks too!)
   const counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
-  for (const e of teamPicks) {
-    const pos = byId(e.playerId).pos;
-    if (counts[pos] != null) counts[pos]++;
+  for (const { player: p } of resolvedPicks) {
+    if (counts[p.pos] != null) counts[p.pos]++;
   }
   const targets = { QB: 2, RB: 4, WR: 5, TE: 1 };
   $('needs').innerHTML = order.map(pos => {
@@ -494,15 +587,15 @@ function renderRoster() {
 function renderLog() {
   const s = state.settings;
   $('log').innerHTML = state.log.slice().reverse().map(e => {
-    const p = e.playerId != null ? byId(e.playerId) : null;
-    const name = p ? p.name : '(unlisted player)';
-    const pos = p ? ' <span class="meta">(' + p.pos + ')</span>' : '';
+    const p = resolvePickPlayer(e, byId);
+    const pos = p.pos ? ' <span class="meta">(' + p.pos + ')</span>' : '';
     const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot);
     const isMe = e.mine || tInfo.isMe;
+    const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(unlisted)</span>' : '';
     return '<div class="logitem' + (isMe ? ' mine' : '') + '">'
       + '<span class="meta">#' + e.overall + ' (' + fmtPick(e.overall, s.teams) + ')</span> '
       + '<b style="color:' + (isMe ? 'var(--good)' : 'var(--text)') + '">' + tInfo.name + (isMe ? ' (You)' : '') + '</b>: '
-      + name + pos + (isMe ? ' ✅' : '') + '</div>';
+      + p.name + pos + unlistedBadge + (isMe ? ' ✅' : '') + '</div>';
   }).join('') || '<div class="meta">Draft hasn\'t started.</div>';
 }
 
@@ -582,6 +675,34 @@ function showPlayer(id) {
 }
 
 function closeModal() { $('overlay').classList.remove('show'); }
+
+function showUnlistedPlayer(overall) {
+  const entry = state.log.find(e => e.overall === overall);
+  if (!entry) return;
+  const p = resolvePickPlayer(entry, byId);
+  const tInfo = teamForOverall(entry.overall, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
+  const isMine = entry.mine || tInfo.isMe;
+  const posClass = ['QB','RB','WR','TE'].includes(p.pos) ? p.pos : 'other';
+
+  const q = encodeURIComponent(p.name + ' fantasy');
+  const links = '<div class="links">'
+    + '<a target="_blank" href="https://news.google.com/search?q=' + q + '">🔎 Google News</a>'
+    + '<a target="_blank" href="https://www.espn.com/search/_/q/' + encodeURIComponent(p.name) + '">ESPN</a>'
+    + '</div>';
+
+  $('modalbox').innerHTML =
+    '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
+    + ' <span class="meta">(Custom / Unlisted Pick)</span>'
+    + '<button class="close" onclick="closeModal()">×</button></h3>'
+    + '<div class="statrow">'
+    + '<span class="stat">Drafted By<b>' + tInfo.name + (isMine ? ' (You)' : '') + '</b></span>'
+    + '<span class="stat">Pick<b>#' + entry.overall + ' (' + fmtPick(entry.overall, state.settings.teams) + ')</b></span>'
+    + (p.bye ? '<span class="stat">Bye Week<b>Week ' + p.bye + '</b></span>' : '')
+    + '</div>'
+    + '<div class="blurbnote">This selection was recorded as an unlisted pick and is tracked on this team\'s roster and positional counts.</div>'
+    + links;
+  $('overlay').classList.add('show');
+}
 
 // ---------- League Setup Modal ----------
 let setupDraftNames = [];
@@ -761,7 +882,7 @@ function bindSettings() {
   on('hidetaken', 'change', () => { ui.hideTaken = $('hidetaken').checked; renderPool(); });
   on('undobtn', 'click', undo);
   on('resetbtn', 'click', resetDraft);
-  on('unknownbtn', 'click', unknownPick);
+  on('unknownbtn', 'click', openUnlistedPickModal);
   on('jumpbtn', 'click', () => { const v = +$('jumppick').value; if (v) jumpTo(v); });
   on('setupbtn', 'click', openLeagueSetup);
   on('rosterTeamSelect', 'change', () => {
