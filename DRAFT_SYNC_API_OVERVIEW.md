@@ -103,49 +103,36 @@ ESPN Fantasy Football does not expose a public real-time draft socket or permiss
 │            (fantasy.espn.com/football/draft)           │
 │                                                        │
 │   ┌────────────────────────────────────────────────┐   │
-│   │         Pick Observer Script Injected          │   │
-│   │   (via Chrome Extension or 1-Click Bookmarklet)│   │
+│   │     Pick Observer Content Script Injected      │   │
+│   │   (via Manifest V3 Chrome / Edge Extension)    │   │
 │   │                                                │   │
 │   │   - Watches live pick feed / DOM changes       │   │
 │   │   - Extracts pickNumber, playerName, pos, team │   │
 │   └───────────────────────┬────────────────────────┘   │
 └───────────────────────────┼────────────────────────────┘
                             │
-               BroadcastChannel('fantasy_drafter_sync')
+               HTTP Relay / BroadcastChannel
                             │
 ┌───────────────────────────▼────────────────────────────┐
 │              Fantasy Drafter Board Tab                 │
-│         (http://localhost:8517/draft-board.html)       │
+│         (http://127.0.0.1:8517/draft-board.html)       │
 │                                                        │
-│   - Receives message event                             │
-│   - Resolves player against rankings dataset          │
-│   - Automatically logs pick & updates rosters / board │
+│   - Receives pick events via local HTTP relay/SSE      │
+│   - Resolves player against rankings dataset           │
+│   - Automatically logs pick & updates rosters / board  │
 └────────────────────────────────────────────────────────┘
 ```
 
-#### Approach A: Lightweight Chrome/Edge Browser Extension (Recommended for ESPN)
-- **Architecture:** Manifest V3 extension with a content script targeting `*://fantasy.espn.com/*draft*`.
+#### Chrome/Edge Browser Extension (Primary for ESPN)
+- **Architecture:** Manifest V3 extension with a content script targeting `*://fantasy.espn.com/*draft*` in [`extensions/espn-sync`](file:///d:/Programming/FantasyDrafter/extensions/espn-sync).
 - **How it works:**
-  1. The content script mounts a `MutationObserver` on the ESPN pick history table and active clock container.
-  2. As each pick is completed, the extension formats a structured payload:
-     `{ platform: 'espn', event: 'pick', overall: 14, playerName: 'CeeDee Lamb', pos: 'WR', team: 'DAL' }`
-  3. Transmits the payload across browser tabs via standard `BroadcastChannel('fantasy_drafter_sync')`.
-  4. Fantasy Drafter receives the message and executes the draft action instantly.
+  1. The content script mounts a `MutationObserver` on the ESPN pick history table, draft board cells, and active clock banner.
+  2. As each pick is completed, the extension extracts player name, position, and NFL team:
+     `{ source: 'espn', type: 'PICK_MADE', overall: 14, name: 'CeeDee Lamb', pos: 'WR', team: 'DAL' }`
+  3. Transmits the payload to Fantasy Drafter on `http://127.0.0.1:8517/api/sync/pick`.
+  4. Fantasy Drafter receives the event and executes the draft action instantly.
 - **Advantages:** Sub-second response time, works with 100% of private and public ESPN leagues, requires zero cookie entry.
-- **Setup:** Loaded once via Chrome/Edge `chrome://extensions` -> "Load unpacked".
-
-#### Approach B: 1-Click Draft Room Bookmarklet (Zero-Install Alternative)
-- **Architecture:** Minified JavaScript bookmarklet stored in the user's browser bookmarks bar.
-- **How it works:**
-  1. User opens the ESPN draft room in one tab and Fantasy Drafter in another.
-  2. User clicks the bookmarklet once in the ESPN tab.
-  3. The bookmarklet injects the `MutationObserver` and opens the `BroadcastChannel`.
-- **Advantages:** Zero installation, no developer mode extensions required.
-- **Trade-off:** Must be clicked once when joining the draft room.
-
-#### Approach C: Python Companion Proxy (`sync-espn.py`)
-- **Architecture:** Local Python script querying ESPN's v3 league endpoint using user-provided `espn_s2` and `SWID` credentials.
-- **Trade-off:** Subject to ESPN API caching latency during active drafts; requires manual cookie extraction.
+- **Setup:** Loaded once via Chrome/Edge `chrome://extensions` or `edge://extensions` -> **Load unpacked** pointing to `extensions/espn-sync`.
 
 ---
 

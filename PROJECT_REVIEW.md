@@ -56,10 +56,11 @@ FantasyDrafter/
 
 | File | Language | Purpose & Functionality |
 | :--- | :--- | :--- |
-| **`draft-board.html`** | HTML / CSS / JS | Main draft interface featuring a **3-column layout**: permanent user roster on left, ranking board in center, on-the-clock team inspector and draft log on right. Includes Live Sync modal (Sleeper polling, ESPN bookmarklet, cross-tab BroadcastChannel), League Setup modal, unlisted pick modal, Web Audio API chimes, and glowing clock pulse cues. |
+| **`draft-board.html`** | HTML / CSS / JS | Main draft interface featuring a **3-column layout**: permanent user roster on left, ranking board in center, on-the-clock team inspector and draft log on right. Includes Live Sync modal (Sleeper polling, ESPN browser extension sync, local HTTP relay), League Setup modal, unlisted pick modal, Web Audio API chimes, and glowing clock pulse cues. |
 | **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical, scoring, and sync algorithms: `overallPick`, `slotForOverall`, `picksForSlot`, `roundIsForward`, `normalizeName`, `compositeScore`, `rankToScore`, `defaultTeams`, `teamForOverall`, `resolvePickPlayer`, `assignRosterSlots`, `parseSleeperDraft`, `resolveRemotePick`, and `reconcileDraftLog`. |
-| **`sync-bookmarklet.js`** | JavaScript | Standalone 1-Click DOM observer script that broadcasts picks from ESPN Live Draft Rooms to Fantasy Drafter across browser tabs. |
-| **`DRAFT_SYNC_API_OVERVIEW.md`** | Markdown | Technical specification covering Sleeper REST API polling and ESPN BroadcastChannel synchronization. |
+| **`extensions/espn-sync/`** | JavaScript / Manifest V3 | Chrome & Edge unpacked browser extension that observes picks in ESPN Live Draft Rooms and streams them in real-time to Fantasy Drafter. |
+| **`server.py`** | Python 3 | Lightweight local HTTP relay server providing CORS-enabled endpoints (`/api/sync/ping`, `/api/sync/pick`, `/api/sync/poll`, `/api/sync/events`) and serving static board assets. |
+| **`DRAFT_SYNC_API_OVERVIEW.md`** | Markdown | Technical specification covering Sleeper REST API polling and ESPN extension synchronization. |
 | **`update-rankings.py`** | Python 3 | Automated ETL fetcher that pulls live consensus data across Dynasty SF, Dynasty 1QB, Redraft, Best-Ball ADP, and Rookies, compiling 720+ active players into `players-data.js`. |
 | **`test-runner.mjs`** | Node.js (ESM) | Discovers and executes all test suites (`test-draft-logic.mjs` and all `tests/*.test.mjs`), reporting comprehensive failure and pass metrics. |
 | **`tests/live-sync.test.mjs`** | Node.js (ESM) | Validates Sleeper draft/user parsing, 3RR reversal detection, remote player matching, suffix handling, defenses, unlisted fallbacks, and log reconciliation. |
@@ -71,7 +72,7 @@ FantasyDrafter/
 ### 3.1 Live Draft Synchronization & Audio/Visual Cues
 - **⚡ Live Sync Hub (`#syncModal` & Header Pill):**
   - **Sleeper API Mode:** In-browser 2s polling of `/picks` and one-click import of league name, team count, draft order, team names, user slot, and 3RR mode.
-  - **ESPN 1-Click Sync Mode:** Draggable bookmarklet and cross-tab `BroadcastChannel` receiver for instant sub-second pick synchronization from ESPN draft rooms.
+  - **ESPN Live Extension Mode:** Unpacked Chrome/Edge extension automatically relays picks from ESPN live draft rooms to Fantasy Drafter via local HTTP relay and BroadcastChannel.
   - **Reconciliation & Rollback Engine:** Automatically syncs additions and handles commissioner pick resets cleanly.
   - **Full Manual Mode Preservation:** Manual drafting, undo, reset, and setup work seamlessly whether sync is offline, paused, or active.
 - **🔔 Audio & Visual Turn Cues:**
