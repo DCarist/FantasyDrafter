@@ -558,6 +558,372 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
     + '</div>';
 }
 
+// Parses Sleeper API draft settings and user data into FantasyDrafter league settings
+function parseSleeperDraft(draftData, usersData, currentUsernameOrId) {
+  if (!draftData) return null;
+
+  const metadata = draftData.metadata || {};
+  const settings = draftData.settings || {};
+  const draftOrder = draftData.draft_order || {};
+  const slotToRoster = draftData.slot_to_roster_id || {};
+
+  const leagueName = metadata.name || 'Sleeper Draft';
+  const teamsCount = Math.max(2, Math.min(32, parseInt(settings.teams, 10) || Object.keys(draftOrder).length || 12));
+  const rounds = Math.max(1, Math.min(50, parseInt(settings.rounds, 10) || 25));
+
+  // Determine draft mode: 3RR vs Snake vs Linear
+  let mode = 'snake';
+  if (settings.reversal_round === 3) {
+    mode = '3rr';
+  } else if (draftData.type === 'linear') {
+    mode = 'linear';
+  }
+
+  // Build user mapping from usersData
+  const userMap = new Map();
+  if (Array.isArray(usersData)) {
+    for (const u of usersData) {
+      if (!u || !u.user_id) continue;
+      const tName = (u.metadata && u.metadata.team_name) ? u.metadata.team_name.trim() : '';
+      const dName = u.display_name ? u.display_name.trim() : '';
+      userMap.set(String(u.user_id), {
+        userId: String(u.user_id),
+        displayName: dName,
+        teamName: tName || dName || ('User ' + u.user_id)
+      });
+    }
+  }
+
+  // Build teamNames list ordered by slot (1..teamsCount)
+  const teamNames = [];
+  const slotToUser = {};
+
+  // Inverse draft_order to find which user has slot N
+  const slotToUserId = {};
+  for (const [userId, slot] of Object.entries(draftOrder)) {
+    slotToUserId[slot] = userId;
+  }
+
+  for (let s = 1; s <= teamsCount; s++) {
+    const uId = slotToUserId[s];
+    if (uId) {
+      slotToUser[s] = uId;
+      const uInfo = userMap.get(String(uId));
+      if (uInfo) {
+        teamNames.push(uInfo.teamName);
+      } else {
+        teamNames.push('Slot ' + s);
+      }
+    } else {
+      teamNames.push('Team ' + s);
+    }
+  }
+
+  // Resolve user slot if username or ID provided
+  let mySlot = 1;
+  if (currentUsernameOrId) {
+    const searchTarget = String(currentUsernameOrId).trim().toLowerCase();
+    for (let s = 1; s <= teamsCount; s++) {
+      const uId = slotToUser[s];
+      const uInfo = uId ? userMap.get(String(uId)) : null;
+      const tName = (teamNames[s - 1] || '').toLowerCase();
+      if (uId && String(uId).toLowerCase() === searchTarget) {
+        mySlot = s;
+        break;
+      }
+      if (uInfo && (uInfo.displayName.toLowerCase() === searchTarget || uInfo.teamName.toLowerCase() === searchTarget)) {
+        mySlot = s;
+        break;
+      }
+      if (tName === searchTarget) {
+        mySlot = s;
+        break;
+      }
+    }
+  }
+
+  return {
+    leagueName: leagueName,
+    teams: teamsCount,
+    rounds: rounds,
+    mode: mode,
+    teamNames: teamNames,
+    slot: mySlot,
+    draftId: draftData.draft_id || null,
+    leagueId: draftData.league_id || null,
+    status: draftData.status || 'pre_draft',
+    slotToUserId: slotToUser
+  };
+}
+
+// Resolves a remote pick payload (from Sleeper or ESPN) against local players list
+function resolveRemotePick(remotePick, playersList, options) {
+  if (!remotePick) return null;
+
+  const opt = options || {};
+  const unlistedFallback = opt.unlistedFallback !== false;
+  const overall = remotePick.pick_no != null ? parseInt(remotePick.pick_no, 10) : (remotePick.overall != null ? parseInt(remotePick.overall, 10) : null);
+
+  let rawName = '';
+  let rawPos = '';
+  let rawTeam = '';
+
+  if (remotePick.metadata) {
+    const meta = remotePick.metadata;
+    const fn = (meta.first_name || '').trim();
+    const ln = (meta.last_name || '').trim();
+    rawName = (fn + ' ' + ln).trim() || meta.name || '';
+    rawPos = (meta.position || meta.pos || '').trim().toUpperCase();
+    rawTeam = (meta.team || '').trim().toUpperCase();
+  } else {
+    rawName = (remotePick.name || remotePick.playerName || '').trim();
+    rawPos = (remotePick.pos || remotePick.position || '').trim().toUpperCase();
+    rawTeam = (remotePick.team || '').trim().toUpperCase();
+  }
+
+  function stripSuffix(name) {
+    if (!name) return '';
+    return String(name)
+      .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const NICKNAME_ALIASES = {
+    'hollywood brown': 'marquise brown',
+    'gabe davis': 'gabriel davis',
+    'mitch trubisky': 'mitchell trubisky',
+    'josh palmer': 'joshua palmer',
+    'cam akers': 'cameron akers',
+    'chig okonkwo': 'chigoziem okonkwo',
+    'dj moore': 'dj moore',
+    'd.j. moore': 'dj moore',
+    'cj stroud': 'cj stroud',
+    'c.j. stroud': 'cj stroud',
+    'aj brown': 'aj brown',
+    'a.j. brown': 'aj brown',
+    'jk dobbins': 'jk dobbins',
+    'j.k. dobbins': 'jk dobbins',
+    'tj hockenson': 'tj hockenson',
+    't.j. hockenson': 'tj hockenson',
+    'dk metcalf': 'dk metcalf',
+    'd.k. metcalf': 'dk metcalf',
+    'd metcalf': 'dk metcalf'
+  };
+
+  // Handle Defense / Special Teams resolution (only if position or name indicates defense)
+  const isDefPos = ['DST', 'DEF', 'D/ST'].includes(rawPos);
+  const hasDefKeyword = /\b(dst|def|d\/st|defense)\b/i.test(rawName) || /\b(49ers|chiefs|cowboys|eagles|ravens|bills|packers|steelers)\s+(dst|def|d\/st|defense)\b/i.test(rawName);
+  const dstCanonical = (isDefPos || hasDefKeyword) ? resolveDstCanonical(rawName, rawTeam) : null;
+
+  if (Array.isArray(playersList)) {
+    if (isDefPos || dstCanonical) {
+      const targetTeam = dstCanonical ? dstCanonical.team : rawTeam;
+      const targetNameNorm = dstCanonical ? normalizeName(dstCanonical.name) : normalizeName(rawName);
+      const matchDst = playersList.find(p => {
+        if (!['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase())) return false;
+        if (targetTeam && p.team && p.team.toUpperCase() === targetTeam) return true;
+        return normalizeName(p.name) === targetNameNorm;
+      });
+      if (matchDst) {
+        return {
+          playerId: matchDst.id,
+          player: matchDst,
+          isUnlisted: false,
+          overall: overall
+        };
+      }
+    }
+
+    const cleanRaw = rawName.trim();
+    const normName = normalizeName(cleanRaw);
+    const noSuffixNorm = normalizeName(stripSuffix(cleanRaw));
+    const aliasTarget = NICKNAME_ALIASES[cleanRaw.toLowerCase()] || NICKNAME_ALIASES[normName] || NICKNAME_ALIASES[noSuffixNorm];
+
+    // Tier 1 & Tier 2: Exact, Suffix-Insensitive, or Nickname Match
+    if (normName) {
+      let matches = playersList.filter(p => {
+        const pNorm = normalizeName(p.name);
+        const pNoSuffix = normalizeName(stripSuffix(p.name));
+        if (pNorm === normName || pNoSuffix === noSuffixNorm) return true;
+        if (aliasTarget && (pNorm === aliasTarget || pNoSuffix === aliasTarget)) return true;
+        return false;
+      });
+
+      if (matches.length === 1) {
+        return {
+          playerId: matches[0].id,
+          player: matches[0],
+          isUnlisted: false,
+          overall: overall
+        };
+      }
+
+      if (matches.length > 1) {
+        if (rawPos) {
+          const posMatches = matches.filter(p => (p.pos || '').toUpperCase() === rawPos);
+          if (posMatches.length === 1) {
+            return {
+              playerId: posMatches[0].id,
+              player: posMatches[0],
+              isUnlisted: false,
+              overall: overall
+            };
+          }
+          if (posMatches.length > 1) matches = posMatches;
+        }
+
+        if (rawTeam) {
+          const teamMatches = matches.filter(p => (p.team || '').toUpperCase() === rawTeam);
+          if (teamMatches.length > 0) {
+            return {
+              playerId: teamMatches[0].id,
+              player: teamMatches[0],
+              isUnlisted: false,
+              overall: overall
+            };
+          }
+        }
+
+        return {
+          playerId: matches[0].id,
+          player: matches[0],
+          isUnlisted: false,
+          overall: overall
+        };
+      }
+    }
+
+    // Tier 3: Abbreviated First Initial Match (e.g. 'D. Samuel Sr.', 'J. Herbert', 'D. Metcalf', 'D. Swift', 'M. Golden')
+    const initMatch = cleanRaw.match(/^([a-zA-Z])\.?\s+([a-zA-Z'\-]+(?:\s+(?:jr|sr|ii|iii|iv|v)\.?)?)$/i);
+    if (initMatch) {
+      const firstInit = initMatch[1].toLowerCase();
+      const lastNameRaw = stripSuffix(initMatch[2]).trim();
+      const normLastName = normalizeName(lastNameRaw);
+
+      let initialCandidates = playersList.filter(p => {
+        const parts = stripSuffix(p.name).trim().split(/\s+/);
+        if (parts.length < 2) return false;
+        const pFirst = parts[0].toLowerCase();
+        const pLast = normalizeName(parts.slice(1).join(' '));
+        const pFirstInit = pFirst.charAt(0);
+        return pFirstInit === firstInit && pLast === normLastName;
+      });
+
+      if (rawPos) {
+        const posMatches = initialCandidates.filter(p => (p.pos || '').toUpperCase() === rawPos);
+        if (posMatches.length > 0) initialCandidates = posMatches;
+      }
+      if (rawTeam) {
+        const teamMatches = initialCandidates.filter(p => (p.team || '').toUpperCase() === rawTeam);
+        if (teamMatches.length > 0) initialCandidates = teamMatches;
+      }
+
+      if (initialCandidates.length === 1) {
+        return {
+          playerId: initialCandidates[0].id,
+          player: initialCandidates[0],
+          isUnlisted: false,
+          overall: overall
+        };
+      }
+
+      if (initialCandidates.length > 1) {
+        // Disambiguate by ADP / consensus ranking
+        initialCandidates.sort((a, b) => (a.adp || 999) - (b.adp || 999));
+        return {
+          playerId: initialCandidates[0].id,
+          player: initialCandidates[0],
+          isUnlisted: false,
+          overall: overall
+        };
+      }
+    }
+  }
+
+  // Fallback to Unlisted Pick if not found
+  if (unlistedFallback) {
+    const finalPos = rawPos || (dstCanonical ? 'DST' : 'OTHER');
+    const finalName = rawName || ('Unlisted ' + (finalPos !== 'OTHER' ? finalPos : 'Player'));
+    const finalTeam = rawTeam || (dstCanonical ? dstCanonical.team : '—');
+    return {
+      playerId: null,
+      customName: finalName,
+      customPos: finalPos,
+      customTeam: finalTeam,
+      customBye: null,
+      isUnlisted: true,
+      overall: overall
+    };
+  }
+
+  return null;
+}
+
+// Reconciles local draft log against a full remote pick list (supporting additions, rollbacks, and idempotency)
+function reconcileDraftLog(currentLog, remotePicks, playersList, draftContext) {
+  const existing = Array.isArray(currentLog) ? currentLog : [];
+  const remote = Array.isArray(remotePicks) ? remotePicks : [];
+  const ctx = draftContext || {};
+  const teams = ctx.teams || 12;
+  const slot = ctx.slot || 1;
+  const mode = ctx.mode || '3rr';
+  const teamNames = ctx.teamNames || null;
+
+  const newLog = [];
+  let addedCount = 0;
+  let rolledBackCount = 0;
+  let changed = false;
+
+  const targetLength = remote.length;
+  if (existing.length > targetLength) {
+    rolledBackCount = existing.length - targetLength;
+    changed = true;
+  }
+
+  for (let i = 0; i < targetLength; i++) {
+    const overall = i + 1;
+    const rPick = remote[i];
+    const resolved = resolveRemotePick(rPick, playersList, { unlistedFallback: true });
+    const slotInfo = teamForOverall(overall, teams, mode, teamNames, slot);
+    const isMine = slotInfo.isMe;
+
+    const existingEntry = existing[i];
+    let isMatch = false;
+
+    if (existingEntry && existingEntry.overall === overall) {
+      if (resolved.playerId != null && existingEntry.playerId === resolved.playerId) {
+        isMatch = true;
+      } else if (resolved.playerId == null && existingEntry.playerId == null && existingEntry.customName === resolved.customName && existingEntry.customPos === resolved.customPos) {
+        isMatch = true;
+      }
+    }
+
+    if (isMatch) {
+      newLog.push(existingEntry);
+    } else {
+      changed = true;
+      if (i >= existing.length) addedCount++;
+      newLog.push({
+        overall: overall,
+        playerId: resolved.playerId,
+        customName: resolved.customName || null,
+        customPos: resolved.customPos || null,
+        customTeam: resolved.customTeam || null,
+        customBye: resolved.customBye || null,
+        mine: isMine
+      });
+    }
+  }
+
+  return {
+    log: newLog,
+    added: addedCount,
+    rolledBack: rolledBackCount,
+    changed: changed
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     roundIsForward: roundIsForward,
@@ -587,5 +953,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getProspectRank: getProspectRank,
     NFL_DEFENSES: NFL_DEFENSES,
     resolveDstCanonical: resolveDstCanonical,
+    parseSleeperDraft: parseSleeperDraft,
+    resolveRemotePick: resolveRemotePick,
+    reconcileDraftLog: reconcileDraftLog,
   };
 }

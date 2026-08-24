@@ -21,8 +21,10 @@ The codebase is organized into modular layers: **Pure Logic Layer**, **Modular T
 
 ```
 FantasyDrafter/
-├── draft-board.html            # 3-column interactive UI (HTML5, CSS3, Vanilla JS)
-├── draft-logic.js              # Pure math, scoring models, team resolution, pick logic (UMD)
+├── draft-board.html            # 3-column interactive UI + Live Sync & Web Audio Chime
+├── draft-logic.js              # Pure math, scoring models, pick logic, and remote sync reconciliation
+├── sync-bookmarklet.js         # 1-Click ESPN Draft Room live sync observer script
+├── DRAFT_SYNC_API_OVERVIEW.md  # Live draft synchronization architecture & API reference
 ├── players-data.js             # Active dataset (720+ NFL players, schedules, blurbs, ADP)
 ├── players-data.json           # JSON export of rankings dataset
 ├── update-rankings.py          # Live consensus rankings fetcher & ETL pipeline
@@ -42,66 +44,54 @@ FantasyDrafter/
     ├── test-helper.mjs         # Shared test assertions and suite utilities
     ├── league-setup.test.mjs   # Multi-team 3RR draft simulation test suite
     ├── data-integrity.test.mjs # Player data schema validation test suite
-    └── unlisted-picks.test.mjs # Custom unlisted picks and roster tracking test suite
+    ├── unlisted-picks.test.mjs # Custom unlisted picks and roster tracking test suite
+    ├── roster-slots.test.mjs   # Starter slots and bench allocation test suite
+    ├── watchlist.test.mjs      # Draft watchlist management test suite
+    ├── bye-conflicts.test.mjs  # Bye clash detection test suite
+    ├── league-formats.test.mjs # 1QB vs Superflex and scoring format test suite
+    └── live-sync.test.mjs      # Live draft synchronization and player resolution test suite
 ```
 
 ### File Details & Responsibilities
 
 | File | Language | Purpose & Functionality |
 | :--- | :--- | :--- |
-| **`draft-board.html`** | HTML / CSS / JS | Main draft interface featuring a **3-column layout**: permanent user roster on left, ranking board in center, on-the-clock team inspector and draft log on right. Includes League Setup modal (teams 2–24, custom team names, slot reordering), unlisted pick modal, and player profile popups. |
-| **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical and algorithmic functions without DOM dependencies: `overallPick`, `slotForOverall`, `picksForSlot`, `roundIsForward`, `normalizeName`, `compositeScore`, `rankToScore`, `defaultTeams`, `teamForOverall`, and `resolvePickPlayer`. |
+| **`draft-board.html`** | HTML / CSS / JS | Main draft interface featuring a **3-column layout**: permanent user roster on left, ranking board in center, on-the-clock team inspector and draft log on right. Includes Live Sync modal (Sleeper polling, ESPN bookmarklet, cross-tab BroadcastChannel), League Setup modal, unlisted pick modal, Web Audio API chimes, and glowing clock pulse cues. |
+| **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical, scoring, and sync algorithms: `overallPick`, `slotForOverall`, `picksForSlot`, `roundIsForward`, `normalizeName`, `compositeScore`, `rankToScore`, `defaultTeams`, `teamForOverall`, `resolvePickPlayer`, `assignRosterSlots`, `parseSleeperDraft`, `resolveRemotePick`, and `reconcileDraftLog`. |
+| **`sync-bookmarklet.js`** | JavaScript | Standalone 1-Click DOM observer script that broadcasts picks from ESPN Live Draft Rooms to Fantasy Drafter across browser tabs. |
+| **`DRAFT_SYNC_API_OVERVIEW.md`** | Markdown | Technical specification covering Sleeper REST API polling and ESPN BroadcastChannel synchronization. |
 | **`update-rankings.py`** | Python 3 | Automated ETL fetcher that pulls live consensus data across Dynasty SF, Dynasty 1QB, Redraft, Best-Ball ADP, and Rookies, compiling 720+ active players into `players-data.js`. |
 | **`test-runner.mjs`** | Node.js (ESM) | Discovers and executes all test suites (`test-draft-logic.mjs` and all `tests/*.test.mjs`), reporting comprehensive failure and pass metrics. |
-| **`tests/league-setup.test.mjs`** | Node.js (ESM) | Validates 8-, 10-, 12-, 14-, and 16-team 3RR draft simulations, pick allocations, slot reversibility, and team name resolution. |
-| **`tests/data-integrity.test.mjs`** | Node.js (ESM) | Validates `players-data.js` schema integrity, positions, NFL team codes, bye weeks (1–18), and rank metrics. |
-| **`tests/unlisted-picks.test.mjs`** | Node.js (ESM) | Tests custom player pick recording, position selection, NFL team attribution, custom bye weeks, and live team roster counters. |
-| **`test-draft-logic.mjs`** | Node.js (ESM) | Baseline unit tests verifying 3RR direction, slot-to-pick inversion, name normalization, and non-linear score curves. |
-| **`players-data.js`** | JavaScript | Data container (`window.DRAFT_DATA`) holding 720+ active NFL players with multi-format rankings, age, bye weeks, and schedules. |
-| **`package.json`** | JSON | Standard project metadata and run scripts (`npm test`, `npm run test:baseline`, `npm run update`, `npm start`). |
+| **`tests/live-sync.test.mjs`** | Node.js (ESM) | Validates Sleeper draft/user parsing, 3RR reversal detection, remote player matching, suffix handling, defenses, unlisted fallbacks, and log reconciliation. |
 
 ---
 
 ## 3. Current Feature Set & Capabilities
 
-### 3.1 3-Column Dashboard Layout
+### 3.1 Live Draft Synchronization & Audio/Visual Cues
+- **⚡ Live Sync Hub (`#syncModal` & Header Pill):**
+  - **Sleeper API Mode:** In-browser 2s polling of `/picks` and one-click import of league name, team count, draft order, team names, user slot, and 3RR mode.
+  - **ESPN 1-Click Sync Mode:** Draggable bookmarklet and cross-tab `BroadcastChannel` receiver for instant sub-second pick synchronization from ESPN draft rooms.
+  - **Reconciliation & Rollback Engine:** Automatically syncs additions and handles commissioner pick resets cleanly.
+  - **Full Manual Mode Preservation:** Manual drafting, undo, reset, and setup work seamlessly whether sync is offline, paused, or active.
+- **🔔 Audio & Visual Turn Cues:**
+  - **Web Audio Chime:** Synthesizes an offline ascending major triad chime whenever the user's team goes on the clock.
+  - **Clock Pulse Glow:** Header clock pulses with an animated green glowing border during your turn.
+
+### 3.2 3-Column Dashboard Layout
 - **Left Panel — "⭐ My Roster" (Always Visible):**
   - Displays our team's roster, slot position, and total pick count.
-  - Lists all drafted players with position badges, player names, NFL team codes, and bye weeks.
-  - Live positional needs counter (`QB 1/2+`, `RB 2/4+`, `WR 3/5+`, `TE 1/1+`).
-  - Starter requirements guide (`QB · 2RB · 2WR · TE · 3FLEX · SF`).
+  - Interactive Watchlist with instant ⭐ toggling, filtering, and auto-cleanup.
+  - Live positional needs counters and starter requirements guide (`QB · 2RB · 2WR · TE · 3FLEX · SF`).
   - Bye-week clash warning alerts.
 - **Center Panel — "Player Pool & Draft Rankings":**
-  - Real-time search, position tabs (`ALL`, `QB`, `RB`, `WR`, `TE`, `ROOKIE`), sorting (`score`, `dyn`, `red`, `adp`), and "Hide taken" toggle.
+  - Real-time search, position tabs (`ALL`, `QB`, `RB`, `WR`, `TE`, `ROOKIE`, `DST`, `WATCHLIST`), multi-format sorting (`score`, `dyn`, `red`, `rookie`, `adp`), and "Hide taken" toggle.
   - Dynamic draft buttons: displays **"Select our Player"** (green highlight) when user is on the clock, and **"Pick Player"** when an opponent is drafting.
   - Non-linear composite scores, tier breaks (`T1`, `T2`, etc.), and ADP value indicators (`▼X vs ADP`).
 - **Right Panel — "🕒 On The Clock / League Inspector & Draft Log":**
   - **Auto-Following On-The-Clock Inspector:** Displays the live roster and positional breakdown of whichever team is currently picking.
   - **Full League Inspector:** Dropdown allows inspecting any team's roster and position count across the league at any time.
-  - **"Follow Clock" Quick Switch:** Instant button to resume auto-following the on-the-clock team.
   - **Draft Log:** Reverse chronological history showing pick number, round.slot, drafting team, player name, position, and NFL team.
-
-### 3.2 Dynamic League Setup & Custom Teams
-- Accessible via the **⚙️ League Setup** header button:
-  - Custom League / Board Name with real-time branding updates.
-  - Team count selector (2 to 24 teams) and round count selector (1 to 40 rounds).
-  - Draft order toggle: **3rd-Round Reversal (3RR)** or **Normal Snake**.
-  - Interactive team manager: customize all team names, designate user slot, and reorder draft slots using `▲` / `▼` buttons.
-
-### 3.3 Unlisted Pick & Custom Player Engine
-- Supports drafting sleepers or deep rookies not in the default rankings:
-  - Click `Unlisted pick for [Team Name] ➜` in the sidebar.
-  - **Quick Position Selector:** One-click assignment for `QB`, `RB`, `WR`, `TE`, `K`, `DST`, `OTHER`.
-  - **Custom Player Name (Optional):** Enter name or leave blank for automatic fallback (e.g. `Unlisted WR`).
-  - **NFL Team & Bye Week (Optional):** Assign NFL team and bye week (1–18) for clash tracking.
-  - Fully integrates into that team's roster, positional needs counters, and draft history log.
-
-### 3.4 Live Consensus Rankings Pipeline
-- Run `python update-rankings.py` (or `npm run update`) to pull live daily consensus data:
-  - Dynasty Superflex & 1QB rankings from DynastyProcess / FantasyPros.
-  - Redraft consensus and Best-Ball ADP.
-  - 2026 Rookie rankings and NFL regular season schedules.
-  - Outputs 720+ active players into `players-data.js` and `players-data.json`.
 
 ---
 
@@ -121,8 +111,13 @@ npm test
 | **Data Integrity** | `tests/data-integrity.test.mjs` | 721 player records validated | ✅ Passing |
 | **League Setup & 3RR** | `tests/league-setup.test.mjs` | 8/10/12/14/16-team simulations | ✅ Passing |
 | **Unlisted Picks & Roster Tracking** | `tests/unlisted-picks.test.mjs` | Custom resolution & team counts | ✅ Passing |
+| **Starter Slots & Lineup Allocation** | `tests/roster-slots.test.mjs` | Roster filling, flex, and bench | ✅ Passing |
+| **Watchlist Management** | `tests/watchlist.test.mjs` | Star toggle, cleanup, persistence | ✅ Passing |
+| **Bye-Week Clash Detection** | `tests/bye-conflicts.test.mjs` | Positional and cross-position clashes | ✅ Passing |
+| **League Formats & Scoring** | `tests/league-formats.test.mjs` | 1QB vs Superflex, PPR/Half/Std | ✅ Passing |
+| **Live Draft Synchronization** | `tests/live-sync.test.mjs` | Sleeper/ESPN parsing, resolution, rollbacks | ✅ Passing |
 
-**Total:** 4 suites passing (0 failures).
+**Total:** 9 suites passing (0 failures).
 
 ---
 

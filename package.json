@@ -4,6 +4,7 @@
   "description": "Superflex dynasty fantasy football draft board and decision assistant",
   "main": "draft-logic.js",
   "scripts": {
+    "start": "python server.py",
     "test": "node test-runner.mjs",
     "update": "python update-rankings.py",
     "update-rankings": "python update-rankings.py"
