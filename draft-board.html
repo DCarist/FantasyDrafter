@@ -1647,7 +1647,7 @@ function updateEspnStatusBox() {
       + (isConn ? '<span style="color:var(--good); font-weight:700">🟢 Connected to ESPN Draft Room</span>' : '<span style="color:var(--warn)">⚪ Waiting for ESPN Draft Room tab (Auto-connects when tab is open)</span>')
       + '</div>'
       + '<div><b>Last Message:</b> ' + (syncState.espnLastSeen ? new Date(syncState.espnLastSeen).toLocaleTimeString() : 'None') + '</div>'
-      + '<div style="font-size:11px; margin-top:4px; color:var(--dim)">Local relay: <code style="color:var(--accent)">http://127.0.0.1:8517/api/sync/</code></div>';
+      + '<div style="font-size:11px; margin-top:4px; color:var(--dim)">Relay endpoint: <code style="color:var(--accent)">http://127.0.0.1:8517/api/sync/</code></div>';
   }
 }
 
