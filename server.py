@@ -271,10 +271,69 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
 import argparse
 import webbrowser
+import datetime
+import subprocess
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 if DIRECTORY:
     os.chdir(DIRECTORY)
+
+def get_player_data_age():
+    """Returns the age of player data in days (float) and the generated date string."""
+    json_path = 'players-data.json'
+    js_path = 'players-data.js'
+    
+    gen_date_str = None
+    age_days = None
+
+    # 1. Try reading the generated field from players-data.json
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                gen_date_str = data.get('generated')
+                if gen_date_str:
+                    gen_d = datetime.date.fromisoformat(gen_date_str)
+                    age_days = (datetime.date.today() - gen_d).days
+        except Exception:
+            pass
+
+    # 2. If no generated date found in JSON, check file modification time
+    if age_days is None:
+        target_file = json_path if os.path.exists(json_path) else (js_path if os.path.exists(js_path) else None)
+        if target_file:
+            mtime = os.path.getmtime(target_file)
+            age_days = (time.time() - mtime) / 86400.0
+            gen_date_str = datetime.date.fromtimestamp(mtime).isoformat()
+        else:
+            return float('inf'), None
+
+    return age_days, gen_date_str
+
+def ensure_player_data_fresh(max_days=2, force=False, skip=False):
+    """Checks the age of player rankings and auto-updates them if older than max_days."""
+    if skip:
+        safe_print("⏭️  Skipping player data update check (--skip-update).\n")
+        return
+
+    age_days, gen_date = get_player_data_age()
+    
+    if force or age_days is None or age_days > max_days or age_days == float('inf'):
+        reason = "forced" if force else ("missing" if age_days == float('inf') else f"{age_days:.1f} days old (> {max_days} days)")
+        safe_print(f"🔄 Player rankings data is {reason}. Running consensus update pipeline...")
+        
+        try:
+            cmd = [sys.executable, 'update-rankings.py']
+            res = subprocess.run(cmd)
+            if res.returncode == 0:
+                safe_print("✅ Player rankings successfully updated!\n")
+            else:
+                safe_print(f"⚠️  Rankings updater exited with code {res.returncode}. Continuing with existing data.\n")
+        except Exception as e:
+            safe_print(f"⚠️  Could not update player data ({e}). Continuing with existing data.\n")
+    else:
+        day_label = "today" if age_days == 0 else f"{int(age_days)} day{'s' if int(age_days) > 1 else ''} old"
+        safe_print(f"📊 Player data is up to date (generated: {gen_date}, {day_label}).\n")
 
 def broadcast_sse(event_data):
     msg = f"data: {json.dumps(event_data)}\n\n".encode('utf-8')
@@ -298,10 +357,16 @@ def main():
     parser.add_argument("port_pos", nargs="?", type=int, default=None, help="Port to listen on (default: 8517)")
     parser.add_argument("-p", "--port", type=int, default=PORT, help="Port to listen on (default: 8517)")
     parser.add_argument("-n", "--no-browser", "--headless", action="store_true", help="Do not automatically open web browser on startup")
+    parser.add_argument("-u", "--update", action="store_true", help="Force update player rankings data on startup")
+    parser.add_argument("--skip-update", "--no-update", action="store_true", help="Skip automatic player data age check on startup")
+    parser.add_argument("--max-age", type=int, default=2, help="Maximum allowed age of player data in days before auto-updating (default: 2)")
     
     args = parser.parse_args()
     port = args.port_pos if args.port_pos is not None else args.port
     open_browser = not args.no_browser
+
+    # Check and update player rankings data if older than max_age days
+    ensure_player_data_fresh(max_days=args.max_age, force=args.update, skip=args.skip_update)
 
     server_url = f"http://127.0.0.1:{port}/draft-board.html"
     relay_url = f"http://127.0.0.1:{port}/api/sync/"

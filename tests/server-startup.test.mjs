@@ -32,14 +32,19 @@ const helpResult = spawnSync('python', ['server.py', '--help'], { encoding: 'utf
 eq(helpResult.status, 0, 'python server.py --help exits with code 0');
 assert(helpResult.stdout.includes('--no-browser'), 'server.py documents --no-browser flag in help output');
 assert(helpResult.stdout.includes('--port'), 'server.py documents --port flag in help output');
+assert(helpResult.stdout.includes('--skip-update'), 'server.py documents --skip-update flag in help output');
+assert(helpResult.stdout.includes('--update'), 'server.py documents --update flag in help output');
+assert(helpResult.stdout.includes('--max-age'), 'server.py documents --max-age flag in help output');
 
-// --- Test 5: server.py Source Code Anchoring & Pick/Log Handlers ---
+// --- Test 5: server.py Source Code Anchoring & Pick/Log/Update Handlers ---
 const serverPyContent = readFileSync('server.py', 'utf-8');
 assert(serverPyContent.includes('webbrowser'), 'server.py imports webbrowser module');
 assert(serverPyContent.includes('os.chdir'), 'server.py ensures working directory is anchored to script directory');
 assert(serverPyContent.includes('/favicon.ico'), 'server.py handles /favicon.ico requests');
 assert(serverPyContent.includes('FAVICON_SVG'), 'server.py defines SVG football favicon');
 assert(serverPyContent.includes('/api/sync/log'), 'server.py handles /api/sync/log requests');
+assert(serverPyContent.includes('get_player_data_age'), 'server.py defines get_player_data_age function');
+assert(serverPyContent.includes('ensure_player_data_fresh'), 'server.py defines ensure_player_data_fresh function');
 assert(serverPyContent.includes('log_message'), 'server.py overrides log_message to filter background noise');
 
 // --- Test 6: draft-board.html Favicon, Smart Zero-Poll SSE & Server Reporting ---
@@ -49,6 +54,11 @@ assert(htmlContent.includes('stopFallbackPolling()'), 'draft-board.html halts po
 assert(htmlContent.includes('startFallbackPolling()'), 'draft-board.html only activates fallback polling on error');
 assert(htmlContent.includes('reportServerPick'), 'draft-board.html defines reportServerPick helper');
 assert(htmlContent.includes('reportServerEvent'), 'draft-board.html defines reportServerEvent helper');
+
+// --- Test 7: Player Data Age Evaluation ---
+const ageCheckResult = spawnSync('python', ['-c', 'from server import get_player_data_age; age, d = get_player_data_age(); assert age is not None; print(f"{age},{d}")'], { encoding: 'utf-8' });
+eq(ageCheckResult.status, 0, 'get_player_data_age runs without error');
+assert(ageCheckResult.stdout.includes('2026-'), 'get_player_data_age returns valid date timestamp');
 
 const success = finishSuite('Server Startup & 1-Click Launchers');
 if (!success) {
