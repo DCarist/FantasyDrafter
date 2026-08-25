@@ -1,1 +1,2 @@
-npm start
+Set-Location $PSScriptRoot
+python server.py $args

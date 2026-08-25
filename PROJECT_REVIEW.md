@@ -27,6 +27,9 @@ FantasyDrafter/
 ├── DRAFT_SYNC_API_OVERVIEW.md  # Live draft synchronization architecture & API reference
 ├── players-data.js             # Active dataset (720+ NFL players, schedules, blurbs, ADP)
 ├── players-data.json           # JSON export of rankings dataset
+├── server.py               # Lightweight local HTTP relay server with auto browser launch & CORS relay
+├── start.bat               # 1-Click Windows batch launcher (starts server and opens browser)
+├── start.ps1               # PowerShell launcher (starts server and opens browser)
 ├── update-rankings.py          # Live consensus rankings fetcher & ETL pipeline
 ├── merge-data.py               # Local dataset merger (offline pipeline)
 ├── patch-extras.py             # Schedules and news blurbs ingestion
@@ -49,7 +52,8 @@ FantasyDrafter/
     ├── watchlist.test.mjs      # Draft watchlist management test suite
     ├── bye-conflicts.test.mjs  # Bye clash detection test suite
     ├── league-formats.test.mjs # 1QB vs Superflex and scoring format test suite
-    └── live-sync.test.mjs      # Live draft synchronization and player resolution test suite
+    ├── live-sync.test.mjs      # Live draft synchronization and player resolution test suite
+    └── server-startup.test.mjs # 1-click startup, CLI flags, and directory anchoring test suite
 ```
 
 ### File Details & Responsibilities
@@ -58,11 +62,14 @@ FantasyDrafter/
 | :--- | :--- | :--- |
 | **`draft-board.html`** | HTML / CSS / JS | Main draft interface featuring a **3-column layout**: permanent user roster on left, ranking board in center, on-the-clock team inspector and draft log on right. Includes Live Sync modal (Sleeper polling, ESPN browser extension sync, local HTTP relay), League Setup modal, unlisted pick modal, Web Audio API chimes, and glowing clock pulse cues. |
 | **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical, scoring, and sync algorithms: `overallPick`, `slotForOverall`, `picksForSlot`, `roundIsForward`, `normalizeName`, `compositeScore`, `rankToScore`, `defaultTeams`, `teamForOverall`, `resolvePickPlayer`, `assignRosterSlots`, `parseSleeperDraft`, `resolveRemotePick`, and `reconcileDraftLog`. |
+| **`start.bat`** | Windows Batch | **1-Click Opener** for Windows Explorer. Sets working directory to project root, starts Python server, and opens the draft board in the default web browser with automatic fallbacks for `python`/`py`/`python3`. |
+| **`start.ps1`** | PowerShell | PowerShell script to anchor location and start `server.py`. |
+| **`server.py`** | Python 3 | Lightweight local HTTP relay server providing CORS-enabled endpoints (`/api/sync/ping`, `/api/sync/pick`, `/api/sync/poll`, `/api/sync/events`), directory anchoring, automatic browser tab launching (`webbrowser.open`), and static asset delivery. |
 | **`extensions/espn-sync/`** | JavaScript / Manifest V3 | Chrome & Edge unpacked browser extension that observes picks in ESPN Live Draft Rooms and streams them in real-time to Fantasy Drafter. |
-| **`server.py`** | Python 3 | Lightweight local HTTP relay server providing CORS-enabled endpoints (`/api/sync/ping`, `/api/sync/pick`, `/api/sync/poll`, `/api/sync/events`) and serving static board assets. |
 | **`DRAFT_SYNC_API_OVERVIEW.md`** | Markdown | Technical specification covering Sleeper REST API polling and ESPN extension synchronization. |
 | **`update-rankings.py`** | Python 3 | Automated ETL fetcher that pulls live consensus data across Dynasty SF, Dynasty 1QB, Redraft, Best-Ball ADP, and Rookies, compiling 720+ active players into `players-data.js`. |
 | **`test-runner.mjs`** | Node.js (ESM) | Discovers and executes all test suites (`test-draft-logic.mjs` and all `tests/*.test.mjs`), reporting comprehensive failure and pass metrics. |
+| **`tests/server-startup.test.mjs`** | Node.js (ESM) | Validates `start.bat`, `start.ps1`, `package.json` script hooks, `server.py --help` CLI parsing, and directory anchoring. |
 | **`tests/live-sync.test.mjs`** | Node.js (ESM) | Validates Sleeper draft/user parsing, 3RR reversal detection, remote player matching, suffix handling, defenses, unlisted fallbacks, and log reconciliation. |
 
 ---

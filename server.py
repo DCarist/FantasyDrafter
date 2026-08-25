@@ -188,6 +188,13 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
         # Serve regular static files
         super().do_GET()
 
+import argparse
+import webbrowser
+
+DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+if DIRECTORY:
+    os.chdir(DIRECTORY)
+
 def broadcast_sse(event_data):
     msg = f"data: {json.dumps(event_data)}\n\n".encode('utf-8')
     dead_clients = []
@@ -206,18 +213,36 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 def main():
-    port = PORT
-    if len(sys.argv) > 1:
-        try:
-            port = int(sys.argv[1])
-        except ValueError:
-            pass
+    parser = argparse.ArgumentParser(description="Fantasy Drafter — Local Server & Live Sync Relay")
+    parser.add_argument("port_pos", nargs="?", type=int, default=None, help="Port to listen on (default: 8517)")
+    parser.add_argument("-p", "--port", type=int, default=PORT, help="Port to listen on (default: 8517)")
+    parser.add_argument("-n", "--no-browser", "--headless", action="store_true", help="Do not automatically open web browser on startup")
+    
+    args = parser.parse_args()
+    port = args.port_pos if args.port_pos is not None else args.port
+    open_browser = not args.no_browser
+
+    server_url = f"http://127.0.0.1:{port}/draft-board.html"
+    relay_url = f"http://127.0.0.1:{port}/api/sync/"
 
     server = ThreadedHTTPServer(('0.0.0.0', port), SyncRelayHandler)
     print(f"==================================================================")
-    print(f"🏈 Fantasy Drafter Server running at: http://127.0.0.1:{port}/draft-board.html")
-    print(f"⚡ Live Sync Relay active at: http://127.0.0.1:{port}/api/sync/")
+    print(f"🏈 Fantasy Drafter Server running at: {server_url}")
+    print(f"⚡ Live Sync Relay active at: {relay_url}")
+    if open_browser:
+        print(f"🌐 Opening Fantasy Drafter in your default web browser...")
+    print(f"⌨️  Press Ctrl+C to stop the server.")
     print(f"==================================================================")
+
+    if open_browser:
+        def _launch():
+            time.sleep(0.5)
+            try:
+                webbrowser.open(server_url)
+            except Exception as e:
+                print(f"⚠️ Could not auto-launch browser: {e}")
+        threading.Thread(target=_launch, daemon=True).start()
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
