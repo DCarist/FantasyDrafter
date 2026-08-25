@@ -36,8 +36,8 @@ eq(L.picksForSlot(2, 10, 4, 'snake'), [2, 19, 22, 39], 'slot 2 normal snake, 10 
 
 // --- Round direction table for 3RR ---
 eq([1, 2, 3, 4, 5, 6, 7].map(r => L.roundIsForward(r, '3rr')),
-   [true, false, false, true, false, true, false],
-   '3RR direction: F, R, R, F, R, F, R');
+  [true, false, false, true, false, true, false],
+  '3RR direction: F, R, R, F, R, F, R');
 
 // --- slotForOverall is the inverse of overallPick ---
 let inverseOk = true;

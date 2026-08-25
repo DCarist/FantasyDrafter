@@ -14,33 +14,41 @@ import threading
 import urllib.parse
 import os
 import sys
+import argparse
+import webbrowser
+import datetime
+import subprocess
 
 # Force UTF-8 encoding on Windows console so emojis and special characters render cleanly
-if sys.platform == 'win32':
+if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-        if hasattr(sys.stderr, 'reconfigure'):
-            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+
 
 def safe_print(msg):
     try:
         print(msg)
     except Exception:
         try:
-            print(str(msg).encode('ascii', errors='replace').decode('ascii'))
+            print(str(msg).encode("ascii", errors="replace").decode("ascii"))
         except Exception:
             pass
+
 
 PORT = 8517
 
 # 1x1 Transparent GIF for Image Beacon transport
-GIF_1X1 = b'GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
+GIF_1X1 = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
 
 # SVG Football Favicon
-FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🏈</text></svg>'.encode('utf-8')
+FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🏈</text></svg>'.encode(
+    "utf-8"
+)
 
 # In-memory sync state
 sync_lock = threading.Lock()
@@ -48,21 +56,35 @@ last_espn_ping = 0
 sync_events = []
 sse_clients = []
 
+
 class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         # Suppress high-frequency polling, heartbeat, SSE stream, pick relay, and log messages from raw HTTP terminal output
-        req_line = str(args[0]) if args else ''
-        if any(k in req_line for k in ('/api/sync/poll', '/api/sync/ping', '/api/sync/events', '/api/sync/pick', '/api/sync/log', '/favicon.ico')):
+        req_line = str(args[0]) if args else ""
+        if any(
+            k in req_line
+            for k in (
+                "/api/sync/poll",
+                "/api/sync/ping",
+                "/api/sync/events",
+                "/api/sync/pick",
+                "/api/sync/log",
+                "/favicon.ico",
+            )
+        ):
             return
         super().log_message(format, *args)
 
     def end_headers(self):
         # Allow cross-origin requests from any origin (e.g. fantasy.espn.com)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With, Access-Control-Request-Private-Network')
-        self.send_header('Access-Control-Allow-Private-Network', 'true')
-        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, X-Requested-With, Access-Control-Request-Private-Network",
+        )
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         super().end_headers()
 
     def do_OPTIONS(self):
@@ -71,190 +93,242 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global last_espn_ping
-        if self.path.startswith('/api/sync/log'):
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+        if self.path.startswith("/api/sync/log"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = (
+                self.rfile.read(content_length).decode("utf-8")
+                if content_length > 0
+                else "{}"
+            )
             try:
                 log_data = json.loads(body)
             except Exception:
                 log_data = {}
-            msg = log_data.get('message', '')
+            msg = log_data.get("message", "")
             if msg:
                 safe_print(f"{msg}")
             self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({'ok': True}).encode('utf-8'))
+            self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
             return
 
-        if self.path.startswith('/api/sync/ping'):
+        if self.path.startswith("/api/sync/ping"):
             with sync_lock:
                 last_espn_ping = time.time()
-                broadcast_sse({'type': 'PONG', 'source': 'espn', 'timestamp': int(last_espn_ping * 1000)})
+                broadcast_sse(
+                    {
+                        "type": "PONG",
+                        "source": "espn",
+                        "timestamp": int(last_espn_ping * 1000),
+                    }
+                )
             self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({'ok': True, 'pong': True, 'timestamp': int(last_espn_ping * 1000)}).encode('utf-8'))
+            self.wfile.write(
+                json.dumps(
+                    {"ok": True, "pong": True, "timestamp": int(last_espn_ping * 1000)}
+                ).encode("utf-8")
+            )
             return
 
-        if self.path.startswith('/api/sync/pick'):
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+        if self.path.startswith("/api/sync/pick"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = (
+                self.rfile.read(content_length).decode("utf-8")
+                if content_length > 0
+                else "{}"
+            )
             try:
                 pick_data = json.loads(body)
             except Exception:
                 pick_data = {}
 
-            source = pick_data.get('source', 'espn')
+            source = pick_data.get("source", "espn")
             with sync_lock:
-                if source == 'espn':
+                if source == "espn":
                     last_espn_ping = time.time()
                 pick_event = {
-                    'type': 'PICK_MADE',
-                    'source': source,
-                    'name': pick_data.get('name', ''),
-                    'overall': pick_data.get('overall', None),
-                    'pos': pick_data.get('pos', ''),
-                    'team': pick_data.get('team', ''),
-                    'by': pick_data.get('by', ''),
-                    'timestamp': int(time.time() * 1000)
+                    "type": "PICK_MADE",
+                    "source": source,
+                    "name": pick_data.get("name", ""),
+                    "overall": pick_data.get("overall", None),
+                    "pos": pick_data.get("pos", ""),
+                    "team": pick_data.get("team", ""),
+                    "by": pick_data.get("by", ""),
+                    "timestamp": int(time.time() * 1000),
                 }
                 sync_events.append(pick_event)
                 if len(sync_events) > 100:
                     sync_events.pop(0)
                 # Only broadcast to browser clients if pick originated externally (e.g. ESPN extension)
-                if source == 'espn':
+                if source == "espn":
                     broadcast_sse(pick_event)
 
-            pick_num = f"#{pick_event.get('overall')}" if pick_event.get('overall') else "Pick"
+            pick_num = (
+                f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
+            )
             details = []
-            if pick_event.get('pos'): details.append(pick_event['pos'])
-            if pick_event.get('team'): details.append(pick_event['team'])
+            if pick_event.get("pos"):
+                details.append(pick_event["pos"])
+            if pick_event.get("team"):
+                details.append(pick_event["team"])
             detail_str = f" ({' - '.join(details)})" if details else ""
-            by_str = f" · {pick_event['by']}" if pick_event.get('by') else ""
-            source_tag = f" [{source.upper()}]" if source and source != 'manual' else ""
-            safe_print(f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}")
+            by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
+            source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
+            safe_print(
+                f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
+            )
 
             self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({'ok': True}).encode('utf-8'))
+            self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
             return
 
-        self.send_error(404, 'Endpoint not found')
+        self.send_error(404, "Endpoint not found")
 
     def do_GET(self):
         global last_espn_ping
         # Redirect root to draft-board.html
-        if self.path == '/' or self.path == '':
+        if self.path == "/" or self.path == "":
             self.send_response(302)
-            self.send_header('Location', '/draft-board.html')
+            self.send_header("Location", "/draft-board.html")
             self.end_headers()
             return
 
         # Football Favicon handler
-        if self.path == '/favicon.ico':
+        if self.path == "/favicon.ico":
             self.send_response(200)
-            self.send_header('Content-Type', 'image/svg+xml')
-            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Cache-Control", "public, max-age=86400")
             self.end_headers()
             self.wfile.write(FAVICON_SVG)
             return
 
         # Handle Image Beacon / GET Ping & Pick (bypasses CORS & mixed-content preflights)
-        if self.path.startswith('/api/sync/ping'):
+        if self.path.startswith("/api/sync/ping"):
             with sync_lock:
                 last_espn_ping = time.time()
-                broadcast_sse({'type': 'PONG', 'source': 'espn', 'timestamp': int(last_espn_ping * 1000)})
+                broadcast_sse(
+                    {
+                        "type": "PONG",
+                        "source": "espn",
+                        "timestamp": int(last_espn_ping * 1000),
+                    }
+                )
             self.send_response(200)
-            self.send_header('Content-Type', 'image/gif')
+            self.send_header("Content-Type", "image/gif")
             self.end_headers()
             self.wfile.write(GIF_1X1)
             return
 
-        if self.path.startswith('/api/sync/pick'):
+        if self.path.startswith("/api/sync/pick"):
             parsed = urllib.parse.urlparse(self.path)
             params = urllib.parse.parse_qs(parsed.query)
-            d_raw = params.get('d', ['{}'])[0]
+            d_raw = params.get("d", ["{}"])[0]
             try:
                 pick_data = json.loads(d_raw)
             except Exception:
                 pick_data = {}
 
-            source = pick_data.get('source', 'espn')
+            source = pick_data.get("source", "espn")
             with sync_lock:
-                if source == 'espn':
+                if source == "espn":
                     last_espn_ping = time.time()
                 pick_event = {
-                    'type': 'PICK_MADE',
-                    'source': source,
-                    'name': pick_data.get('name', ''),
-                    'overall': pick_data.get('overall', None),
-                    'pos': pick_data.get('pos', ''),
-                    'team': pick_data.get('team', ''),
-                    'by': pick_data.get('by', ''),
-                    'timestamp': int(time.time() * 1000)
+                    "type": "PICK_MADE",
+                    "source": source,
+                    "name": pick_data.get("name", ""),
+                    "overall": pick_data.get("overall", None),
+                    "pos": pick_data.get("pos", ""),
+                    "team": pick_data.get("team", ""),
+                    "by": pick_data.get("by", ""),
+                    "timestamp": int(time.time() * 1000),
                 }
                 sync_events.append(pick_event)
                 if len(sync_events) > 100:
                     sync_events.pop(0)
-                if source == 'espn':
+                if source == "espn":
                     broadcast_sse(pick_event)
 
-            pick_num = f"#{pick_event.get('overall')}" if pick_event.get('overall') else "Pick"
+            pick_num = (
+                f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
+            )
             details = []
-            if pick_event.get('pos'): details.append(pick_event['pos'])
-            if pick_event.get('team'): details.append(pick_event['team'])
+            if pick_event.get("pos"):
+                details.append(pick_event["pos"])
+            if pick_event.get("team"):
+                details.append(pick_event["team"])
             detail_str = f" ({' - '.join(details)})" if details else ""
-            by_str = f" · {pick_event['by']}" if pick_event.get('by') else ""
-            source_tag = f" [{source.upper()}]" if source and source != 'manual' else ""
-            safe_print(f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}")
+            by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
+            source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
+            safe_print(
+                f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
+            )
 
             self.send_response(200)
-            self.send_header('Content-Type', 'image/gif')
+            self.send_header("Content-Type", "image/gif")
             self.end_headers()
             self.wfile.write(GIF_1X1)
             return
 
-        if self.path.startswith('/api/sync/status') or self.path.startswith('/api/sync/poll'):
+        if self.path.startswith("/api/sync/status") or self.path.startswith(
+            "/api/sync/poll"
+        ):
             since = 0
-            if 'since=' in self.path:
+            if "since=" in self.path:
                 try:
-                    since = int(self.path.split('since=')[1].split('&')[0])
+                    since = int(self.path.split("since=")[1].split("&")[0])
                 except Exception:
                     since = 0
 
             with sync_lock:
-                is_connected = (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
-                new_picks = [e for e in sync_events if e.get('timestamp', 0) > since]
+                is_connected = (
+                    (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
+                )
+                new_picks = [e for e in sync_events if e.get("timestamp", 0) > since]
                 status_payload = {
-                    'espnConnected': is_connected,
-                    'lastSeen': int(last_espn_ping * 1000) if last_espn_ping > 0 else None,
-                    'picks': new_picks,
-                    'serverTime': int(time.time() * 1000)
+                    "espnConnected": is_connected,
+                    "lastSeen": int(last_espn_ping * 1000)
+                    if last_espn_ping > 0
+                    else None,
+                    "picks": new_picks,
+                    "serverTime": int(time.time() * 1000),
                 }
 
             self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
+            self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps(status_payload).encode('utf-8'))
+            self.wfile.write(json.dumps(status_payload).encode("utf-8"))
             return
 
         # Server-Sent Events (SSE) Stream
-        if self.path.startswith('/api/sync/events'):
+        if self.path.startswith("/api/sync/events"):
             self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
-            self.send_header('Cache-Control', 'no-cache')
-            self.send_header('Connection', 'keep-alive')
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
             self.end_headers()
 
             with sync_lock:
                 sse_clients.append(self.wfile)
-                is_connected = (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
-                init_msg = json.dumps({'type': 'SYNC_STATUS', 'espnConnected': is_connected, 'lastSeen': int(last_espn_ping * 1000) if last_espn_ping > 0 else None})
-            
+                is_connected = (
+                    (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
+                )
+                init_msg = json.dumps(
+                    {
+                        "type": "SYNC_STATUS",
+                        "espnConnected": is_connected,
+                        "lastSeen": int(last_espn_ping * 1000)
+                        if last_espn_ping > 0
+                        else None,
+                    }
+                )
+
             try:
-                self.wfile.write(f"data: {init_msg}\n\n".encode('utf-8'))
+                self.wfile.write(f"data: {init_msg}\n\n".encode("utf-8"))
                 self.wfile.flush()
                 while True:
                     time.sleep(15)
@@ -269,29 +343,26 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
         # Serve regular static files
         super().do_GET()
 
-import argparse
-import webbrowser
-import datetime
-import subprocess
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 if DIRECTORY:
     os.chdir(DIRECTORY)
 
+
 def get_player_data_age():
     """Returns the age of player data in days (float) and the generated date string."""
-    json_path = 'players-data.json'
-    js_path = 'players-data.js'
-    
+    json_path = "players-data.json"
+    js_path = "players-data.js"
+
     gen_date_str = None
     age_days = None
 
     # 1. Try reading the generated field from players-data.json
     if os.path.exists(json_path):
         try:
-            with open(json_path, 'r', encoding='utf-8') as f:
+            with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                gen_date_str = data.get('generated')
+                gen_date_str = data.get("generated")
                 if gen_date_str:
                     gen_d = datetime.date.fromisoformat(gen_date_str)
                     age_days = (datetime.date.today() - gen_d).days
@@ -300,15 +371,20 @@ def get_player_data_age():
 
     # 2. If no generated date found in JSON, check file modification time
     if age_days is None:
-        target_file = json_path if os.path.exists(json_path) else (js_path if os.path.exists(js_path) else None)
+        target_file = (
+            json_path
+            if os.path.exists(json_path)
+            else (js_path if os.path.exists(js_path) else None)
+        )
         if target_file:
             mtime = os.path.getmtime(target_file)
             age_days = (time.time() - mtime) / 86400.0
             gen_date_str = datetime.date.fromtimestamp(mtime).isoformat()
         else:
-            return float('inf'), None
+            return float("inf"), None
 
     return age_days, gen_date_str
+
 
 def ensure_player_data_fresh(max_days=2, force=False, skip=False):
     """Checks the age of player rankings and auto-updates them if older than max_days."""
@@ -317,26 +393,47 @@ def ensure_player_data_fresh(max_days=2, force=False, skip=False):
         return
 
     age_days, gen_date = get_player_data_age()
-    
-    if force or age_days is None or age_days > max_days or age_days == float('inf'):
-        reason = "forced" if force else ("missing" if age_days == float('inf') else f"{age_days:.1f} days old (> {max_days} days)")
-        safe_print(f"🔄 Player rankings data is {reason}. Running consensus update pipeline...")
-        
+
+    if force or age_days is None or age_days > max_days or age_days == float("inf"):
+        reason = (
+            "forced"
+            if force
+            else (
+                "missing"
+                if age_days == float("inf")
+                else f"{age_days:.1f} days old (> {max_days} days)"
+            )
+        )
+        safe_print(
+            f"🔄 Player rankings data is {reason}. Running consensus update pipeline..."
+        )
+
         try:
-            cmd = [sys.executable, 'update-rankings.py']
+            cmd = [sys.executable, "update-rankings.py"]
             res = subprocess.run(cmd)
             if res.returncode == 0:
                 safe_print("✅ Player rankings successfully updated!\n")
             else:
-                safe_print(f"⚠️  Rankings updater exited with code {res.returncode}. Continuing with existing data.\n")
+                safe_print(
+                    f"⚠️  Rankings updater exited with code {res.returncode}. Continuing with existing data.\n"
+                )
         except Exception as e:
-            safe_print(f"⚠️  Could not update player data ({e}). Continuing with existing data.\n")
+            safe_print(
+                f"⚠️  Could not update player data ({e}). Continuing with existing data.\n"
+            )
     else:
-        day_label = "today" if age_days == 0 else f"{int(age_days)} day{'s' if int(age_days) > 1 else ''} old"
-        safe_print(f"📊 Player data is up to date (generated: {gen_date}, {day_label}).\n")
+        day_label = (
+            "today"
+            if age_days == 0
+            else f"{int(age_days)} day{'s' if int(age_days) > 1 else ''} old"
+        )
+        safe_print(
+            f"📊 Player data is up to date (generated: {gen_date}, {day_label}).\n"
+        )
+
 
 def broadcast_sse(event_data):
-    msg = f"data: {json.dumps(event_data)}\n\n".encode('utf-8')
+    msg = f"data: {json.dumps(event_data)}\n\n".encode("utf-8")
     dead_clients = []
     for client in sse_clients:
         try:
@@ -348,30 +445,65 @@ def broadcast_sse(event_data):
         if d in sse_clients:
             sse_clients.remove(d)
 
+
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+
 def main():
-    parser = argparse.ArgumentParser(description="Fantasy Drafter — Local Server & Live Sync Relay")
-    parser.add_argument("port_pos", nargs="?", type=int, default=None, help="Port to listen on (default: 8517)")
-    parser.add_argument("-p", "--port", type=int, default=PORT, help="Port to listen on (default: 8517)")
-    parser.add_argument("-n", "--no-browser", "--headless", action="store_true", help="Do not automatically open web browser on startup")
-    parser.add_argument("-u", "--update", action="store_true", help="Force update player rankings data on startup")
-    parser.add_argument("--skip-update", "--no-update", action="store_true", help="Skip automatic player data age check on startup")
-    parser.add_argument("--max-age", type=int, default=2, help="Maximum allowed age of player data in days before auto-updating (default: 2)")
-    
+    parser = argparse.ArgumentParser(
+        description="Fantasy Drafter — Local Server & Live Sync Relay"
+    )
+    parser.add_argument(
+        "port_pos",
+        nargs="?",
+        type=int,
+        default=None,
+        help="Port to listen on (default: 8517)",
+    )
+    parser.add_argument(
+        "-p", "--port", type=int, default=PORT, help="Port to listen on (default: 8517)"
+    )
+    parser.add_argument(
+        "-n",
+        "--no-browser",
+        "--headless",
+        action="store_true",
+        help="Do not automatically open web browser on startup",
+    )
+    parser.add_argument(
+        "-u",
+        "--update",
+        action="store_true",
+        help="Force update player rankings data on startup",
+    )
+    parser.add_argument(
+        "--skip-update",
+        "--no-update",
+        action="store_true",
+        help="Skip automatic player data age check on startup",
+    )
+    parser.add_argument(
+        "--max-age",
+        type=int,
+        default=2,
+        help="Maximum allowed age of player data in days before auto-updating (default: 2)",
+    )
+
     args = parser.parse_args()
     port = args.port_pos if args.port_pos is not None else args.port
     open_browser = not args.no_browser
 
     # Check and update player rankings data if older than max_age days
-    ensure_player_data_fresh(max_days=args.max_age, force=args.update, skip=args.skip_update)
+    ensure_player_data_fresh(
+        max_days=args.max_age, force=args.update, skip=args.skip_update
+    )
 
     server_url = f"http://127.0.0.1:{port}/draft-board.html"
     relay_url = f"http://127.0.0.1:{port}/api/sync/"
 
-    server = ThreadedHTTPServer(('0.0.0.0', port), SyncRelayHandler)
+    server = ThreadedHTTPServer(("0.0.0.0", port), SyncRelayHandler)
     safe_print(f"==================================================================")
     safe_print(f"🏈 Fantasy Drafter Server running at: {server_url}")
     safe_print(f"⚡ Live Sync Relay active at: {relay_url}")
@@ -381,12 +513,14 @@ def main():
     safe_print(f"==================================================================")
 
     if open_browser:
+
         def _launch():
             time.sleep(0.5)
             try:
                 webbrowser.open(server_url)
             except Exception as e:
                 safe_print(f"⚠️ Could not auto-launch browser: {e}")
+
         threading.Thread(target=_launch, daemon=True).start()
 
     try:
@@ -395,5 +529,6 @@ def main():
         safe_print("\nStopping server.")
         server.server_close()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
