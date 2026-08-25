@@ -15,6 +15,25 @@ import urllib.parse
 import os
 import sys
 
+# Force UTF-8 encoding on Windows console so emojis and special characters render cleanly
+if sys.platform == 'win32':
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if hasattr(sys.stderr, 'reconfigure'):
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+def safe_print(msg):
+    try:
+        print(msg)
+    except Exception:
+        try:
+            print(str(msg).encode('ascii', errors='replace').decode('ascii'))
+        except Exception:
+            pass
+
 PORT = 8517
 
 # 1x1 Transparent GIF for Image Beacon transport
@@ -31,9 +50,9 @@ sse_clients = []
 
 class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
-        # Suppress high-frequency polling, heartbeat, SSE stream, and favicon logs from terminal
+        # Suppress high-frequency polling, heartbeat, SSE stream, pick relay, and log messages from raw HTTP terminal output
         req_line = str(args[0]) if args else ''
-        if any(k in req_line for k in ('/api/sync/poll', '/api/sync/ping', '/api/sync/events', '/favicon.ico')):
+        if any(k in req_line for k in ('/api/sync/poll', '/api/sync/ping', '/api/sync/events', '/api/sync/pick', '/api/sync/log', '/favicon.ico')):
             return
         super().log_message(format, *args)
 
@@ -52,6 +71,22 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global last_espn_ping
+        if self.path.startswith('/api/sync/log'):
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+            try:
+                log_data = json.loads(body)
+            except Exception:
+                log_data = {}
+            msg = log_data.get('message', '')
+            if msg:
+                safe_print(f"{msg}")
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'ok': True}).encode('utf-8'))
+            return
+
         if self.path.startswith('/api/sync/ping'):
             with sync_lock:
                 last_espn_ping = time.time()
@@ -70,24 +105,35 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pick_data = {}
 
+            source = pick_data.get('source', 'espn')
             with sync_lock:
-                last_espn_ping = time.time()
+                if source == 'espn':
+                    last_espn_ping = time.time()
                 pick_event = {
                     'type': 'PICK_MADE',
-                    'source': 'espn',
+                    'source': source,
                     'name': pick_data.get('name', ''),
                     'overall': pick_data.get('overall', None),
                     'pos': pick_data.get('pos', ''),
                     'team': pick_data.get('team', ''),
+                    'by': pick_data.get('by', ''),
                     'timestamp': int(time.time() * 1000)
                 }
                 sync_events.append(pick_event)
                 if len(sync_events) > 100:
                     sync_events.pop(0)
-                broadcast_sse(pick_event)
+                # Only broadcast to browser clients if pick originated externally (e.g. ESPN extension)
+                if source == 'espn':
+                    broadcast_sse(pick_event)
 
-            pick_desc = f"#{pick_event.get('overall') or '?'} {pick_event.get('name')} ({pick_event.get('pos') or ''} - {pick_event.get('team') or ''})".strip()
-            print(f"⚡ Live Pick Received: {pick_desc}")
+            pick_num = f"#{pick_event.get('overall')}" if pick_event.get('overall') else "Pick"
+            details = []
+            if pick_event.get('pos'): details.append(pick_event['pos'])
+            if pick_event.get('team'): details.append(pick_event['team'])
+            detail_str = f" ({' - '.join(details)})" if details else ""
+            by_str = f" · {pick_event['by']}" if pick_event.get('by') else ""
+            source_tag = f" [{source.upper()}]" if source and source != 'manual' else ""
+            safe_print(f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}")
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
@@ -135,24 +181,34 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pick_data = {}
 
+            source = pick_data.get('source', 'espn')
             with sync_lock:
-                last_espn_ping = time.time()
+                if source == 'espn':
+                    last_espn_ping = time.time()
                 pick_event = {
                     'type': 'PICK_MADE',
-                    'source': 'espn',
+                    'source': source,
                     'name': pick_data.get('name', ''),
                     'overall': pick_data.get('overall', None),
                     'pos': pick_data.get('pos', ''),
                     'team': pick_data.get('team', ''),
+                    'by': pick_data.get('by', ''),
                     'timestamp': int(time.time() * 1000)
                 }
                 sync_events.append(pick_event)
                 if len(sync_events) > 100:
                     sync_events.pop(0)
-                broadcast_sse(pick_event)
+                if source == 'espn':
+                    broadcast_sse(pick_event)
 
-            pick_desc = f"#{pick_event.get('overall') or '?'} {pick_event.get('name')} ({pick_event.get('pos') or ''} - {pick_event.get('team') or ''})".strip()
-            print(f"⚡ Live Pick Received: {pick_desc}")
+            pick_num = f"#{pick_event.get('overall')}" if pick_event.get('overall') else "Pick"
+            details = []
+            if pick_event.get('pos'): details.append(pick_event['pos'])
+            if pick_event.get('team'): details.append(pick_event['team'])
+            detail_str = f" ({' - '.join(details)})" if details else ""
+            by_str = f" · {pick_event['by']}" if pick_event.get('by') else ""
+            source_tag = f" [{source.upper()}]" if source and source != 'manual' else ""
+            safe_print(f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}")
 
             self.send_response(200)
             self.send_header('Content-Type', 'image/gif')
@@ -251,13 +307,13 @@ def main():
     relay_url = f"http://127.0.0.1:{port}/api/sync/"
 
     server = ThreadedHTTPServer(('0.0.0.0', port), SyncRelayHandler)
-    print(f"==================================================================")
-    print(f"🏈 Fantasy Drafter Server running at: {server_url}")
-    print(f"⚡ Live Sync Relay active at: {relay_url}")
+    safe_print(f"==================================================================")
+    safe_print(f"🏈 Fantasy Drafter Server running at: {server_url}")
+    safe_print(f"⚡ Live Sync Relay active at: {relay_url}")
     if open_browser:
-        print(f"🌐 Opening Fantasy Drafter in your default web browser...")
-    print(f"⌨️  Press Ctrl+C to stop the server.")
-    print(f"==================================================================")
+        safe_print(f"🌐 Opening Fantasy Drafter in your default web browser...")
+    safe_print(f"⌨️  Press Ctrl+C to stop the server.")
+    safe_print(f"==================================================================")
 
     if open_browser:
         def _launch():
@@ -265,13 +321,13 @@ def main():
             try:
                 webbrowser.open(server_url)
             except Exception as e:
-                print(f"⚠️ Could not auto-launch browser: {e}")
+                safe_print(f"⚠️ Could not auto-launch browser: {e}")
         threading.Thread(target=_launch, daemon=True).start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping server.")
+        safe_print("\nStopping server.")
         server.server_close()
 
 if __name__ == '__main__':

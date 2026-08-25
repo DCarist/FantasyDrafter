@@ -33,19 +33,22 @@ eq(helpResult.status, 0, 'python server.py --help exits with code 0');
 assert(helpResult.stdout.includes('--no-browser'), 'server.py documents --no-browser flag in help output');
 assert(helpResult.stdout.includes('--port'), 'server.py documents --port flag in help output');
 
-// --- Test 5: server.py Source Code Anchoring & Browser Open ---
+// --- Test 5: server.py Source Code Anchoring & Pick/Log Handlers ---
 const serverPyContent = readFileSync('server.py', 'utf-8');
 assert(serverPyContent.includes('webbrowser'), 'server.py imports webbrowser module');
 assert(serverPyContent.includes('os.chdir'), 'server.py ensures working directory is anchored to script directory');
 assert(serverPyContent.includes('/favicon.ico'), 'server.py handles /favicon.ico requests');
 assert(serverPyContent.includes('FAVICON_SVG'), 'server.py defines SVG football favicon');
+assert(serverPyContent.includes('/api/sync/log'), 'server.py handles /api/sync/log requests');
 assert(serverPyContent.includes('log_message'), 'server.py overrides log_message to filter background noise');
 
-// --- Test 6: draft-board.html Favicon & Smart Zero-Poll SSE ---
+// --- Test 6: draft-board.html Favicon, Smart Zero-Poll SSE & Server Reporting ---
 const htmlContent = readFileSync('draft-board.html', 'utf-8');
 assert(htmlContent.includes('rel="icon"'), 'draft-board.html defines favicon link tag');
 assert(htmlContent.includes('stopFallbackPolling()'), 'draft-board.html halts polling on SSE connect/message');
 assert(htmlContent.includes('startFallbackPolling()'), 'draft-board.html only activates fallback polling on error');
+assert(htmlContent.includes('reportServerPick'), 'draft-board.html defines reportServerPick helper');
+assert(htmlContent.includes('reportServerEvent'), 'draft-board.html defines reportServerEvent helper');
 
 const success = finishSuite('Server Startup & 1-Click Launchers');
 if (!success) {

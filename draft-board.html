@@ -375,9 +375,21 @@ function currentPick() { return state.log.length + 1; }
 
 // ---------- Actions ----------
 function draftPlayer(id, mine) {
-  state.log.push({ overall: currentPick(), playerId: id, mine: !!mine });
+  const pick = currentPick();
+  state.log.push({ overall: pick, playerId: id, mine: !!mine });
   state.watchlist = cleanWatchlist(state.watchlist, [id]);
   save(); render();
+
+  const p = PLAYERS[id] || {};
+  const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
+  reportServerPick({
+    source: 'manual',
+    overall: pick,
+    name: p.name || 'Player #' + id,
+    pos: p.pos || '',
+    team: p.team || '',
+    by: who.name + (who.isMe ? ' (You)' : '')
+  });
 }
 
 function toggleWatch(id, e) {
@@ -463,11 +475,12 @@ function submitUnlistedPick() {
 }
 
 function draftUnlistedPlayer(pos, name, team, bye) {
-  const who = teamForOverall(currentPick(), state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
+  const pick = currentPick();
+  const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
   const posVal = (pos || 'WR').toUpperCase();
   const nameVal = (name && name.trim()) ? name.trim() : ('Unlisted ' + (posVal !== 'OTHER' ? posVal : 'Player'));
   state.log.push({
-    overall: currentPick(),
+    overall: pick,
     playerId: null,
     customName: nameVal,
     customPos: posVal,
@@ -478,11 +491,22 @@ function draftUnlistedPlayer(pos, name, team, bye) {
   save();
   closeModal();
   render();
+
+  reportServerPick({
+    source: 'manual',
+    overall: pick,
+    name: nameVal,
+    pos: posVal,
+    team: (team && team.trim()) ? team.trim().toUpperCase() : '',
+    by: who.name + (who.isMe ? ' (You)' : '')
+  });
 }
 
 function undo() {
-  state.log.pop();
+  if (state.log.length === 0) return;
+  const removed = state.log.pop();
   save(); render();
+  reportServerEvent('↩️ Undid pick #' + (removed.overall || (state.log.length + 1)) + ' (Now at Pick #' + (state.log.length + 1) + ')', 'info');
 }
 function jumpTo(pick) {
   pick = Math.max(1, Math.floor(pick));
@@ -498,6 +522,7 @@ function resetDraft() {
   if (!confirm('Clear the whole draft (all picks and rosters)?')) return;
   state.log = [];
   save(); render();
+  reportServerEvent('🔄 Draft board reset to Pick #1', 'info');
 }
 
 function selectRosterSlot(slot) {
@@ -1321,6 +1346,30 @@ let serverRelaySource = null;
 let serverPollTimer = null;
 let lastSyncTimestamp = 0;
 
+function reportServerPick(data) {
+  const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+  try {
+    fetch(host + '/api/sync/pick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      mode: 'cors'
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+function reportServerEvent(message, type) {
+  const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+  try {
+    fetch(host + '/api/sync/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: message, type: type || 'info' }),
+      mode: 'cors'
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 function initBroadcastSync() {
   // 1. Cross-Origin Local HTTP Relay (SSE & Polling)
   initServerSyncRelay();
@@ -1569,6 +1618,7 @@ async function importSleeperLeague() {
       statusEl.innerHTML = '<span style="color:var(--good); font-weight:600">✅ Successfully imported '
         + parsed.teams + '-team league: <b>' + parsed.leagueName + '</b> (' + parsed.mode.toUpperCase() + ') · Assigned Slot ' + parsed.slot + '!</span>';
     }
+    reportServerEvent('🏈 Sleeper Draft Connected: ' + parsed.leagueName + ' (' + parsed.teams + '-team ' + parsed.mode.toUpperCase() + ') · Assigned Slot ' + parsed.slot, 'success');
   } catch (err) {
     console.error('Sleeper import error:', err);
     if (statusEl) {
@@ -1591,6 +1641,7 @@ async function pollSleeperPicks() {
       syncState.sleeperLastPoll = new Date().toLocaleTimeString();
       syncState.sleeperStatus = 'Active (' + picks.length + ' picks)';
 
+      const prevLen = state.log.length;
       const rec = reconcileDraftLog(state.log, picks, PLAYERS, state.settings);
       if (rec.changed) {
         state.log = rec.log;
@@ -1598,6 +1649,28 @@ async function pollSleeperPicks() {
         state.watchlist = cleanWatchlist(state.watchlist, taken);
         save();
         render();
+
+        if (rec.added > 0) {
+          for (let i = prevLen; i < state.log.length; i++) {
+            const entry = state.log[i];
+            const p = entry.playerId != null ? PLAYERS[entry.playerId] : null;
+            const name = entry.customName || (p ? p.name : 'Unknown');
+            const pos = entry.customPos || (p ? p.pos : '');
+            const team = entry.customTeam || (p ? p.team : '');
+            const who = teamForOverall(entry.overall, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot);
+            reportServerPick({
+              source: 'sleeper',
+              overall: entry.overall,
+              name: name,
+              pos: pos,
+              team: team,
+              by: who.name + (who.isMe ? ' (You)' : '')
+            });
+          }
+        }
+        if (rec.rolledBack > 0) {
+          reportServerEvent('↩️ Rolled back ' + rec.rolledBack + ' pick(s) to match Sleeper history (Now at #' + state.log.length + ')', 'warn');
+        }
       }
     }
     updateSyncBadge();
