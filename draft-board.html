@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fantasy Draft Board — Superflex Dynasty</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏈</text></svg>">
 <style>
   :root {
     --bg: #12151c; --panel: #1a1f2a; --panel2: #202636; --border: #2c3550;
@@ -1347,16 +1348,39 @@ function initBroadcastSync() {
   }
 }
 
+function startFallbackPolling() {
+  if (!serverPollTimer) {
+    serverPollTimer = setInterval(pollServerSync, 3000);
+    pollServerSync();
+  }
+}
+
+function stopFallbackPolling() {
+  if (serverPollTimer) {
+    clearInterval(serverPollTimer);
+    serverPollTimer = null;
+  }
+}
+
 function initServerSyncRelay() {
   const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
   
-  // Try Server-Sent Events (SSE)
+  // Try Server-Sent Events (SSE) as primary zero-poll real-time channel
   try {
-    if (serverRelaySource) serverRelaySource.close();
+    if (serverRelaySource) {
+      serverRelaySource.close();
+      serverRelaySource = null;
+    }
     serverRelaySource = new EventSource(host + '/api/sync/events');
     
+    serverRelaySource.onopen = function() {
+      // SSE connected! Shut down any fallback polling timer
+      stopFallbackPolling();
+    };
+
     serverRelaySource.onmessage = function(e) {
       if (!e.data) return;
+      stopFallbackPolling();
       try {
         const data = JSON.parse(e.data);
         handleIncomingSyncEvent(data);
@@ -1364,14 +1388,11 @@ function initServerSyncRelay() {
     };
 
     serverRelaySource.onerror = function() {
-      // Handled by polling fallback
+      // SSE disconnected or unavailable: activate fallback polling
+      startFallbackPolling();
     };
-  } catch (e) {}
-
-  // Continuous fallback polling (1.2s) to guarantee heartbeat status and pick delivery
-  if (!serverPollTimer) {
-    serverPollTimer = setInterval(pollServerSync, 1200);
-    pollServerSync();
+  } catch (e) {
+    startFallbackPolling();
   }
 }
 

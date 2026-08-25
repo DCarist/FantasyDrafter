@@ -37,8 +37,18 @@ assert(helpResult.stdout.includes('--port'), 'server.py documents --port flag in
 const serverPyContent = readFileSync('server.py', 'utf-8');
 assert(serverPyContent.includes('webbrowser'), 'server.py imports webbrowser module');
 assert(serverPyContent.includes('os.chdir'), 'server.py ensures working directory is anchored to script directory');
+assert(serverPyContent.includes('/favicon.ico'), 'server.py handles /favicon.ico requests');
+assert(serverPyContent.includes('FAVICON_SVG'), 'server.py defines SVG football favicon');
+assert(serverPyContent.includes('log_message'), 'server.py overrides log_message to filter background noise');
+
+// --- Test 6: draft-board.html Favicon & Smart Zero-Poll SSE ---
+const htmlContent = readFileSync('draft-board.html', 'utf-8');
+assert(htmlContent.includes('rel="icon"'), 'draft-board.html defines favicon link tag');
+assert(htmlContent.includes('stopFallbackPolling()'), 'draft-board.html halts polling on SSE connect/message');
+assert(htmlContent.includes('startFallbackPolling()'), 'draft-board.html only activates fallback polling on error');
 
 const success = finishSuite('Server Startup & 1-Click Launchers');
 if (!success) {
   process.exit(1);
 }
+

@@ -20,6 +20,9 @@ PORT = 8517
 # 1x1 Transparent GIF for Image Beacon transport
 GIF_1X1 = b'GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
 
+# SVG Football Favicon
+FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🏈</text></svg>'.encode('utf-8')
+
 # In-memory sync state
 sync_lock = threading.Lock()
 last_espn_ping = 0
@@ -27,6 +30,13 @@ sync_events = []
 sse_clients = []
 
 class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Suppress high-frequency polling, heartbeat, SSE stream, and favicon logs from terminal
+        req_line = str(args[0]) if args else ''
+        if any(k in req_line for k in ('/api/sync/poll', '/api/sync/ping', '/api/sync/events', '/favicon.ico')):
+            return
+        super().log_message(format, *args)
+
     def end_headers(self):
         # Allow cross-origin requests from any origin (e.g. fantasy.espn.com)
         self.send_header('Access-Control-Allow-Origin', '*')
@@ -76,6 +86,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     sync_events.pop(0)
                 broadcast_sse(pick_event)
 
+            pick_desc = f"#{pick_event.get('overall') or '?'} {pick_event.get('name')} ({pick_event.get('pos') or ''} - {pick_event.get('team') or ''})".strip()
+            print(f"⚡ Live Pick Received: {pick_desc}")
+
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
@@ -91,6 +104,15 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', '/draft-board.html')
             self.end_headers()
+            return
+
+        # Football Favicon handler
+        if self.path == '/favicon.ico':
+            self.send_response(200)
+            self.send_header('Content-Type', 'image/svg+xml')
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.end_headers()
+            self.wfile.write(FAVICON_SVG)
             return
 
         # Handle Image Beacon / GET Ping & Pick (bypasses CORS & mixed-content preflights)
@@ -128,6 +150,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 if len(sync_events) > 100:
                     sync_events.pop(0)
                 broadcast_sse(pick_event)
+
+            pick_desc = f"#{pick_event.get('overall') or '?'} {pick_event.get('name')} ({pick_event.get('pos') or ''} - {pick_event.get('team') or ''})".strip()
+            print(f"⚡ Live Pick Received: {pick_desc}")
 
             self.send_response(200)
             self.send_header('Content-Type', 'image/gif')
