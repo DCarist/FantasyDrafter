@@ -28,8 +28,20 @@ function slotForOverall(overall, teams, mode) {
 }
 
 // All overall pick numbers belonging to one slot.
-function picksForSlot(slot, teams, rounds, mode) {
+// Optionally accepts tradedPicks map { [overall]: toSlot } to compute effective picks.
+function picksForSlot(slot, teams, rounds, mode, tradedPicks) {
   const picks = [];
+  if (tradedPicks && typeof tradedPicks === 'object' && Object.keys(tradedPicks).length > 0) {
+    const total = teams * rounds;
+    for (let o = 1; o <= total; o++) {
+      const natural = slotForOverall(o, teams, mode).slot;
+      const effective = (tradedPicks[o] != null) ? parseInt(tradedPicks[o], 10) : natural;
+      if (effective === slot) {
+        picks.push(o);
+      }
+    }
+    return picks;
+  }
   for (let r = 1; r <= rounds; r++) {
     picks.push(overallPick(r, slot, teams, mode));
   }
@@ -270,23 +282,31 @@ function defaultTeams(count, mySlot, myName) {
 
 // Get team info for an overall pick given team name mappings.
 // teamNames can be an array of strings (0-indexed for slot 1..N) or a map/object.
-function teamForOverall(overall, teamsCount, mode, teamNames, mySlot) {
+// Optionally accepts tradedPicks map { [overall]: toSlot } to resolve traded pick owners.
+function teamForOverall(overall, teamsCount, mode, teamNames, mySlot, tradedPicks) {
   const { round, slot } = slotForOverall(overall, teamsCount, mode);
+  const hasTrades = Boolean(tradedPicks && typeof tradedPicks === 'object' && Object.keys(tradedPicks).length > 0);
+  const effectiveSlot = (hasTrades && tradedPicks[overall] != null) ? parseInt(tradedPicks[overall], 10) : slot;
   let name;
   if (Array.isArray(teamNames)) {
-    name = teamNames[slot - 1];
+    name = teamNames[effectiveSlot - 1];
   } else if (teamNames && typeof teamNames === 'object') {
-    name = teamNames[slot] || teamNames[String(slot)];
+    name = teamNames[effectiveSlot] || teamNames[String(effectiveSlot)];
   }
   if (!name || !name.trim()) {
-    name = (slot === mySlot) ? 'My Team' : ('Team ' + slot);
+    name = (effectiveSlot === mySlot) ? 'My Team' : ('Team ' + effectiveSlot);
   }
-  return {
+  const res = {
     round: round,
-    slot: slot,
+    slot: effectiveSlot,
     name: name.trim(),
-    isMe: slot === mySlot,
+    isMe: effectiveSlot === mySlot,
   };
+  if (hasTrades) {
+    res.originalSlot = slot;
+    res.isTraded = (effectiveSlot !== slot);
+  }
+  return res;
 }
 
 // Resolves the player object for any draft log entry (supporting unlisted picks).
@@ -924,6 +944,172 @@ function reconcileDraftLog(currentLog, remotePicks, playersList, draftContext) {
   };
 }
 
+// --- Pick Ownership & Trading ---
+function generateDraftPicks(teams, rounds, mode, tradedPicks, teamNames, mySlot) {
+  const list = [];
+  const trades = tradedPicks || {};
+  const total = teams * rounds;
+  for (let o = 1; o <= total; o++) {
+    const info = teamForOverall(o, teams, mode, teamNames, mySlot, trades);
+    const natural = slotForOverall(o, teams, mode);
+    list.push({
+      overall: o,
+      round: natural.round,
+      originalSlot: natural.slot,
+      currentSlot: info.slot,
+      originalTeam: (Array.isArray(teamNames) ? teamNames[natural.slot - 1] : null) || ('Team ' + natural.slot),
+      currentTeam: info.name,
+      isTraded: !!info.isTraded,
+      isMe: !!info.isMe
+    });
+  }
+  return list;
+}
+
+function applyPickTrade(tradedPicks, overallPick, toSlot, teams, mode) {
+  const current = Object.assign({}, tradedPicks);
+  const natural = (teams && mode) ? slotForOverall(overallPick, teams, mode).slot : null;
+  if (toSlot == null || (natural != null && parseInt(toSlot, 10) === natural)) {
+    delete current[overallPick];
+  } else {
+    current[overallPick] = parseInt(toSlot, 10);
+  }
+  return current;
+}
+
+function getPicksForTeam(slot, picksGrid) {
+  if (!Array.isArray(picksGrid)) return [];
+  return picksGrid.filter(p => p.currentSlot === slot);
+}
+
+// --- Draft Queue Management ---
+function isQueued(queue, playerId) {
+  if (!Array.isArray(queue) || playerId == null) return false;
+  return queue.includes(playerId);
+}
+
+function addToQueue(queue, playerId) {
+  if (playerId == null) return Array.isArray(queue) ? queue.slice() : [];
+  const list = Array.isArray(queue) ? queue.slice() : [];
+  if (!list.includes(playerId)) {
+    list.push(playerId);
+  }
+  return list;
+}
+
+function removeFromQueue(queue, playerId) {
+  if (!Array.isArray(queue) || playerId == null) return Array.isArray(queue) ? queue.slice() : [];
+  return queue.filter(id => id !== playerId);
+}
+
+function reorderQueue(queue, fromIdx, toIdx) {
+  if (!Array.isArray(queue)) return [];
+  const list = queue.slice();
+  if (fromIdx < 0 || fromIdx >= list.length || toIdx < 0 || toIdx >= list.length) {
+    return list;
+  }
+  const [item] = list.splice(fromIdx, 1);
+  list.splice(toIdx, 0, item);
+  return list;
+}
+
+function cleanQueue(queue, takenContainer) {
+  if (!Array.isArray(queue)) return [];
+  if (!takenContainer) return queue.slice();
+
+  let hasTaken;
+  if (takenContainer instanceof Set || takenContainer instanceof Map) {
+    hasTaken = id => takenContainer.has(id);
+  } else if (Array.isArray(takenContainer)) {
+    const s = new Set(takenContainer);
+    hasTaken = id => s.has(id);
+  } else {
+    hasTaken = id => !!takenContainer[id];
+  }
+
+  return queue.filter(id => !hasTaken(id));
+}
+
+function getAvailableQueue(queue, takenContainer, players) {
+  const cleaned = cleanQueue(queue, takenContainer);
+  if (!players) return [];
+  return cleaned.map(id => {
+    return (typeof players === 'function') ? players(id) : players[id];
+  }).filter(Boolean);
+}
+
+// --- Draft State Serialization & Migration ---
+const DRAFT_SCHEMA_VERSION = 2;
+
+function serializeDraftState(state) {
+  const s = state || {};
+  return {
+    version: DRAFT_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    settings: Object.assign({}, s.settings || {}),
+    draftLog: Array.isArray(s.draftLog) ? s.draftLog.slice() : [],
+    watchlist: Array.isArray(s.watchlist) ? s.watchlist.slice() : [],
+    queue: Array.isArray(s.queue) ? s.queue.slice() : [],
+    tradedPicks: Object.assign({}, s.tradedPicks || {}),
+    syncSettings: Object.assign({}, s.syncSettings || {}),
+  };
+}
+
+function deserializeDraftState(input, currentPlayers) {
+  if (!input) return { ok: false, error: 'Empty draft payload' };
+
+  let raw = input;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch (err) {
+      return { ok: false, error: 'Invalid JSON format: ' + err.message };
+    }
+  }
+
+  if (typeof raw !== 'object' || raw === null) {
+    return { ok: false, error: 'Payload must be an object' };
+  }
+
+  // Handle version detection and migration
+  const version = raw.version || 1;
+  const settings = raw.settings || {};
+  const draftLog = Array.isArray(raw.draftLog) ? raw.draftLog : [];
+  const watchlist = Array.isArray(raw.watchlist) ? raw.watchlist : [];
+  const queue = Array.isArray(raw.queue) ? raw.queue : [];
+  const tradedPicks = (raw.tradedPicks && typeof raw.tradedPicks === 'object') ? raw.tradedPicks : {};
+  const syncSettings = (raw.syncSettings && typeof raw.syncSettings === 'object') ? raw.syncSettings : {};
+
+  // Sanitize draftLog entries
+  const validLog = [];
+  for (const entry of draftLog) {
+    if (!entry || typeof entry !== 'object') continue;
+    validLog.push({
+      overall: parseInt(entry.overall, 10) || (validLog.length + 1),
+      playerId: entry.playerId != null ? parseInt(entry.playerId, 10) : null,
+      customName: entry.customName ? String(entry.customName).trim() : null,
+      customPos: entry.customPos ? String(entry.customPos).trim().toUpperCase() : null,
+      customTeam: entry.customTeam ? String(entry.customTeam).trim().toUpperCase() : null,
+      customBye: entry.customBye != null ? parseInt(entry.customBye, 10) : null,
+      mine: !!entry.mine
+    });
+  }
+
+  return {
+    ok: true,
+    version: DRAFT_SCHEMA_VERSION,
+    migratedFrom: version < DRAFT_SCHEMA_VERSION ? version : null,
+    state: {
+      settings: settings,
+      draftLog: validLog,
+      watchlist: watchlist.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
+      queue: queue.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
+      tradedPicks: tradedPicks,
+      syncSettings: syncSettings
+    }
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     roundIsForward: roundIsForward,
@@ -956,5 +1142,17 @@ if (typeof module !== 'undefined' && module.exports) {
     parseSleeperDraft: parseSleeperDraft,
     resolveRemotePick: resolveRemotePick,
     reconcileDraftLog: reconcileDraftLog,
+    generateDraftPicks: generateDraftPicks,
+    applyPickTrade: applyPickTrade,
+    getPicksForTeam: getPicksForTeam,
+    isQueued: isQueued,
+    addToQueue: addToQueue,
+    removeFromQueue: removeFromQueue,
+    reorderQueue: reorderQueue,
+    cleanQueue: cleanQueue,
+    getAvailableQueue: getAvailableQueue,
+    DRAFT_SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
+    serializeDraftState: serializeDraftState,
+    deserializeDraftState: deserializeDraftState,
   };
 }

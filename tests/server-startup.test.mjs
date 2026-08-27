@@ -49,11 +49,13 @@ assert(serverPyContent.includes('log_message'), 'server.py overrides log_message
 
 // --- Test 6: draft-board.html Favicon, Smart Zero-Poll SSE & Server Reporting ---
 const htmlContent = readFileSync('draft-board.html', 'utf-8');
+const syncClientContent = existsSync('js/draft-sync-client.js') ? readFileSync('js/draft-sync-client.js', 'utf-8') : '';
+const combinedClient = htmlContent + '\n' + syncClientContent;
 assert(htmlContent.includes('rel="icon"'), 'draft-board.html defines favicon link tag');
-assert(htmlContent.includes('stopFallbackPolling()'), 'draft-board.html halts polling on SSE connect/message');
-assert(htmlContent.includes('startFallbackPolling()'), 'draft-board.html only activates fallback polling on error');
-assert(htmlContent.includes('reportServerPick'), 'draft-board.html defines reportServerPick helper');
-assert(htmlContent.includes('reportServerEvent'), 'draft-board.html defines reportServerEvent helper');
+assert(combinedClient.includes('stopFallbackPolling()'), 'client halts polling on SSE connect/message');
+assert(combinedClient.includes('startFallbackPolling()'), 'client only activates fallback polling on error');
+assert(combinedClient.includes('reportServerPick'), 'client defines reportServerPick helper');
+assert(combinedClient.includes('reportServerEvent'), 'client defines reportServerEvent helper');
 
 // --- Test 7: Player Data Age Evaluation ---
 const ageCheckResult = spawnSync('python', ['-c', 'from server import get_player_data_age; age, d = get_player_data_age(); assert age is not None; print(f"{age},{d}")'], { encoding: 'utf-8' });
