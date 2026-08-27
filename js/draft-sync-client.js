@@ -142,7 +142,9 @@
         }
       }
 
-      if (Array.isArray(data.picks)) {
+      if (Array.isArray(data.snapshot) && data.snapshot.length > 0) {
+        handleSnapshotPicksEvent(data.snapshot);
+      } else if (Array.isArray(data.picks)) {
         for (const p of data.picks) {
           handleRemotePickEvent(p);
         }
@@ -164,6 +166,15 @@
         updateSyncBadge();
         updateEspnStatusBox();
       }
+    } else if (data.type === 'DRAFT_SNAPSHOT' && Array.isArray(data.picks)) {
+      syncState.espnConnected = true;
+      syncState.espnLastSeen = data.timestamp || Date.now();
+      if (syncState.type !== 'sleeper') {
+        syncState.type = 'espn';
+      }
+      updateSyncBadge();
+      updateEspnStatusBox();
+      handleSnapshotPicksEvent(data.picks);
     } else if (data.type === 'PICK_MADE') {
       syncState.espnConnected = true;
       syncState.espnLastSeen = data.timestamp || Date.now();
@@ -176,9 +187,64 @@
     }
   }
 
+  function handleSnapshotPicksEvent(remotePicks) {
+    if (!Array.isArray(remotePicks) || remotePicks.length === 0) return;
+    if (!global.state || !Array.isArray(global.state.log)) return;
+
+    const result = reconcileDraftLog(global.state.log, remotePicks, global.PLAYERS, {
+      teams: global.state.settings.teams,
+      slot: global.state.settings.slot,
+      mode: global.state.settings.mode,
+      teamNames: global.state.settings.teamNames
+    });
+
+    if (result.changed) {
+      global.state.log = result.log;
+
+      // Clean drafted players from watchlist and queue
+      const takenIds = global.state.log.map(e => e.playerId).filter(id => id != null);
+      if (takenIds.length > 0) {
+        global.state.watchlist = cleanWatchlist(global.state.watchlist, takenIds);
+        if (typeof cleanQueue === 'function') {
+          global.state.queue = cleanQueue(global.state.queue, takenIds);
+        }
+      }
+
+      global.save();
+      if (typeof global.render === 'function') global.render();
+
+      if (result.added > 0) {
+        reportServerEvent(`⚡ Live Synced ${result.added} new pick(s) from ESPN draft room (Total: #${global.state.log.length})`);
+      }
+      if (result.rolledBack > 0) {
+        reportServerEvent(`⏪ Reconciled draft: ${result.rolledBack} pick(s) rolled back`);
+      }
+    }
+  }
+
   function handleRemotePickEvent(pickData) {
-    const overall = pickData.overall || currentPick();
+    if (!pickData || !pickData.name) return;
+    const current = currentPick();
+    let overall = pickData.overall;
+
+    // Default to current on-the-clock pick if not specified or invalid
+    if (!overall || overall <= 0) {
+      overall = current;
+    }
+
     const existingIdx = global.state.log.findIndex(e => e.overall === overall);
+
+    // Safety Guard: Protect past settled picks from being overwritten by stale/bad single-pick numbers
+    if (existingIdx >= 0 && overall < current - 1) {
+      const existing = global.state.log[existingIdx];
+      const resolved = resolveRemotePick(pickData, global.PLAYERS, { unlistedFallback: true });
+      const isSame = (resolved.playerId != null && existing.playerId === resolved.playerId) ||
+                     (resolved.playerId == null && existing.playerId == null && existing.customName === resolved.customName);
+      if (!isSame) {
+        console.warn(`[Sync Guard] Ignored stale pick event #${overall} for "${pickData.name}" as #${overall} is already filled.`);
+        return;
+      }
+    }
 
     const resolved = resolveRemotePick(pickData, global.PLAYERS, { unlistedFallback: global.state.settings.autoUnlistedSync !== false });
     if (!resolved) return;

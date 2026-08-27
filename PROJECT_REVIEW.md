@@ -157,7 +157,7 @@ FantasyDrafter/
 
 ## 4. Testing Infrastructure
 
-The project includes an automated test runner executing **14 comprehensive test suites** covering over 2,800 assertions:
+The project includes an automated test runner executing **15 comprehensive test suites** covering over 2,850 assertions:
 
 ```powershell
 npm test
@@ -174,6 +174,7 @@ npm test
 | **Draft Target Queue** | `tests/draft-queue.test.mjs` | 20 assertions (queue insertion, deduplication, removal, reordering, pick cleanup) | ✅ Passing |
 | **Draft State Serialization & V1 Migration** | `tests/draft-serialization.test.mjs` | 22 assertions (V2 state serialization, deserialization, legacy V1 migration) | ✅ Passing |
 | **Draft Pick Trading & Ownership Grid** | `tests/pick-trading.test.mjs` | 24 assertions (grid generation, trade assignments, reverting, team picks) | ✅ Passing |
+| **ESPN Live Sync Robustness & Event Logging** | `tests/espn-sync-robustness.test.mjs` | 28 assertions (pick format parsing, autopicker burst reconciliation, out-of-order guard, server log persistence) | ✅ Passing |
 | **Multi-Format League Scoring** | `tests/league-formats.test.mjs` | 27 assertions (1QB vs SF, PPR/Half/Std, TE Premium, rookie ranks) | ✅ Passing |
 | **League Setup & 3RR Simulation** | `tests/league-setup.test.mjs` | 1,572 assertions (8/10/12/14/16-team 25-round simulations) | ✅ Passing |
 | **Live Draft Synchronization** | `tests/live-sync.test.mjs` | 49 assertions (Sleeper/ESPN parsing, suffixes Jr/III, defenses, rollbacks) | ✅ Passing |
@@ -182,7 +183,7 @@ npm test
 | **Unlisted Picks & Custom Resolution** | `tests/unlisted-picks.test.mjs` | 13 assertions (custom name/pos/bye/team resolution, fallback naming) | ✅ Passing |
 | **Draft Watchlist Management** | `tests/watchlist.test.mjs` | 18 assertions (star toggle, add/remove, auto-cleanup on draft, persistence) | ✅ Passing |
 
-**Total:** 14 suites passing (0 failures).
+**Total:** 15 suites passing (0 failures).
 
 ---
 

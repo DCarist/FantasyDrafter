@@ -129,9 +129,9 @@ ESPN Fantasy Football does not expose a public real-time draft socket or permiss
   1. The content script mounts a `MutationObserver` on the ESPN pick history table, draft board cells, and active clock banner.
   2. As each pick is completed, the extension extracts player name, position, and NFL team:
      `{ source: 'espn', type: 'PICK_MADE', overall: 14, name: 'CeeDee Lamb', pos: 'WR', team: 'DAL' }`
-  3. Transmits the payload to Fantasy Drafter on `http://127.0.0.1:8517/api/sync/pick`.
-  4. Fantasy Drafter receives the event and executes the draft action instantly.
-- **Advantages:** Sub-second response time, works with 100% of private and public ESPN leagues, requires zero cookie entry.
+  3. Transmits the payload to Fantasy Drafter on `http://127.0.0.1:8517/api/sync/pick` (or `/api/sync/snapshot` for rapid bursts/autopickers).
+  4. Fantasy Drafter receives the event and executes the draft action instantly with out-of-order guards and snapshot reconciliation.
+- **Advantages:** Sub-second response time, works with 100% of private and public ESPN leagues, handles fast autopicker bursts via batch snapshot sync, requires zero cookie entry.
 - **Setup:** Loaded once via Chrome/Edge `chrome://extensions` or `edge://extensions` -> **Load unpacked** pointing to `extensions/espn-sync`.
 
 ---
@@ -148,8 +148,8 @@ The unified architecture allows Fantasy Drafter to operate as a central draft hu
                                 │                               │
                 ┌───────────────▼──────────────┐ ┌──────────────▼──────────────┐
                 │        Sleeper Adapter       │ │         ESPN Adapter        │
-                │  - Direct /v1/picks poller   │ │  - BroadcastChannel listener│
-                │  - League setup auto-importer│ │  - Extension / Bookmarklet  │
+                │  - Direct /v1/picks poller   │ │  - Extension / Beacon Relay │
+                │  - League setup auto-importer│ │  - Batch Snapshot Ingestion │
                 └───────────────┬──────────────┘ └──────────────┬──────────────┘
                                 │                               │
                                 └───────────────┬───────────────┘
@@ -162,6 +162,7 @@ The unified architecture allows Fantasy Drafter to operate as a central draft hu
                            │  2. DST Canonical Resolver              │
                            │  3. Automatic Unlisted Player Fallback  │
                            │  4. Pick Order & Rollback Reconciler    │
+                           │  5. Out-of-Order Settled Pick Guards    │
                            └────────────────────┬────────────────────┘
                                                 │
                                                 ▼
@@ -176,4 +177,5 @@ The unified architecture allows Fantasy Drafter to operate as a central draft hu
 2. **Defense Match:** Pass defense strings (`"San Francisco 49ers"`, `"49ers DST"`, `"SF"`) through `resolveDstCanonical()`.
 3. **Unlisted / Sleeper Fallback:** If a drafted player is not in the rankings dataset (e.g. an obscure rookie or third-string kicker), Fantasy Drafter automatically records a custom unlisted pick with the player's name, position, and NFL team so that draft slots and team rosters stay 100% aligned.
 4. **Reconciliation & Undo:** If the remote draft removes or changes a pick, the engine compares the remote pick array with `state.log` and updates `state.log` to match.
+5. **Autopicker Burst & Out-of-Order Safety Guards:** Protects settled earlier picks (e.g. pick #9) from ever being overwritten by late, misindexed single-pick events (e.g. pick #37). Reconciles multiple rapid autopicker picks in exact chronological sequence.
 

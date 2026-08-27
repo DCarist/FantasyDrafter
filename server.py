@@ -42,6 +42,44 @@ def safe_print(msg):
 
 PORT = 8517
 
+# Logging configuration: Persist all server and sync events to logs/last-run.log
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+LAST_RUN_LOG = os.path.join(LOG_DIR, "last-run.log")
+log_file_lock = threading.Lock()
+
+
+def init_logging():
+    try:
+        if not os.path.exists(LOG_DIR):
+            os.makedirs(LOG_DIR, exist_ok=True)
+        with log_file_lock:
+            with open(LAST_RUN_LOG, "w", encoding="utf-8") as f:
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write("=" * 80 + "\n")
+                f.write("Fantasy Drafter — Server & Sync Event Log\n")
+                f.write(f"Session Started: {now_str} (Port {PORT})\n")
+                f.write("=" * 80 + "\n\n")
+    except Exception as e:
+        safe_print(f"Warning: Could not initialize log file: {e}")
+
+
+def log_event(msg, write_to_terminal=True):
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    formatted = f"[{now_str}] {msg}"
+    try:
+        if not os.path.exists(LOG_DIR):
+            os.makedirs(LOG_DIR, exist_ok=True)
+        with log_file_lock:
+            with open(LAST_RUN_LOG, "a", encoding="utf-8") as f:
+                f.write(formatted + "\n")
+                f.flush()
+    except Exception:
+        pass
+
+    if write_to_terminal:
+        safe_print(msg)
+
+
 # 1x1 Transparent GIF for Image Beacon transport
 GIF_1X1 = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
 
@@ -54,12 +92,13 @@ FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><te
 sync_lock = threading.Lock()
 last_espn_ping = 0
 sync_events = []
+latest_snapshot = []
 sse_clients = []
 
 
 class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
-        # Suppress high-frequency polling, heartbeat, SSE stream, pick relay, and log messages from raw HTTP terminal output
+        # Suppress high-frequency polling, heartbeat, SSE stream, pick relay, snapshot, and log messages from raw HTTP terminal output
         req_line = str(args[0]) if args else ""
         if any(
             k in req_line
@@ -68,6 +107,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 "/api/sync/ping",
                 "/api/sync/events",
                 "/api/sync/pick",
+                "/api/sync/snapshot",
                 "/api/sync/log",
                 "/favicon.ico",
             )
@@ -92,7 +132,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        global last_espn_ping
+        global last_espn_ping, latest_snapshot
         if self.path.startswith("/api/sync/log"):
             content_length = int(self.headers.get("Content-Length", 0))
             body = (
@@ -106,7 +146,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 log_data = {}
             msg = log_data.get("message", "")
             if msg:
-                safe_print(f"{msg}")
+                log_event(f"📝 {msg}")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -123,6 +163,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         "timestamp": int(last_espn_ping * 1000),
                     }
                 )
+            log_event("🔌 Ping received from ESPN Live Sync extension", write_to_terminal=False)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -131,6 +172,43 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     {"ok": True, "pong": True, "timestamp": int(last_espn_ping * 1000)}
                 ).encode("utf-8")
             )
+            return
+
+        if self.path.startswith("/api/sync/snapshot"):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = (
+                self.rfile.read(content_length).decode("utf-8")
+                if content_length > 0
+                else "{}"
+            )
+            try:
+                snap_data = json.loads(body)
+            except Exception:
+                snap_data = {}
+
+            source = snap_data.get("source", "espn")
+            picks = snap_data.get("picks", [])
+            with sync_lock:
+                if source == "espn":
+                    last_espn_ping = time.time()
+                latest_snapshot = list(picks)
+                snap_event = {
+                    "type": "DRAFT_SNAPSHOT",
+                    "source": source,
+                    "picks": latest_snapshot,
+                    "timestamp": int(time.time() * 1000),
+                }
+                broadcast_sse(snap_event)
+
+            latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+            log_event(
+                f"📋 Draft Snapshot: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
+            )
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": True, "count": len(picks)}).encode("utf-8"))
             return
 
         if self.path.startswith("/api/sync/pick"):
@@ -144,6 +222,31 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 pick_data = json.loads(body)
             except Exception:
                 pick_data = {}
+
+            # Handle snapshot embedded in /api/sync/pick
+            if pick_data.get("type") == "DRAFT_SNAPSHOT" or "picks" in pick_data:
+                source = pick_data.get("source", "espn")
+                picks = pick_data.get("picks", [])
+                with sync_lock:
+                    if source == "espn":
+                        last_espn_ping = time.time()
+                    latest_snapshot = list(picks)
+                    snap_event = {
+                        "type": "DRAFT_SNAPSHOT",
+                        "source": source,
+                        "picks": latest_snapshot,
+                        "timestamp": int(time.time() * 1000),
+                    }
+                    broadcast_sse(snap_event)
+                latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+                log_event(
+                    f"📋 Draft Snapshot: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"ok": True, "count": len(picks)}).encode("utf-8"))
+                return
 
             source = pick_data.get("source", "espn")
             with sync_lock:
@@ -177,7 +280,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             detail_str = f" ({' - '.join(details)})" if details else ""
             by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
             source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
-            safe_print(
+            log_event(
                 f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
             )
 
@@ -190,7 +293,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
         self.send_error(404, "Endpoint not found")
 
     def do_GET(self):
-        global last_espn_ping
+        global last_espn_ping, latest_snapshot
         # Redirect root to draft-board.html
         if self.path == "/" or self.path == "":
             self.send_response(302)
@@ -207,7 +310,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(FAVICON_SVG)
             return
 
-        # Handle Image Beacon / GET Ping & Pick (bypasses CORS & mixed-content preflights)
+        # Handle Image Beacon / GET Ping, Snapshot & Pick (bypasses CORS & mixed-content preflights)
         if self.path.startswith("/api/sync/ping"):
             with sync_lock:
                 last_espn_ping = time.time()
@@ -218,6 +321,41 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         "timestamp": int(last_espn_ping * 1000),
                     }
                 )
+            log_event("🔌 Ping beacon received from ESPN Live Sync extension", write_to_terminal=False)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/gif")
+            self.end_headers()
+            self.wfile.write(GIF_1X1)
+            return
+
+        if self.path.startswith("/api/sync/snapshot"):
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            d_raw = params.get("d", ["{}"])[0]
+            try:
+                snap_data = json.loads(d_raw)
+            except Exception:
+                snap_data = {}
+
+            source = snap_data.get("source", "espn")
+            picks = snap_data.get("picks", [])
+            with sync_lock:
+                if source == "espn":
+                    last_espn_ping = time.time()
+                latest_snapshot = list(picks)
+                snap_event = {
+                    "type": "DRAFT_SNAPSHOT",
+                    "source": source,
+                    "picks": latest_snapshot,
+                    "timestamp": int(time.time() * 1000),
+                }
+                broadcast_sse(snap_event)
+
+            latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+            log_event(
+                f"📋 Draft Snapshot Beacon: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
+            )
+
             self.send_response(200)
             self.send_header("Content-Type", "image/gif")
             self.end_headers()
@@ -232,6 +370,30 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 pick_data = json.loads(d_raw)
             except Exception:
                 pick_data = {}
+
+            if pick_data.get("type") == "DRAFT_SNAPSHOT" or "picks" in pick_data:
+                source = pick_data.get("source", "espn")
+                picks = pick_data.get("picks", [])
+                with sync_lock:
+                    if source == "espn":
+                        last_espn_ping = time.time()
+                    latest_snapshot = list(picks)
+                    snap_event = {
+                        "type": "DRAFT_SNAPSHOT",
+                        "source": source,
+                        "picks": latest_snapshot,
+                        "timestamp": int(time.time() * 1000),
+                    }
+                    broadcast_sse(snap_event)
+                latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+                log_event(
+                    f"📋 Draft Snapshot Beacon: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
+                )
+                self.send_response(200)
+                self.send_header("Content-Type", "image/gif")
+                self.end_headers()
+                self.wfile.write(GIF_1X1)
+                return
 
             source = pick_data.get("source", "espn")
             with sync_lock:
@@ -264,7 +426,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             detail_str = f" ({' - '.join(details)})" if details else ""
             by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
             source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
-            safe_print(
+            log_event(
                 f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
             )
 
@@ -295,6 +457,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     if last_espn_ping > 0
                     else None,
                     "picks": new_picks,
+                    "snapshot": latest_snapshot,
                     "serverTime": int(time.time() * 1000),
                 }
 
@@ -495,6 +658,9 @@ def main():
     port = args.port_pos if args.port_pos is not None else args.port
     open_browser = not args.no_browser
 
+    # Initialize persistent event log
+    init_logging()
+
     # Check and update player rankings data if older than max_age days
     ensure_player_data_fresh(
         max_days=args.max_age, force=args.update, skip=args.skip_update
@@ -504,13 +670,14 @@ def main():
     relay_url = f"http://127.0.0.1:{port}/api/sync/"
 
     server = ThreadedHTTPServer(("0.0.0.0", port), SyncRelayHandler)
-    safe_print(f"==================================================================")
-    safe_print(f"🏈 Fantasy Drafter Server running at: {server_url}")
-    safe_print(f"⚡ Live Sync Relay active at: {relay_url}")
+    log_event(f"==================================================================")
+    log_event(f"🏈 Fantasy Drafter Server running at: {server_url}")
+    log_event(f"⚡ Live Sync Relay active at: {relay_url}")
+    log_event(f"📝 Event log persistent output saved to: {LAST_RUN_LOG}")
     if open_browser:
-        safe_print(f"🌐 Opening Fantasy Drafter in your default web browser...")
-    safe_print(f"⌨️  Press Ctrl+C to stop the server.")
-    safe_print(f"==================================================================")
+        log_event(f"🌐 Opening Fantasy Drafter in your default web browser...")
+    log_event(f"⌨️  Press Ctrl+C to stop the server.")
+    log_event(f"==================================================================")
 
     if open_browser:
 
@@ -519,14 +686,14 @@ def main():
             try:
                 webbrowser.open(server_url)
             except Exception as e:
-                safe_print(f"⚠️ Could not auto-launch browser: {e}")
+                log_event(f"⚠️ Could not auto-launch browser: {e}")
 
         threading.Thread(target=_launch, daemon=True).start()
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        safe_print("\nStopping server.")
+        log_event("\nStopping server.")
         server.server_close()
 
 
