@@ -139,6 +139,22 @@
     return state.log.length + 1;
   }
 
+  function sendServerPick(data) {
+    if (typeof reportServerPick === 'function') {
+      reportServerPick(data);
+    } else if (typeof window !== 'undefined' && typeof window.reportServerPick === 'function') {
+      window.reportServerPick(data);
+    }
+  }
+
+  function sendServerEvent(msg, type) {
+    if (typeof reportServerEvent === 'function') {
+      reportServerEvent(msg, type);
+    } else if (typeof window !== 'undefined' && typeof window.reportServerEvent === 'function') {
+      window.reportServerEvent(msg, type);
+    }
+  }
+
   function draftPlayer(id, mine) {
     const pick = currentPick();
     state.log.push({ overall: pick, playerId: id, mine: Boolean(mine) });
@@ -151,16 +167,14 @@
 
     const p = byId(id) || {};
     const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
-    if (typeof reportServerPick === 'function') {
-      reportServerPick({
-        source: 'manual',
-        overall: pick,
-        name: p.name || 'Player #' + id,
-        pos: p.pos || '',
-        team: p.team || '',
-        by: who.name + (who.isMe ? ' (You)' : '')
-      });
-    }
+    sendServerPick({
+      source: 'manual',
+      overall: pick,
+      name: p.name || 'Player #' + id,
+      pos: p.pos || '',
+      team: p.team || '',
+      by: who.name + (who.isMe ? ' (You)' : '')
+    });
   }
 
   function toggleWatch(id, e) {
@@ -190,16 +204,14 @@
     if (typeof closeModal === 'function') closeModal();
     if (typeof render === 'function') render();
 
-    if (typeof reportServerPick === 'function') {
-      reportServerPick({
-        source: 'manual',
-        overall: pick,
-        name: nameVal,
-        pos: posVal,
-        team: (team && team.trim()) ? team.trim().toUpperCase() : '',
-        by: who.name + (who.isMe ? ' (You)' : '')
-      });
-    }
+    sendServerPick({
+      source: 'manual',
+      overall: pick,
+      name: nameVal,
+      pos: posVal,
+      team: (team && team.trim()) ? team.trim().toUpperCase() : '',
+      by: who.name + (who.isMe ? ' (You)' : '')
+    });
   }
 
   function undo() {
@@ -207,9 +219,7 @@
     const removed = state.log.pop();
     save();
     if (typeof render === 'function') render();
-    if (typeof reportServerEvent === 'function') {
-      reportServerEvent('↩️ Undid pick #' + (removed.overall || (state.log.length + 1)) + ' (Now at Pick #' + (state.log.length + 1) + ')', 'info');
-    }
+    sendServerEvent('↩️ Undid pick #' + (removed.overall || (state.log.length + 1)) + ' (Now at Pick #' + (state.log.length + 1) + ')', 'info');
   }
 
   function jumpTo(pick) {
@@ -232,9 +242,7 @@
     state.log = [];
     save();
     if (typeof render === 'function') render();
-    if (typeof reportServerEvent === 'function') {
-      reportServerEvent('🔄 Draft board reset to Pick #1', 'info');
-    }
+    sendServerEvent('🔄 Draft board reset to Pick #1', 'info');
   }
 
   function selectRosterSlot(slot) {

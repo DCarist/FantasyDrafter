@@ -239,7 +239,7 @@
       const existing = global.state.log[existingIdx];
       const resolved = resolveRemotePick(pickData, global.PLAYERS, { unlistedFallback: true });
       const isSame = (resolved.playerId != null && existing.playerId === resolved.playerId) ||
-                     (resolved.playerId == null && existing.playerId == null && existing.customName === resolved.customName);
+        (resolved.playerId == null && existing.playerId == null && existing.customName === resolved.customName);
       if (!isSame) {
         console.warn(`[Sync Guard] Ignored stale pick event #${overall} for "${pickData.name}" as #${overall} is already filled.`);
         return;

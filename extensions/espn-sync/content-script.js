@@ -1,20 +1,26 @@
 // ⚡ Fantasy Drafter — ESPN Live Sync Content Script (Manifest V3)
 // Automatically monitors ESPN Live & Mock Draft Rooms and relays picks to Fantasy Drafter on http://127.0.0.1:8517
 
-(function() {
-  function isDraftRoom() {
-    return window.location.href.includes('/draft') ||
-           document.querySelector('.draft-table, .draft-board, .pick-history, [data-testid*="draft"], .draft-recent-pick, .draft-cell, [class*="draftRoom"]') !== null;
-  }
-
+(function () {
   const RELAY_HOSTS = ['http://127.0.0.1:8517', 'http://localhost:8517'];
-  const NFL_TEAMS = new Set(['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LV','LAC','LAR','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SF','SEA','TB','TEN','WAS']);
-  const POS_LIST = ['QB','RB','WR','TE','K','DST','DEF','D/ST'];
+  const NFL_TEAMS = new Set(['ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN', 'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LV', 'LAC', 'LAR', 'MIA', 'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS']);
+  const POS_LIST = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'DEF', 'D/ST'];
 
   let activeHost = 'http://127.0.0.1:8517';
   let isConnected = false;
   let pill = null;
+  let diagModal = null;
   let detectedLeagueTeams = 12;
+  const seenPicks = new Set();
+  let lastSnapshotCount = 0;
+  let totalDetectedPicks = [];
+
+  function isDraftRoom() {
+    return window.location.href.includes('/draft') ||
+      window.location.href.includes('/mock') ||
+      window.location.href.includes('/ffl') ||
+      document.querySelector('table, .draft-table, .draft-board, .pick-history, [data-testid*="draft"], .draft-recent-pick, .draft-cell, [class*="draft" i]') !== null;
+  }
 
   function createPill() {
     if (pill) return;
@@ -32,31 +38,31 @@
       borderRadius: '8px',
       padding: '8px 14px',
       font: '600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.7)',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.75)',
       cursor: 'pointer',
       transition: 'all 0.2s ease',
       userSelect: 'none'
     });
-    pill.title = 'Click to re-ping Fantasy Drafter (127.0.0.1:8517)';
-    pill.onclick = () => {
-      sendPing();
-      pill.style.transform = 'scale(1.08)';
-      setTimeout(() => { pill.style.transform = 'scale(1)'; }, 180);
+    pill.title = 'Click to open Fantasy Drafter Sync Diagnostics';
+    pill.onclick = (e) => {
+      e.stopPropagation();
+      toggleDiagModal();
     };
     document.body.appendChild(pill);
   }
 
   function setPillStatus(status, text) {
     if (!pill) return;
+    const countTag = totalDetectedPicks.length > 0 ? ` (${totalDetectedPicks.length} picks)` : '';
     if (status === 'connected') {
       pill.style.color = '#3ddc84';
       pill.style.borderColor = '#3ddc84';
-      pill.innerHTML = '⚡ <b>Fantasy Drafter:</b> ' + (text || 'Connected & Synced Live');
+      pill.innerHTML = '⚡ <b>Fantasy Drafter:</b> ' + (text || ('Connected & Synced' + countTag));
     } else if (status === 'pick') {
       pill.style.color = '#58a6ff';
       pill.style.borderColor = '#58a6ff';
-      pill.innerHTML = '⚡ <b>Fantasy Drafter:</b> ' + (text || 'Pick Synced');
-      setTimeout(() => { setPillStatus('connected'); }, 2000);
+      pill.innerHTML = '⚡ <b>Fantasy Drafter:</b> ' + text;
+      setTimeout(() => { setPillStatus('connected'); }, 2500);
     } else {
       pill.style.color = '#ffb454';
       pill.style.borderColor = '#ffb454';
@@ -64,11 +70,78 @@
     }
   }
 
+  function toggleDiagModal() {
+    if (diagModal) {
+      diagModal.remove();
+      diagModal = null;
+      return;
+    }
+    diagModal = document.createElement('div');
+    diagModal.id = 'fantasy-drafter-diag-modal';
+    Object.assign(diagModal.style, {
+      position: 'fixed',
+      bottom: '65px',
+      right: '18px',
+      width: '360px',
+      maxHeight: '480px',
+      background: '#161b22',
+      color: '#e6edf3',
+      border: '1px solid #30363d',
+      borderRadius: '10px',
+      padding: '16px',
+      zIndex: '10000000',
+      boxShadow: '0 12px 32px rgba(0,0,0,0.85)',
+      font: '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      overflowY: 'auto'
+    });
+
+    const recentPicksHtml = totalDetectedPicks.slice(-6).reverse().map(p =>
+      `<div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #21262d; font-size:12px">
+        <span><b>#${p.overall}</b> ${p.name}</span>
+        <span style="color:#8b949e">${p.pos} · ${p.team || 'FA'}</span>
+      </div>`
+    ).join('') || '<div style="color:#8b949e; font-style:italic; padding:6px 0">No picks detected yet in this session.</div>';
+
+    diagModal.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
+        <h3 style="margin:0; font-size:14px; color:#58a6ff; font-weight:700">⚡ ESPN Sync Diagnostics</h3>
+        <button id="fd-diag-close" style="background:transparent; border:none; color:#8b949e; cursor:pointer; font-size:16px; line-height:1">✕</button>
+      </div>
+      <div style="margin-bottom:10px; font-size:12px; line-height:1.5; color:#c9d1d9">
+        <div><b>Relay Host:</b> <code>${activeHost}</code></div>
+        <div><b>Status:</b> ${isConnected ? '<span style="color:#3ddc84">Connected ✅</span>' : '<span style="color:#ffb454">Connecting... ⏳</span>'}</div>
+        <div><b>Total Synced:</b> <b>${totalDetectedPicks.length}</b> picks</div>
+        <div><b>Est. League Size:</b> ${detectedLeagueTeams} teams</div>
+      </div>
+      <div style="margin-top:10px">
+        <div style="font-weight:600; font-size:12px; color:#8b949e; margin-bottom:6px">Recent Synced Picks:</div>
+        ${recentPicksHtml}
+      </div>
+      <div style="margin-top:14px; display:flex; gap:8px">
+        <button id="fd-diag-rescan" style="flex:1; padding:6px 10px; background:#238636; color:#fff; border:none; border-radius:6px; font-weight:600; cursor:pointer">🔄 Force Scan & Re-Sync</button>
+      </div>
+    `;
+
+    document.body.appendChild(diagModal);
+
+    diagModal.querySelector('#fd-diag-close').onclick = () => {
+      diagModal.remove();
+      diagModal = null;
+    };
+    diagModal.querySelector('#fd-diag-rescan').onclick = () => {
+      sendPing();
+      scanDraftRoom();
+      diagModal.remove();
+      diagModal = null;
+      toggleDiagModal();
+    };
+  }
+
   function parsePlayerText(rawText) {
     if (!rawText) return null;
     let clean = rawText.replace(/[\(\)\,\-\/]/g, ' ').replace(/\s+/g, ' ').trim();
-    // Strip common UI clutter words
-    clean = clean.replace(/\b(autopick|drafted|draft|picked|by|round|pick|prk|proj|queue|view|action|status|rost|stats)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+    // Strip common clutter words
+    clean = clean.replace(/\b(autopick|drafted|draft|picked|by|round|pick|prk|proj|queue|view|action|status|rost|stats|team|slot|overall)\b/gi, ' ').replace(/\s+/g, ' ').trim();
     const tokens = clean.split(' ');
 
     let pos = '';
@@ -81,7 +154,7 @@
         pos = u;
       } else if (!team && NFL_TEAMS.has(u)) {
         team = u;
-      } else if (!/^[0-9]+(\.[0-9]+)?$/.test(t)) { // ignore numeric scores/prices
+      } else if (!/^[0-9]+(\.[0-9]+)?$/.test(t)) { // ignore numbers
         nameParts.push(t);
       }
     }
@@ -89,6 +162,29 @@
     const name = nameParts.join(' ').trim();
     if (!name || name.length < 3) return null;
     return { name, pos, team };
+  }
+
+  function extractPlayerFromElement(el) {
+    if (!el) return null;
+    // 1. Look for explicit player anchor link or athlete name class
+    const linkEl = el.querySelector('a[href*="/player/"], .player-name, [class*="playerName" i], [class*="athlete" i], .AnchorLink');
+    if (linkEl && linkEl.innerText && linkEl.innerText.trim().length >= 3) {
+      const parsed = parsePlayerText(linkEl.innerText.trim());
+      if (parsed && parsed.name) {
+        // Also look for pos / team tags in sibling elements
+        const posEl = el.querySelector('[class*="position" i], [class*="pos" i]');
+        const teamEl = el.querySelector('[class*="proTeam" i], [class*="team" i]');
+        if (posEl && posEl.innerText && POS_LIST.includes(posEl.innerText.trim().toUpperCase())) {
+          parsed.pos = posEl.innerText.trim().toUpperCase();
+        }
+        if (teamEl && teamEl.innerText && NFL_TEAMS.has(teamEl.innerText.trim().toUpperCase())) {
+          parsed.team = teamEl.innerText.trim().toUpperCase();
+        }
+        return parsed;
+      }
+    }
+    // 2. Fallback to parsing text
+    return parsePlayerText(el.innerText || '');
   }
 
   function extractPickNumber(text, teamsCount) {
@@ -106,7 +202,7 @@
       }
     }
 
-    // 2. Check for explicit overall like "Pick 37", "#37", "Pk 37", "37."
+    // 2. Check for explicit overall like "Pick 37", "#37", "Pk 37", "(Pick 37)", "37."
     const explicitMatch = str.match(/(?:pick|pk|#)\s*([0-9]{1,3})\b/i);
     if (explicitMatch) {
       const num = parseInt(explicitMatch[1], 10);
@@ -123,29 +219,25 @@
     return null;
   }
 
-  function isAvailablePlayersTable(el) {
+  function isAvailablePlayerRow(el) {
     if (!el) return false;
-    // Check if element or its container is an available players / watchlist table
-    const container = el.closest('table, .draft-table, [data-testid], section, div');
-    if (!container) return false;
-
-    // Check table headers
-    const headerText = (container.querySelector('thead, .table-header, .Table__Header') || {}).innerText || '';
-    if (/\b(PRK|PROJ|QUEUE|DRAFT|ACTION|ROST%|OPP|STATUS|STATS)\b/i.test(headerText)) {
+    // 1. Has an active Draft / Queue button
+    if (el.querySelector('button[aria-label*="Draft" i], button[title*="Draft" i], button.btn-draft, [data-testid*="draft-button"], button[aria-label*="Queue" i], [data-testid*="queue-button"]')) {
       return true;
     }
-
-    // Check if row has an action/draft button
-    if (el.querySelector('button, [data-testid*="draft-button"], [data-testid*="queue-button"], .btn-draft')) {
-      return true;
+    // 2. Direct parent table is the available player pool (has PRK / PROJ header)
+    const tbl = el.closest('table');
+    if (tbl) {
+      const thead = tbl.querySelector('thead');
+      if (thead && /\b(PRK|PROJ|STATUS|ROST%)\b/i.test(thead.innerText)) {
+        return true;
+      }
     }
-
     return false;
   }
 
   function detectLeagueSize() {
-    // Try to detect number of teams from draft board grid columns or header
-    const teamHeaders = document.querySelectorAll('.draft-board-header .team-header, [data-testid*="team-column"], .draft-grid-header th');
+    const teamHeaders = document.querySelectorAll('.draft-board-header .team-header, [data-testid*="team-column"], .draft-grid-header th, [class*="teamColumn" i]');
     if (teamHeaders.length >= 8 && teamHeaders.length <= 16) {
       detectedLeagueTeams = teamHeaders.length;
     }
@@ -164,24 +256,24 @@
           activeHost = host;
           return true;
         }
-      } catch (err) {}
+      } catch (err) { }
     }
     return false;
   }
 
-  // Multi-transport send: Fetch + Image Beacon
   function sendPick(pickData) {
     createPill();
     // 1. Image beacon
     try {
       const img = new Image();
       img.src = activeHost + '/api/sync/pick?d=' + encodeURIComponent(JSON.stringify(pickData)) + '&t=' + Date.now();
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Fetch POST
     postRelay('/api/sync/pick', pickData);
 
     setPillStatus('pick', 'Drafted #' + (pickData.overall || '') + ' ' + pickData.name);
+    console.log('⚡ [Fantasy Drafter ESPN Sync] Pick sent:', pickData);
   }
 
   function sendSnapshot(picksList) {
@@ -198,7 +290,7 @@
     try {
       const img = new Image();
       img.src = activeHost + '/api/sync/snapshot?d=' + encodeURIComponent(JSON.stringify(payload)) + '&t=' + Date.now();
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Fetch POST
     postRelay('/api/sync/snapshot', payload);
@@ -216,7 +308,7 @@
         }
       };
       img.src = activeHost + '/api/sync/ping?t=' + Date.now();
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Fetch ping
     postRelay('/api/sync/ping', { source: 'espn', timestamp: Date.now() }).then(ok => {
@@ -227,30 +319,24 @@
     });
   }
 
-  const seenPicks = new Set();
-  let lastSnapshotCount = 0;
-
   function scanDraftRoom() {
     detectLeagueSize();
     const detectedPicks = new Map(); // Map overall -> pickObject
 
     // --- 1. Scan Pick History / Activity Stream Rows ---
     const historyRows = document.querySelectorAll(
-      '.draft-history tr, .pick-history tr, [data-testid*="draft-history"] tr, [data-testid="draft-history-row"], ' +
-      'div[class*="draftHistory"] [class*="Row"], div[class*="pickHistory"] [class*="Row"], ' +
-      'div[class*="recentActivity"] [class*="Item"], .draft-history-item, .activity-item'
+      'tr.Table__TR, [class*="history" i] tr, [class*="history" i] [class*="row" i], ' +
+      '[class*="activity" i] [class*="item" i], [class*="draftcast" i] [class*="item" i], ' +
+      '[class*="feed" i] [class*="item" i], [data-testid*="draft-history" i], .draft-history-item'
     );
 
     historyRows.forEach(r => {
-      if (isAvailablePlayersTable(r)) return;
+      if (isAvailablePlayerRow(r)) return;
 
-      const playerEl = r.querySelector('.player-name, .player-column, .AnchorLink, [class*="playerName"], td:nth-child(2), td:nth-child(3)');
-      if (!playerEl || !playerEl.innerText) return;
-
-      const parsed = parsePlayerText(playerEl.innerText);
+      const parsed = extractPlayerFromElement(r);
       if (!parsed || !parsed.name) return;
 
-      const pickEl = r.querySelector('.pick-number, .col-pick, td:first-child, [class*="pickNumber"], [data-testid*="pick"]');
+      const pickEl = r.querySelector('.pick-number, .col-pick, td:first-child, [class*="pickNumber" i], [class*="pick" i], [data-testid*="pick" i]');
       const pickText = pickEl ? pickEl.innerText : '';
       const overall = extractPickNumber(pickText, detectedLeagueTeams) || extractPickNumber(r.innerText, detectedLeagueTeams);
 
@@ -260,8 +346,8 @@
           type: 'PICK_MADE',
           overall: overall,
           name: parsed.name,
-          pos: parsed.pos,
-          team: parsed.team,
+          pos: parsed.pos || '',
+          team: parsed.team || '',
           timestamp: Date.now()
         });
       }
@@ -269,24 +355,24 @@
 
     // --- 2. Scan Draft Board Grid Cells ---
     const boardCells = document.querySelectorAll(
-      '.draft-board .draft-cell, [data-testid*="draft-board"] [data-testid*="cell"], ' +
-      'div[class*="draftBoard"] div[class*="Cell"], div[class*="draft-grid"] div[class*="cell"], ' +
-      '.draft-grid-cell, .cell-picked, [data-testid="draft-cell"]'
+      '[class*="cell" i], [class*="draftboard" i] td, [class*="draftboard" i] div, ' +
+      '[class*="grid" i] div, [data-testid*="cell" i], .draft-grid-cell'
     );
 
     boardCells.forEach(cell => {
-      const playerEl = cell.querySelector('.player-name, .player, .name, .AnchorLink, [class*="playerName"]');
-      if (!playerEl || !playerEl.innerText) return;
+      if (isAvailablePlayerRow(cell)) return;
 
-      const parsed = parsePlayerText(playerEl.innerText);
+      const parsed = extractPlayerFromElement(cell);
       if (!parsed || !parsed.name) return;
 
       const overallAttr = cell.getAttribute('data-overall') || cell.getAttribute('data-pick-number') || cell.getAttribute('data-pick');
       let overall = overallAttr ? parseInt(overallAttr, 10) : null;
       if (!overall || isNaN(overall)) {
-        const pickEl = cell.querySelector('.pick-number, [class*="pickNumber"], [class*="pickLabel"]');
+        const pickEl = cell.querySelector('.pick-number, [class*="pickNumber" i], [class*="pickLabel" i], [class*="roundPick" i]');
         if (pickEl && pickEl.innerText) {
           overall = extractPickNumber(pickEl.innerText, detectedLeagueTeams);
+        } else {
+          overall = extractPickNumber(cell.innerText, detectedLeagueTeams);
         }
       }
 
@@ -297,38 +383,41 @@
             type: 'PICK_MADE',
             overall: overall,
             name: parsed.name,
-            pos: parsed.pos,
-            team: parsed.team,
+            pos: parsed.pos || '',
+            team: parsed.team || '',
             timestamp: Date.now()
           });
         }
       }
     });
 
-    // --- 3. Scan ESPN Live Announcement / On-The-Clock Banner ---
-    const banner = document.querySelector(
-      '.draft-recent-pick, .pick-announcement, [class*="recentPick"], [class*="lastPick"], [class*="pickAnnouncement"]'
+    // --- 3. Scan Top Banner / Recent Pick Announcement ---
+    const banners = document.querySelectorAll(
+      '[class*="recent" i], [class*="lastpick" i], [class*="announcement" i], [class*="ontheclock" i], [class*="banner" i]'
     );
-    if (banner && banner.innerText) {
-      const parsed = parsePlayerText(banner.innerText);
-      const overall = extractPickNumber(banner.innerText, detectedLeagueTeams);
-      if (parsed && parsed.name && overall && overall > 0) {
-        if (!detectedPicks.has(overall)) {
-          detectedPicks.set(overall, {
-            source: 'espn',
-            type: 'PICK_MADE',
-            overall: overall,
-            name: parsed.name,
-            pos: parsed.pos,
-            team: parsed.team,
-            timestamp: Date.now()
-          });
+    banners.forEach(b => {
+      if (b.innerText && b.innerText.length > 5) {
+        const parsed = extractPlayerFromElement(b);
+        const overall = extractPickNumber(b.innerText, detectedLeagueTeams);
+        if (parsed && parsed.name && overall && overall > 0) {
+          if (!detectedPicks.has(overall)) {
+            detectedPicks.set(overall, {
+              source: 'espn',
+              type: 'PICK_MADE',
+              overall: overall,
+              name: parsed.name,
+              pos: parsed.pos || '',
+              team: parsed.team || '',
+              timestamp: Date.now()
+            });
+          }
         }
       }
-    }
+    });
 
     // Convert detected picks to an array sorted by overall pick number
     const sortedPicks = Array.from(detectedPicks.values()).sort((a, b) => a.overall - b.overall);
+    totalDetectedPicks = sortedPicks;
 
     // Send individual events for newly seen picks
     sortedPicks.forEach(p => {
@@ -339,34 +428,34 @@
       }
     });
 
-    // If total picks grew, send full snapshot batch to guarantee complete alignment
+    // If total picks grew, send full snapshot batch to guarantee complete sequential alignment
     if (sortedPicks.length > 0 && sortedPicks.length !== lastSnapshotCount) {
       lastSnapshotCount = sortedPicks.length;
       sendSnapshot(sortedPicks);
+      setPillStatus('connected');
     }
   }
 
   function checkAndInit() {
-    if (isDraftRoom()) {
-      createPill();
-      sendPing();
-      scanDraftRoom();
+    createPill();
+    sendPing();
+    scanDraftRoom();
 
-      const observer = new MutationObserver(scanDraftRoom);
+    const observer = new MutationObserver(scanDraftRoom);
+    if (document.body) {
       observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-
-      // Fast 400ms polling for rapid autopicker bursts in mock drafts
-      setInterval(scanDraftRoom, 400);
-      setInterval(sendPing, 3500);
-      console.log('⚡ [Fantasy Drafter] Extension connected to ESPN draft room.');
-      return true;
     }
-    return false;
+
+    setInterval(scanDraftRoom, 400);
+    setInterval(sendPing, 3500);
+    console.log('⚡ [Fantasy Drafter] ESPN Live Sync loaded and active.');
+    return true;
   }
 
-  if (!checkAndInit()) {
-    const initTimer = setInterval(() => {
-      if (checkAndInit()) clearInterval(initTimer);
-    }, 1200);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkAndInit);
+  } else {
+    checkAndInit();
   }
 })();
+

@@ -14,13 +14,13 @@ const jsonStr = playersDataRaw.slice(playersDataRaw.indexOf('=') + 1).trim().rep
 const PLAYERS = JSON.parse(jsonStr).players;
 
 // --- Helper simulation for extension text parsing ---
-const NFL_TEAMS = new Set(['ARI','ATL','BAL','BUF','CAR','CHI','CIN','CLE','DAL','DEN','DET','GB','HOU','IND','JAX','KC','LV','LAC','LAR','MIA','MIN','NE','NO','NYG','NYJ','PHI','PIT','SF','SEA','TB','TEN','WAS']);
-const POS_LIST = ['QB','RB','WR','TE','K','DST','DEF','D/ST'];
+const NFL_TEAMS = new Set(['ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN', 'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LV', 'LAC', 'LAR', 'MIA', 'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS']);
+const POS_LIST = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'DEF', 'D/ST'];
 
 function parsePlayerText(rawText) {
   if (!rawText) return null;
   let clean = rawText.replace(/[\(\)\,\-\/]/g, ' ').replace(/\s+/g, ' ').trim();
-  clean = clean.replace(/\b(autopick|drafted|draft|picked|by|round|pick|prk|proj|queue|view|action|status|rost|stats)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  clean = clean.replace(/\b(autopick|drafted|draft|picked|by|round|pick|prk|proj|queue|view|action|status|rost|stats|team|slot|overall)\b/gi, ' ').replace(/\s+/g, ' ').trim();
   const tokens = clean.split(' ');
 
   let pos = '';
@@ -127,7 +127,7 @@ function simulateRemotePickWithGuard(pickData, currentLog, playersList) {
     const existing = currentLog[existingIdx];
     const resolved = resolveRemotePick(pickData, playersList, { unlistedFallback: true });
     const isSame = (resolved.playerId != null && existing.playerId === resolved.playerId) ||
-                   (resolved.playerId == null && existing.playerId == null && existing.customName === resolved.customName);
+      (resolved.playerId == null && existing.playerId == null && existing.customName === resolved.customName);
     if (!isSame) {
       // Guard blocked stale override
       return { blocked: true, log: currentLog };

@@ -7,6 +7,7 @@ Supports HTTP Fetch, Private Network Access (PNA), Image Beacons, SSE, and REST 
 """
 
 import http.server
+import socket
 import socketserver
 import json
 import time
@@ -97,6 +98,31 @@ sse_clients = []
 
 
 class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
+        except socket.error as e:
+            if getattr(e, "winerror", None) in (10053, 10054):
+                pass
+            else:
+                raise
+        except Exception:
+            pass
+
+    def finish(self):
+        try:
+            super().finish()
+        except (
+            ConnectionResetError,
+            ConnectionAbortedError,
+            BrokenPipeError,
+            socket.error,
+            Exception,
+        ):
+            pass
+
     def log_message(self, format, *args):
         # Suppress high-frequency polling, heartbeat, SSE stream, pick relay, snapshot, and log messages from raw HTTP terminal output
         req_line = str(args[0]) if args else ""
@@ -163,7 +189,10 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         "timestamp": int(last_espn_ping * 1000),
                     }
                 )
-            log_event("🔌 Ping received from ESPN Live Sync extension", write_to_terminal=False)
+            log_event(
+                "🔌 Ping received from ESPN Live Sync extension",
+                write_to_terminal=False,
+            )
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -200,7 +229,11 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 }
                 broadcast_sse(snap_event)
 
-            latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+            latest_desc = (
+                f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}"
+                if picks
+                else "empty"
+            )
             log_event(
                 f"📋 Draft Snapshot: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
             )
@@ -208,7 +241,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(json.dumps({"ok": True, "count": len(picks)}).encode("utf-8"))
+            self.wfile.write(
+                json.dumps({"ok": True, "count": len(picks)}).encode("utf-8")
+            )
             return
 
         if self.path.startswith("/api/sync/pick"):
@@ -238,14 +273,20 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         "timestamp": int(time.time() * 1000),
                     }
                     broadcast_sse(snap_event)
-                latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+                latest_desc = (
+                    f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}"
+                    if picks
+                    else "empty"
+                )
                 log_event(
                     f"📋 Draft Snapshot: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
                 )
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(json.dumps({"ok": True, "count": len(picks)}).encode("utf-8"))
+                self.wfile.write(
+                    json.dumps({"ok": True, "count": len(picks)}).encode("utf-8")
+                )
                 return
 
             source = pick_data.get("source", "espn")
@@ -321,7 +362,10 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         "timestamp": int(last_espn_ping * 1000),
                     }
                 )
-            log_event("🔌 Ping beacon received from ESPN Live Sync extension", write_to_terminal=False)
+            log_event(
+                "🔌 Ping beacon received from ESPN Live Sync extension",
+                write_to_terminal=False,
+            )
             self.send_response(200)
             self.send_header("Content-Type", "image/gif")
             self.end_headers()
@@ -351,7 +395,11 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 }
                 broadcast_sse(snap_event)
 
-            latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+            latest_desc = (
+                f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}"
+                if picks
+                else "empty"
+            )
             log_event(
                 f"📋 Draft Snapshot Beacon: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
             )
@@ -385,7 +433,11 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         "timestamp": int(time.time() * 1000),
                     }
                     broadcast_sse(snap_event)
-                latest_desc = f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}" if picks else "empty"
+                latest_desc = (
+                    f"#{picks[-1].get('overall', '?')} {picks[-1].get('name', '?')}"
+                    if picks
+                    else "empty"
+                )
                 log_event(
                     f"📋 Draft Snapshot Beacon: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
                 )
@@ -612,6 +664,20 @@ def broadcast_sse(event_data):
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        # Suppress normal client socket teardown noise (e.g. browser page reloads, cancelled image beacons, closed tabs)
+        exc_type, exc_val, _ = sys.exc_info()
+        if exc_type in (
+            ConnectionResetError,
+            ConnectionAbortedError,
+            BrokenPipeError,
+        ) or (
+            isinstance(exc_val, (ConnectionError, socket.error))
+            and getattr(exc_val, "winerror", None) in (10053, 10054)
+        ):
+            return
+        super().handle_error(request, client_address)
 
 
 def main():

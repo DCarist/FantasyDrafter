@@ -1,19 +1,25 @@
 {
   "manifest_version": 3,
   "name": "Fantasy Drafter — ESPN Live Sync",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Real-time automated sync bridge between ESPN live draft rooms and Ken's Fantasy Drafter board.",
   "host_permissions": [
-    "https://fantasy.espn.com/*",
+    "*://fantasy.espn.com/*",
+    "*://*.espn.com/*",
     "http://127.0.0.1:8517/*",
     "http://localhost:8517/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://fantasy.espn.com/*"],
-      "js": ["content-script.js"],
-      "run_at": "document_idle"
+      "matches": [
+        "*://fantasy.espn.com/*",
+        "*://*.espn.com/*"
+      ],
+      "js": [
+        "content-script.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ]
 }
-
