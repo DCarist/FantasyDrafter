@@ -40,10 +40,11 @@ function isPlaceholderName(name, teamNames = []) {
   if (/^[0-9]+(\.[0-9]+)?$/.test(clean)) return true;
   if (/^auto\b/i.test(clean)) return true;
   if (/^pick\s*[0-9]+/i.test(clean)) return true;
+  if (/^team\s*[0-9]+$/i.test(clean)) return true;
   for (const t of teamNames) {
     if (t && typeof t === 'string') {
       const tClean = t.trim().toLowerCase();
-      if (tClean && (clean === tClean || clean.includes(tClean) || (clean.length >= 4 && tClean.includes(clean)))) {
+      if (tClean && clean === tClean) {
         return true;
       }
     }
@@ -149,7 +150,7 @@ eq(pMake, null, "Rejects 'Make Pick' button text as a player");
 const pMake2 = parsePlayerText("Make");
 eq(pMake2, null, "Rejects 'Make' button text as a player");
 
-const sampleLeagueTeams = ["Dynamic Team Alpha", "Bravo Squad", "Team 12"];
+const sampleLeagueTeams = ["Dynamic Team Alpha", "Bravo Squad", "Team 12", "Allen", "Josh", "Josh Allen's Team", "Williams"];
 const pAutoTeam = parsePlayerText("AUTO Dynamic Team Alpha", sampleLeagueTeams);
 eq(pAutoTeam, null, "Rejects 'AUTO <TeamName>' pick train item");
 
@@ -158,6 +159,17 @@ eq(pAutoTeam2, null, "Rejects 'AUTO <TeamName>' pick train item for another team
 
 const pDynamicTeamOnly = parsePlayerText("Dynamic Team Alpha", sampleLeagueTeams);
 eq(pDynamicTeamOnly, null, "Rejects dynamically identified team name as a player");
+
+const pJoshAllen = parsePlayerText("Josh Allen QB, BUF", sampleLeagueTeams);
+eq(pJoshAllen.name, "Josh Allen", "Correctly parses Josh Allen when team named Allen or Josh exists");
+eq(pJoshAllen.pos, "QB", "Parses QB for Josh Allen");
+eq(pJoshAllen.team, "BUF", "Parses BUF for Josh Allen");
+
+const pJoshAllenPlain = parsePlayerText("Josh Allen", sampleLeagueTeams);
+eq(pJoshAllenPlain.name, "Josh Allen", "Correctly parses plain Josh Allen without pos/team when team named Allen exists");
+
+const pCaleb = parsePlayerText("Caleb Williams QB CHI", sampleLeagueTeams);
+eq(pCaleb.name, "Caleb Williams", "Correctly parses Caleb Williams when team named Williams exists");
 
 const pJunk = parsePlayerText("PRK 14 PROJ 245.2 QUEUE DRAFT");
 eq(pJunk, null, "Rejects button/table header clutter without valid player name");
