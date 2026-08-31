@@ -10,6 +10,7 @@
     sleeperPicksCount: 0,
     espnConnected: false,
     espnLastSeen: null,
+    espnLeagueInfo: null,
     channel: null,
     activeTab: 'sleeper'
   };
@@ -125,6 +126,10 @@
       const data = await res.json();
       if (data.serverTime) lastSyncTimestamp = data.serverTime;
 
+      if (data.leagueInfo && data.leagueInfo.teams) {
+        syncState.espnLeagueInfo = data.leagueInfo;
+      }
+
       if (data.espnConnected) {
         syncState.espnConnected = true;
         syncState.espnLastSeen = data.lastSeen || Date.now();
@@ -143,7 +148,7 @@
       }
 
       if (Array.isArray(data.snapshot) && data.snapshot.length > 0) {
-        handleSnapshotPicksEvent(data.snapshot);
+        handleSnapshotPicksEvent(data.snapshot, data.leagueInfo);
       } else if (Array.isArray(data.picks)) {
         for (const p of data.picks) {
           handleRemotePickEvent(p);
@@ -156,6 +161,9 @@
 
   function handleIncomingSyncEvent(data) {
     if (!data) return;
+    if (data.leagueInfo && data.leagueInfo.teams) {
+      syncState.espnLeagueInfo = data.leagueInfo;
+    }
     if (data.type === 'SYNC_CONNECTED' || data.type === 'PONG' || data.type === 'SYNC_STATUS') {
       if (data.espnConnected !== false) {
         syncState.espnConnected = true;
@@ -174,7 +182,7 @@
       }
       updateSyncBadge();
       updateEspnStatusBox();
-      handleSnapshotPicksEvent(data.picks);
+      handleSnapshotPicksEvent(data.picks, data.leagueInfo);
     } else if (data.type === 'PICK_MADE') {
       syncState.espnConnected = true;
       syncState.espnLastSeen = data.timestamp || Date.now();
@@ -187,16 +195,18 @@
     }
   }
 
-  function handleSnapshotPicksEvent(remotePicks) {
+  function handleSnapshotPicksEvent(remotePicks, leagueInfo) {
     if (!Array.isArray(remotePicks) || remotePicks.length === 0) return;
     if (!global.state || !Array.isArray(global.state.log)) return;
 
-    const result = reconcileDraftLog(global.state.log, remotePicks, global.PLAYERS, {
-      teams: global.state.settings.teams,
-      slot: global.state.settings.slot,
-      mode: global.state.settings.mode,
-      teamNames: global.state.settings.teamNames
-    });
+    const draftContext = {
+      teams: (leagueInfo && leagueInfo.teams) || global.state.settings.teams || 12,
+      slot: (leagueInfo && leagueInfo.mySlot) || global.state.settings.slot || 1,
+      mode: global.state.settings.mode || '3rr',
+      teamNames: (leagueInfo && leagueInfo.teamNames) || global.state.settings.teamNames || null
+    };
+
+    const result = reconcileDraftLog(global.state.log, remotePicks, global.PLAYERS, draftContext);
 
     if (result.changed) {
       global.state.log = result.log;
@@ -481,12 +491,46 @@
     const box = document.getElementById('espn_status_box');
     if (box) {
       const isConn = syncState.espnConnected && (Date.now() - (syncState.espnLastSeen || 0) < 30000);
+      let leagueInfoHtml = '';
+      if (syncState.espnLeagueInfo && syncState.espnLeagueInfo.teams) {
+        const info = syncState.espnLeagueInfo;
+        const mySlotTxt = info.mySlot ? ` · Your Slot: <b>#${info.mySlot}</b>` : '';
+        leagueInfoHtml = '<div style="margin-top:8px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-size:12px">'
+          + '<div>📋 <b>Detected ESPN League:</b> <span style="color:var(--accent); font-weight:700">' + info.teams + ' Teams</span>' + mySlotTxt + '</div>'
+          + '<div style="margin-top:6px; display:flex; gap:8px">'
+          + '<button type="button" class="act primary" onclick="applyEspnLeagueSetup()" style="font-size:12px; padding:4px 10px">📥 Apply ESPN League Setup (' + info.teams + ' Teams' + (info.mySlot ? ' & Slot #' + info.mySlot : '') + ')</button>'
+          + '</div>'
+          + '</div>';
+      }
+
       box.innerHTML = '<div><b>Extension Status:</b> '
         + (isConn ? '<span style="color:var(--good); font-weight:700">🟢 Connected to ESPN Draft Room</span>' : '<span style="color:var(--warn)">⚪ Waiting for ESPN Draft Room tab (Auto-connects when tab is open)</span>')
         + '</div>'
         + '<div><b>Last Message:</b> ' + (syncState.espnLastSeen ? new Date(syncState.espnLastSeen).toLocaleTimeString() : 'None') + '</div>'
+        + leagueInfoHtml
         + '<div style="font-size:11px; margin-top:4px; color:var(--dim)">Relay endpoint: <code style="color:var(--accent)">http://127.0.0.1:8517/api/sync/</code></div>';
     }
+  }
+
+  function applyEspnLeagueSetup() {
+    const info = syncState.espnLeagueInfo;
+    if (!info || !info.teams) {
+      alert('No ESPN league info received yet. Open or re-sync your ESPN draft room tab first.');
+      return;
+    }
+    const tCount = Math.max(8, Math.min(16, parseInt(info.teams, 10) || 14));
+    global.state.settings.teams = tCount;
+    if (Array.isArray(info.teamNames) && info.teamNames.length > 0) {
+      global.state.settings.teamNames = info.teamNames.slice(0, tCount);
+    }
+    if (info.mySlot) {
+      global.state.settings.slot = Math.max(1, Math.min(tCount, parseInt(info.mySlot, 10) || global.state.settings.slot));
+    }
+    global.save();
+    if (typeof global.render === 'function') global.render();
+    updateEspnStatusBox();
+    const teamName = global.getTeamName(global.state.settings.slot);
+    alert(`✅ Successfully imported ${global.state.settings.teams} teams and Slot #${global.state.settings.slot} (${teamName}) from ESPN!`);
   }
 
   function switchSyncTab(tabName) {
@@ -638,5 +682,6 @@
   global.sendEspnPing = sendEspnPing;
   global.openSyncModal = openSyncModal;
   global.saveSyncSettings = saveSyncSettings;
+  global.applyEspnLeagueSetup = applyEspnLeagueSetup;
 })(typeof window !== 'undefined' ? window : globalThis);
 

@@ -94,6 +94,7 @@ sync_lock = threading.Lock()
 last_espn_ping = 0
 sync_events = []
 latest_snapshot = []
+latest_league_info = {}
 sse_clients = []
 
 
@@ -217,14 +218,18 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
             source = snap_data.get("source", "espn")
             picks = snap_data.get("picks", [])
+            league_info = snap_data.get("leagueInfo") or snap_data.get("league_info") or {}
             with sync_lock:
                 if source == "espn":
                     last_espn_ping = time.time()
                 latest_snapshot = list(picks)
+                if league_info:
+                    latest_league_info = dict(league_info)
                 snap_event = {
                     "type": "DRAFT_SNAPSHOT",
                     "source": source,
                     "picks": latest_snapshot,
+                    "leagueInfo": latest_league_info,
                     "timestamp": int(time.time() * 1000),
                 }
                 broadcast_sse(snap_event)
@@ -234,8 +239,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 if picks
                 else "empty"
             )
+            teams_desc = f" ({latest_league_info['teams']} Teams)" if latest_league_info.get("teams") else ""
             log_event(
-                f"📋 Draft Snapshot: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
+                f"📋 Draft Snapshot: {len(picks)} picks synced{teams_desc} (Latest: {latest_desc}) [{source.upper()}]"
             )
 
             self.send_response(200)
@@ -262,14 +268,18 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             if pick_data.get("type") == "DRAFT_SNAPSHOT" or "picks" in pick_data:
                 source = pick_data.get("source", "espn")
                 picks = pick_data.get("picks", [])
+                league_info = pick_data.get("leagueInfo") or pick_data.get("league_info") or {}
                 with sync_lock:
                     if source == "espn":
                         last_espn_ping = time.time()
                     latest_snapshot = list(picks)
+                    if league_info:
+                        latest_league_info = dict(league_info)
                     snap_event = {
                         "type": "DRAFT_SNAPSHOT",
                         "source": source,
                         "picks": latest_snapshot,
+                        "leagueInfo": latest_league_info,
                         "timestamp": int(time.time() * 1000),
                     }
                     broadcast_sse(snap_event)
@@ -278,8 +288,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     if picks
                     else "empty"
                 )
+                teams_desc = f" ({latest_league_info['teams']} Teams)" if latest_league_info.get("teams") else ""
                 log_event(
-                    f"📋 Draft Snapshot: {len(picks)} picks synced (Latest: {latest_desc}) [{source.upper()}]"
+                    f"📋 Draft Snapshot: {len(picks)} picks synced{teams_desc} (Latest: {latest_desc}) [{source.upper()}]"
                 )
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -510,6 +521,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     else None,
                     "picks": new_picks,
                     "snapshot": latest_snapshot,
+                    "leagueInfo": latest_league_info,
                     "serverTime": int(time.time() * 1000),
                 }
 

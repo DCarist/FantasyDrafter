@@ -701,6 +701,28 @@ function resolveRemotePick(remotePick, playersList, options) {
     rawTeam = (remotePick.team || '').trim().toUpperCase();
   }
 
+  const TEAM_ALIASES = {
+    'WSH': 'WAS',
+    'JAC': 'JAX',
+    'OAK': 'LV',
+    'SD': 'LAC',
+    'STL': 'LAR',
+    'LA': 'LAR'
+  };
+  if (TEAM_ALIASES[rawTeam]) {
+    rawTeam = TEAM_ALIASES[rawTeam];
+  }
+
+  // If team abbreviation is stuck to the end of player name (e.g. "Jayden Daniels WSH")
+  const trailingTeamMatch = rawName.match(/\b(WSH|WAS|JAC|JAX|KC|LV|LAC|LAR|SF|TB|TEN|MIN|NE|NO|NYG|NYJ|PHI|PIT|MIA|ARI|ATL|BAL|BUF|CAR|CHI|CIN|CLE|DAL|DEN|DET|GB|HOU|IND|SEA)\b$/i);
+  if (trailingTeamMatch) {
+    if (!rawTeam || rawTeam === 'FA' || rawTeam === '—') {
+      const tUpper = trailingTeamMatch[1].toUpperCase();
+      rawTeam = TEAM_ALIASES[tUpper] || tUpper;
+    }
+    rawName = rawName.slice(0, trailingTeamMatch.index).trim();
+  }
+
   function stripSuffix(name) {
     if (!name) return '';
     return String(name)

@@ -14,12 +14,37 @@ const jsonStr = playersDataRaw.slice(playersDataRaw.indexOf('=') + 1).trim().rep
 const PLAYERS = JSON.parse(jsonStr).players;
 
 // --- Helper simulation for extension text parsing ---
-const NFL_TEAMS = new Set(['ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN', 'DET', 'GB', 'HOU', 'IND', 'JAX', 'KC', 'LV', 'LAC', 'LAR', 'MIA', 'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA', 'TB', 'TEN', 'WAS']);
+const NFL_TEAMS = new Set([
+  'ARI', 'ATL', 'BAL', 'BUF', 'CAR', 'CHI', 'CIN', 'CLE', 'DAL', 'DEN',
+  'DET', 'GB', 'HOU', 'IND', 'JAX', 'JAC', 'KC', 'LV', 'LAC', 'LAR',
+  'MIA', 'MIN', 'NE', 'NO', 'NYG', 'NYJ', 'PHI', 'PIT', 'SF', 'SEA',
+  'TB', 'TEN', 'WAS', 'WSH'
+]);
+const TEAM_NORM = {
+  'WSH': 'WAS',
+  'JAC': 'JAX',
+  'OAK': 'LV',
+  'SD': 'LAC',
+  'STL': 'LAR',
+  'LA': 'LAR'
+};
 const POS_LIST = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'DEF', 'D/ST'];
+
+function isPlaceholderName(name) {
+  if (!name) return true;
+  const clean = String(name).trim().toLowerCase();
+  if (clean.length < 3) return true;
+  if (/^(on\s*the\s*clock|the\s*clock|clock|drafting|picking|auto\s*pick|autopick|time\s*expired|available|empty|open|player|unknown)$/i.test(clean)) {
+    return true;
+  }
+  if (/^[0-9]+(\.[0-9]+)?$/.test(clean)) return true;
+  return false;
+}
 
 function parsePlayerText(rawText) {
   if (!rawText) return null;
   let clean = rawText.replace(/[\(\)\,\-\/]/g, ' ').replace(/\s+/g, ' ').trim();
+
   clean = clean.replace(/\b(autopick|drafted|draft|picked|by|round|pick|prk|proj|queue|view|action|status|rost|stats|team|slot|overall)\b/gi, ' ').replace(/\s+/g, ' ').trim();
   const tokens = clean.split(' ');
 
@@ -32,14 +57,14 @@ function parsePlayerText(rawText) {
     if (!pos && POS_LIST.includes(u)) {
       pos = u;
     } else if (!team && NFL_TEAMS.has(u)) {
-      team = u;
+      team = TEAM_NORM[u] || u;
     } else if (!/^[0-9]+(\.[0-9]+)?$/.test(t)) {
       nameParts.push(t);
     }
   }
 
   const name = nameParts.join(' ').trim();
-  if (!name || name.length < 3) return null;
+  if (!name || isPlaceholderName(name)) return null;
   return { name, pos, team };
 }
 
@@ -47,7 +72,7 @@ function extractPickNumber(text, teamsCount) {
   if (!text) return null;
   const str = String(text).trim();
 
-  // 1. Check for Round.Pick format
+  // 1. Check for Round.Pick format like "3.01", "3.1", "1.12", "1.14"
   const roundPickMatch = str.match(/\b([0-9]{1,2})\.([0-9]{1,2})\b/);
   if (roundPickMatch) {
     const r = parseInt(roundPickMatch[1], 10);
@@ -58,8 +83,8 @@ function extractPickNumber(text, teamsCount) {
     }
   }
 
-  // 2. Check for explicit overall like "Pick 37", "#37", "Pk 37"
-  const explicitMatch = str.match(/(?:pick|pk|#)\s*([0-9]{1,3})\b/i);
+  // 2. Check for explicit overall like "Pick 37", "#37", "Pk 37", "P50"
+  const explicitMatch = str.match(/(?:pick|pk|#|p)\s*([0-9]{1,3})\b/i);
   if (explicitMatch) {
     const num = parseInt(explicitMatch[1], 10);
     if (!isNaN(num) && num > 0 && num <= 600) return num;
@@ -91,19 +116,51 @@ eq(p3.name, "Marvin Harrison Jr.", "Parses Marvin Harrison Jr. with parentheses"
 eq(p3.pos, "WR", "Parses WR position");
 eq(p3.team, "ARI", "Parses ARI team");
 
+const pWsh = parsePlayerText("Jayden Daniels WSH QB (7)");
+eq(pWsh.name, "Jayden Daniels", "Parses Jayden Daniels without WSH stuck in name");
+eq(pWsh.pos, "QB", "Parses QB position for Jayden Daniels");
+eq(pWsh.team, "WAS", "Normalizes ESPN WSH team abbreviation to WAS");
+
+const pWsh2 = parsePlayerText("Terry McLaurin WSH WR");
+eq(pWsh2.name, "Terry McLaurin", "Parses Terry McLaurin without WSH stuck in name");
+eq(pWsh2.pos, "WR", "Parses WR position for Terry McLaurin");
+eq(pWsh2.team, "WAS", "Normalizes WSH team to WAS for Terry McLaurin");
+
+const pClock = parsePlayerText("On The Clock");
+eq(pClock, null, "Rejects 'On The Clock' placeholder as a player");
+
+const pClock2 = parsePlayerText("5.2 On The Clock");
+eq(pClock2, null, "Rejects cell text with '5.2 On The Clock'");
+
 const pJunk = parsePlayerText("PRK 14 PROJ 245.2 QUEUE DRAFT");
 eq(pJunk, null, "Rejects button/table header clutter without valid player name");
 
-// --- Test 2: Pick Number Extraction Across ESPN Formats ---
+// --- Test 2: Pick Number Extraction in 12-team and 14-team Leagues ---
 eq(extractPickNumber("Pick 37", 12), 37, "Extracts overall from 'Pick 37'");
 eq(extractPickNumber("#37", 12), 37, "Extracts overall from '#37'");
 eq(extractPickNumber("37.", 12), 37, "Extracts overall from '37.'");
 eq(extractPickNumber("37", 12), 37, "Extracts overall from '37'");
+eq(extractPickNumber("P50", 14), 50, "Extracts overall from 'P50' sidebar format");
 eq(extractPickNumber("4.01", 12), 37, "Extracts overall from '4.01' in 12-team league ((4-1)*12 + 1 = 37)");
 eq(extractPickNumber("1.01", 12), 1, "Extracts overall from '1.01'");
 eq(extractPickNumber("1.12", 12), 12, "Extracts overall from '1.12'");
+eq(extractPickNumber("1.14", 14), 14, "Extracts overall from '1.14' in 14-team league");
+eq(extractPickNumber("5.01", 14), 57, "Extracts overall from '5.01' in 14-team league ((5-1)*14 + 1 = 57)");
+eq(extractPickNumber("5.02", 14), 58, "Extracts overall from '5.02' in 14-team league ((5-1)*14 + 2 = 58)");
+eq(extractPickNumber("4.14", 14), 56, "Extracts overall from '4.14' in 14-team league ((4-1)*14 + 14 = 56)");
 eq(extractPickNumber("3.05", 10), 25, "Extracts overall from '3.05' in 10-team league ((3-1)*10 + 5 = 25)");
 eq(extractPickNumber("Round 1", 12), null, "Returns null for un-numbered label 'Round 1'");
+
+// --- Test 2b: Consensus Player Resolution with WSH alias ---
+const resolvedDaniels = resolveRemotePick({ name: "Jayden Daniels WSH", pos: "QB", team: "WSH" }, PLAYERS, { unlistedFallback: true });
+eq(resolvedDaniels.isUnlisted, false, "Jayden Daniels WSH resolves to consensus player profile");
+eq(resolvedDaniels.player.name, "Jayden Daniels", "Resolved name is Jayden Daniels");
+eq(resolvedDaniels.player.team, "WAS", "Resolved team is WAS");
+
+const resolvedTerry = resolveRemotePick({ name: "Terry McLaurin WSH", pos: "WR", team: "WSH" }, PLAYERS, { unlistedFallback: true });
+eq(resolvedTerry.isUnlisted, false, "Terry McLaurin WSH resolves to consensus player profile");
+eq(resolvedTerry.player.name, "Terry McLaurin", "Resolved name is Terry McLaurin");
+eq(resolvedTerry.player.team, "WAS", "Resolved team is WAS");
 
 // --- Test 3: Stale Pick Override Guard ---
 // Simulate a state where picks 1..36 are already settled, and pick 9 is Ja'Marr Chase
@@ -198,6 +255,8 @@ assert(serverPyContent.includes('log_event'), 'server.py defines log_event');
 assert(serverPyContent.includes('/api/sync/snapshot'), 'server.py handles /api/sync/snapshot endpoint');
 assert(serverPyContent.includes('latest_snapshot'), 'server.py maintains latest_snapshot state');
 assert(serverPyContent.includes('"snapshot": latest_snapshot'), 'server.py returns snapshot in status/poll payload');
+assert(serverPyContent.includes('latest_league_info'), 'server.py maintains latest_league_info state');
+assert(serverPyContent.includes('"leagueInfo": latest_league_info'), 'server.py returns leagueInfo in status/poll payload');
 
 // Test that .gitignore includes logs
 const gitignoreContent = readFileSync('.gitignore', 'utf-8');
