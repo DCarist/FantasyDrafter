@@ -316,6 +316,77 @@ assert(serverPyContent.includes('"leagueInfo": latest_league_info'), 'server.py 
 const gitignoreContent = readFileSync('.gitignore', 'utf-8');
 assert(gitignoreContent.includes('logs/'), '.gitignore ignores logs/ directory');
 
+// --- Test 7: League Info Detection (Pick Train & Sidebar Slot Extraction) ---
+const mockPickTrainText = [
+  "PICK 1\nDelco Traces",
+  "PICK 2\nHutch Hutch ...",
+  "PICK 3\nYom Fury",
+  "PICK 4\nOne pump c...",
+  "PICK 5\nFRESH PRINCE OF...",
+  "PICK 6\nDynamic Team",
+  "PICK 7\nGridiron Gang",
+  "PICK 8\nTouchdown Kings",
+  "PICK 9\nEndzone Elite",
+  "PICK 10\nBlitz Brigade",
+  "PICK 11\nRedzone Raiders",
+  "PICK 12\nField Goal Fanatics"
+];
+
+const parsedTeams = [];
+for (const item of mockPickTrainText) {
+  const pickM = item.match(/(?:pick|pk|#)\s*([0-9]{1,2})\b/i);
+  assert(pickM !== null, 'Matches pick number in pick train item: ' + item);
+  const pNum = parseInt(pickM[1], 10);
+  const tName = item.replace(/(?:pick|pk|#)\s*[0-9]{1,2}\b/gi, '').trim();
+  parsedTeams[pNum - 1] = tName;
+}
+eq(parsedTeams.length, 12, 'Extracted all 12 teams from pick train');
+eq(parsedTeams[0], 'Delco Traces', 'Slot 1 team is Delco Traces');
+eq(parsedTeams[4], 'FRESH PRINCE OF...', 'Slot 5 team is FRESH PRINCE OF...');
+eq(parsedTeams[11], 'Field Goal Fanatics', 'Slot 12 team is Field Goal Fanatics');
+
+// Sidebar user draft slot match test
+const mockSidebarText = "Your draft\nFRESH PRINCE OF...\nYour first pick: Round 1, Pick 5\nPlayers Pick History";
+const sidebarMatch = mockSidebarText.match(/Your\s*first\s*pick\s*:\s*Round\s*1\s*,\s*Pick\s*(\d+)/i);
+assert(sidebarMatch !== null, 'Extracts draft slot from sidebar text');
+eq(parseInt(sidebarMatch[1], 10), 5, 'Draft slot matches user slot 5');
+
+// --- Test 8: League Setup Application Verification ---
+const mockState = {
+  settings: {
+    teams: 10,
+    slot: 1,
+    teamNames: ["Team 1", "Team 2", "Team 3", "Team 4", "Team 5", "Team 6", "Team 7", "Team 8", "Team 9", "Team 10"]
+  },
+  log: [],
+  saveCalled: false,
+  save() { this.saveCalled = true; }
+};
+
+function testApplyLeagueSetup(targetState, info) {
+  const tCount = Math.max(8, Math.min(16, parseInt(info.teams, 10) || 12));
+  targetState.settings.teams = tCount;
+  if (Array.isArray(info.teamNames) && info.teamNames.length > 0) {
+    targetState.settings.teamNames = info.teamNames.slice(0, tCount);
+  }
+  if (info.mySlot) {
+    targetState.settings.slot = Math.max(1, Math.min(tCount, parseInt(info.mySlot, 10) || targetState.settings.slot));
+  }
+  targetState.save();
+}
+
+testApplyLeagueSetup(mockState, {
+  teams: 12,
+  teamNames: parsedTeams,
+  mySlot: 5
+});
+
+eq(mockState.settings.teams, 12, 'State updated to 12 teams');
+eq(mockState.settings.slot, 5, 'State updated to user slot 5');
+eq(mockState.settings.teamNames.length, 12, 'State updated with 12 team names');
+eq(mockState.settings.teamNames[4], 'FRESH PRINCE OF...', 'Slot 5 name matches imported team');
+eq(mockState.saveCalled, true, 'Saved state after applying ESPN league setup');
+
 const success = finishSuite('ESPN Live Sync Robustness & Event Logging');
 if (!success) {
   process.exit(1);

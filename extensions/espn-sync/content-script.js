@@ -301,75 +301,183 @@
   }
 
   function detectLeagueInfo() {
-    // 1. Scan modern ESPN draft board header cells (.draft-board-grid-header-cell)
+    let names = [];
+    let mySlot = null;
+    let myTeamName = '';
+
+    // 0. Extract user's draft slot and team name from right sidebar ("Your draft" / "Your first pick: Round 1, Pick X")
+    const bodyText = document.body ? document.body.innerText : '';
+    const yourFirstPickMatch = bodyText.match(/Your\s*first\s*pick\s*:\s*Round\s*1\s*,\s*Pick\s*(\d+)/i)
+      || bodyText.match(/first\s*pick\s*:\s*(?:Round\s*1\s*,\s*)?(?:Pick\s*|#)(\d+)/i);
+    if (yourFirstPickMatch) {
+      const slotNum = parseInt(yourFirstPickMatch[1], 10);
+      if (slotNum >= 1 && slotNum <= 16) {
+        mySlot = slotNum;
+      }
+    }
+
+    // Look for user's team name in the "Your draft" panel / user header
+    const userHeaderEl = document.querySelector('[class*="userTeam" i], [class*="myTeam" i], [class*="yourDraft" i], .draft-column:last-child');
+    if (userHeaderEl) {
+      const userText = userHeaderEl.innerText || '';
+      const userLines = userText.split('\n').map(l => l.trim()).filter(l => l && !/^(your draft|players|pick history|roster|2026 projected|projected|all|rank|player|empty|pos|round|pick|autopick)/i.test(l));
+      if (userLines.length > 0 && userLines[0].length >= 2) {
+        myTeamName = userLines[0];
+      }
+    }
+
+    // 1. Scan modern ESPN draft board header cells (.draft-board-grid-header-cell) (When on "Board" tab)
     const boardHeaderCells = document.querySelectorAll('.draft-board-grid-header-cell, [class*="draft-board-grid-header-cell" i]');
     if (boardHeaderCells.length >= 8 && boardHeaderCells.length <= 16) {
-      const names = [];
-      let mySlot = null;
+      const bNames = [];
       boardHeaderCells.forEach((h, idx) => {
         const text = (h.innerText || '').trim();
         if (text) {
-          names.push(text);
+          bNames.push(text);
           if (h.classList.contains('myTeam') || h.classList.contains('onTheClock') || h.querySelector('.myTeam, [class*="myTeam" i]')) {
+            if (mySlot === null) mySlot = idx + 1;
+          }
+        }
+      });
+      if (bNames.length >= 8 && bNames.length <= 16) {
+        names = bNames;
+      }
+    }
+
+    // 2. Scan Top Pick Train for Round 1 items (Pick 1 .. Pick N) (Available on ALL tabs!)
+    if (names.length === 0) {
+      const pickTrainItems = document.querySelectorAll('.pickTrain > div, .pickTrain .upcomingPick, [class*="pickTrain" i] [class*="Pick" i], [class*="pickTrain" i] > div, [class*="pickTrain" i] > button');
+      const round1Map = new Map();
+      pickTrainItems.forEach(item => {
+        const txt = (item.innerText || '').trim();
+        if (!txt) return;
+        const pickM = txt.match(/(?:pick|pk|#)\s*([0-9]{1,2})\b/i) || txt.match(/\b1\.([0-9]{1,2})\b/);
+        if (pickM) {
+          const pNum = parseInt(pickM[1], 10);
+          if (pNum >= 1 && pNum <= 16) {
+            let tName = txt.replace(/(?:pick|pk|#)\s*[0-9]{1,2}\b/gi, '')
+              .replace(/\b1\.[0-9]{1,2}\b/g, '')
+              .replace(/\b(on the clock|the clock|auto pick|autopick|auto|drafting|upcoming|clock)\b/gi, '')
+              .replace(/^[0-9]+:[0-9]+/g, '')
+              .trim();
+            if (tName && tName.length >= 2) {
+              round1Map.set(pNum, tName);
+              if (item.classList.contains('myTeam') || item.classList.contains('user-team') || item.querySelector('.myTeam, [class*="myTeam" i]')) {
+                if (mySlot === null) mySlot = pNum;
+              }
+            }
+          }
+        }
+      });
+
+      if (round1Map.size >= 8) {
+        const sortedSlots = Array.from(round1Map.keys()).sort((a, b) => a - b);
+        const maxSlot = Math.max(...sortedSlots);
+        if (maxSlot >= 8 && maxSlot <= 16) {
+          const ptNames = [];
+          for (let i = 1; i <= maxSlot; i++) {
+            ptNames.push(round1Map.get(i) || ('Team ' + i));
+          }
+          names = ptNames;
+        }
+      }
+    }
+
+    // 3. Scan generic column headers above the Draft Board grid
+    if (names.length === 0) {
+      let headers = document.querySelectorAll(
+        '.draft-board-header .team-header, [class*="DraftBoard"] th, [class*="draftBoard"] [class*="team" i], ' +
+        '[class*="teamColumn" i] [class*="name" i], .draft-grid-header th, [data-testid*="team-column"]'
+      );
+
+      if (headers.length === 0) {
+        const boardTable = document.querySelector('.draft-board table, [class*="DraftBoard"] table');
+        if (boardTable) {
+          headers = boardTable.querySelectorAll('thead th, tr:first-child th, tr:first-child td');
+        }
+      }
+
+      const gNames = [];
+      headers.forEach((h, idx) => {
+        const text = (h.innerText || '').trim();
+        if (text && !/^(rd|round|pick|#|[0-9]+)$/i.test(text)) {
+          gNames.push(text);
+          const style = window.getComputedStyle ? window.getComputedStyle(h) : {};
+          const isGreen = (style.backgroundColor && (style.backgroundColor.includes('rgb(0, 1') || style.backgroundColor.includes('rgb(35, 134') || style.backgroundColor.includes('green'))) ||
+            h.classList.contains('user-team') || h.classList.contains('my-team') || h.getAttribute('data-is-me') === 'true' ||
+            /\b(you|my team)\b/i.test(text) || h.querySelector('[class*="user" i], [class*="myTeam" i], [class*="active" i]');
+          if (isGreen && mySlot === null) {
             mySlot = idx + 1;
           }
         }
       });
-      if (names.length >= 8 && names.length <= 16) {
-        detectedLeagueTeams = names.length;
-        detectedTeamNames = names;
-        if (mySlot) detectedMySlot = mySlot;
-        return { teams: detectedLeagueTeams, teamNames: detectedTeamNames, mySlot: detectedMySlot };
+
+      if (gNames.length >= 8 && gNames.length <= 16) {
+        names = gNames;
       }
     }
 
-    // 2. Scan generic column headers above the Draft Board grid
-    let headers = document.querySelectorAll(
-      '.draft-board-header .team-header, [class*="DraftBoard"] th, [class*="draftBoard"] [class*="team" i], ' +
-      '[class*="teamColumn" i] [class*="name" i], .draft-grid-header th, [data-testid*="team-column"]'
-    );
-
-    if (headers.length === 0) {
-      const boardTable = document.querySelector('.draft-board table, [class*="DraftBoard"] table');
-      if (boardTable) {
-        headers = boardTable.querySelectorAll('thead th, tr:first-child th, tr:first-child td');
-      }
-    }
-
-    const names = [];
-    let mySlot = null;
-
-    headers.forEach((h, idx) => {
-      const text = (h.innerText || '').trim();
-      if (text && !/^(rd|round|pick|#|[0-9]+)$/i.test(text)) {
-        names.push(text);
-        const style = window.getComputedStyle ? window.getComputedStyle(h) : {};
-        const isGreen = (style.backgroundColor && (style.backgroundColor.includes('rgb(0, 1') || style.backgroundColor.includes('rgb(35, 134') || style.backgroundColor.includes('green'))) ||
-          h.classList.contains('user-team') || h.classList.contains('my-team') || h.getAttribute('data-is-me') === 'true' ||
-          /\b(you|my team)\b/i.test(text) || h.querySelector('[class*="user" i], [class*="myTeam" i], [class*="active" i]');
-        if (isGreen && mySlot === null) {
-          mySlot = idx + 1;
+    // 4. Try page __NEXT_DATA__ JSON script tag
+    if (names.length === 0) {
+      try {
+        const nextScript = document.getElementById('__NEXT_DATA__');
+        if (nextScript && nextScript.textContent) {
+          const nextJson = JSON.parse(nextScript.textContent);
+          const props = nextJson.props && nextJson.props.pageProps;
+          if (props) {
+            const league = props.league || props.draftDetail;
+            if (league && Array.isArray(league.teams) && league.teams.length >= 8) {
+              names = league.teams.map((t, idx) => t.name || (t.location ? (t.location + ' ' + (t.nickname || '')).trim() : ('Team ' + (idx + 1))));
+            }
+          }
         }
-      }
-    });
+      } catch (e) { }
+    }
 
-    if (names.length >= 8 && names.length <= 16) {
+    // If we have detected team names, try matching user's team name if slot was not found yet
+    if (names.length > 0) {
       detectedLeagueTeams = names.length;
       detectedTeamNames = names;
-      if (mySlot) detectedMySlot = mySlot;
+      if (mySlot === null && myTeamName) {
+        const cleanUserTeam = myTeamName.trim().toLowerCase();
+        const foundIdx = names.findIndex(n => {
+          const cleanN = n.trim().toLowerCase();
+          return cleanN === cleanUserTeam || cleanN.includes(cleanUserTeam) || cleanUserTeam.includes(cleanN);
+        });
+        if (foundIdx >= 0) {
+          mySlot = foundIdx + 1;
+        }
+      }
     }
 
-    // 3. Fallback: check max pick in round R.P across board cells
-    let maxP = 0;
-    document.querySelectorAll('[class*="cell" i], td').forEach(c => {
-      const m = (c.innerText || '').match(/\b[0-9]{1,2}\.([0-9]{1,2})\b/);
-      if (m) {
-        const p = parseInt(m[1], 10);
-        if (p > maxP && p <= 16) maxP = p;
+    // Fallback: check max pick in round R.P across board cells
+    if (names.length === 0) {
+      let maxP = 0;
+      document.querySelectorAll('[class*="cell" i], td').forEach(c => {
+        const m = (c.innerText || '').match(/\b[0-9]{1,2}\.([0-9]{1,2})\b/);
+        if (m) {
+          const p = parseInt(m[1], 10);
+          if (p > maxP && p <= 16) maxP = p;
+        }
+      });
+      if (maxP >= 8 && maxP <= 16) {
+        detectedLeagueTeams = maxP;
       }
-    });
-    if (maxP >= 8 && maxP <= 16) {
-      detectedLeagueTeams = maxP;
+    }
+
+    // Fallback for mySlot from URL teamId query parameter
+    if (mySlot === null) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tId = parseInt(params.get('teamId') || params.get('slot'), 10);
+        if (tId && tId >= 1 && tId <= detectedLeagueTeams) {
+          mySlot = tId;
+        }
+      } catch (e) { }
+    }
+
+    if (mySlot !== null) {
+      detectedMySlot = mySlot;
     }
 
     return {
