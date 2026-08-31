@@ -182,7 +182,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(
-                json.dumps({"ok": True, "reset": True, "timestamp": last_reset_timestamp}).encode("utf-8")
+                json.dumps(
+                    {"ok": True, "reset": True, "timestamp": last_reset_timestamp}
+                ).encode("utf-8")
             )
             return
 
@@ -225,7 +227,12 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(
                 json.dumps(
-                    {"ok": True, "pong": True, "timestamp": int(last_espn_ping * 1000), "lastReset": last_reset_timestamp}
+                    {
+                        "ok": True,
+                        "pong": True,
+                        "timestamp": int(last_espn_ping * 1000),
+                        "lastReset": last_reset_timestamp,
+                    }
                 ).encode("utf-8")
             )
             return
@@ -244,7 +251,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
             source = snap_data.get("source", "espn")
             picks = snap_data.get("picks", [])
-            league_info = snap_data.get("leagueInfo") or snap_data.get("league_info") or {}
+            league_info = (
+                snap_data.get("leagueInfo") or snap_data.get("league_info") or {}
+            )
             with sync_lock:
                 if source == "espn":
                     last_espn_ping = time.time()
@@ -265,7 +274,11 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 if picks
                 else "empty"
             )
-            teams_desc = f" ({latest_league_info['teams']} Teams)" if latest_league_info.get("teams") else ""
+            teams_desc = (
+                f" ({latest_league_info['teams']} Teams)"
+                if latest_league_info.get("teams")
+                else ""
+            )
             log_event(
                 f"📋 Draft Snapshot: {len(picks)} picks synced{teams_desc} (Latest: {latest_desc}) [{source.upper()}]"
             )
@@ -294,7 +307,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             if pick_data.get("type") == "DRAFT_SNAPSHOT" or "picks" in pick_data:
                 source = pick_data.get("source", "espn")
                 picks = pick_data.get("picks", [])
-                league_info = pick_data.get("leagueInfo") or pick_data.get("league_info") or {}
+                league_info = (
+                    pick_data.get("leagueInfo") or pick_data.get("league_info") or {}
+                )
                 with sync_lock:
                     if source == "espn":
                         last_espn_ping = time.time()
@@ -314,7 +329,11 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     if picks
                     else "empty"
                 )
-                teams_desc = f" ({latest_league_info['teams']} Teams)" if latest_league_info.get("teams") else ""
+                teams_desc = (
+                    f" ({latest_league_info['teams']} Teams)"
+                    if latest_league_info.get("teams")
+                    else ""
+                )
                 log_event(
                     f"📋 Draft Snapshot: {len(picks)} picks synced{teams_desc} (Latest: {latest_desc}) [{source.upper()}]"
                 )
@@ -353,7 +372,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
             if is_new:
                 pick_num = (
-                    f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
+                    f"#{pick_event.get('overall')}"
+                    if pick_event.get("overall")
+                    else "Pick"
                 )
                 details = []
                 if pick_event.get("pos"):
@@ -362,7 +383,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     details.append(pick_event["team"])
                 detail_str = f" ({' - '.join(details)})" if details else ""
                 by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
-                source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
+                source_tag = (
+                    f" [{source.upper()}]" if source and source != "manual" else ""
+                )
                 log_event(
                     f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
                 )
@@ -539,7 +562,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
             if is_new:
                 pick_num = (
-                    f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
+                    f"#{pick_event.get('overall')}"
+                    if pick_event.get("overall")
+                    else "Pick"
                 )
                 details = []
                 if pick_event.get("pos"):
@@ -548,7 +573,9 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     details.append(pick_event["team"])
                 detail_str = f" ({' - '.join(details)})" if details else ""
                 by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
-                source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
+                source_tag = (
+                    f" [{source.upper()}]" if source and source != "manual" else ""
+                )
                 log_event(
                     f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
                 )

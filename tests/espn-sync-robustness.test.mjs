@@ -30,14 +30,19 @@ const TEAM_NORM = {
 };
 const POS_LIST = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'DEF', 'D/ST'];
 
-function isPlaceholderName(name) {
+function isPlaceholderName(name, teamNames = []) {
   if (!name) return true;
   const clean = String(name).trim().toLowerCase();
   if (clean.length < 3) return true;
-  if (/^(on\s*the\s*clock|the\s*clock|clock|drafting|picking|auto\s*pick|autopick|time\s*expired|available|empty|open|player|unknown)$/i.test(clean)) {
+  if (/^(on\s*the\s*clock|the\s*clock|clock|drafting|picking|auto\s*pick|autopick|auto|make|make\s*pick|time\s*expired|available|empty|open|player|unknown|skipped|none)$/i.test(clean)) {
     return true;
   }
   if (/^[0-9]+(\.[0-9]+)?$/.test(clean)) return true;
+  if (/^auto\b/i.test(clean)) return true;
+  if (/^pick\s*[0-9]+/i.test(clean)) return true;
+  for (const t of teamNames) {
+    if (t && (clean === t.toLowerCase() || clean.includes(t.toLowerCase()))) return true;
+  }
   return false;
 }
 
@@ -131,6 +136,18 @@ eq(pClock, null, "Rejects 'On The Clock' placeholder as a player");
 
 const pClock2 = parsePlayerText("5.2 On The Clock");
 eq(pClock2, null, "Rejects cell text with '5.2 On The Clock'");
+
+const pMake = parsePlayerText("Make Pick");
+eq(pMake, null, "Rejects 'Make Pick' button text as a player");
+
+const pMake2 = parsePlayerText("Make");
+eq(pMake2, null, "Rejects 'Make' button text as a player");
+
+const pAutoTeam = parsePlayerText("AUTO Yom Fury");
+eq(pAutoTeam, null, "Rejects 'AUTO Yom Fury' pick train item");
+
+const pAutoTeam2 = parsePlayerText("AUTO Hutch Hutch Hike");
+eq(pAutoTeam2, null, "Rejects 'AUTO Hutch Hutch Hike' pick train item");
 
 const pJunk = parsePlayerText("PRK 14 PROJ 245.2 QUEUE DRAFT");
 eq(pJunk, null, "Rejects button/table header clutter without valid player name");
