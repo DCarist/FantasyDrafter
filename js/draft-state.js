@@ -243,6 +243,11 @@
     save();
     if (typeof render === 'function') render();
     sendServerEvent('🔄 Draft board reset to Pick #1', 'info');
+    if (typeof reportServerReset === 'function') {
+      reportServerReset();
+    } else if (typeof window !== 'undefined' && typeof window.reportServerReset === 'function') {
+      window.reportServerReset();
+    }
   }
 
   function selectRosterSlot(slot) {

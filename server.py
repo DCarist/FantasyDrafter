@@ -92,10 +92,12 @@ FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><te
 # In-memory sync state
 sync_lock = threading.Lock()
 last_espn_ping = 0
+last_reset_timestamp = 0
 sync_events = []
 latest_snapshot = []
 latest_league_info = {}
 sse_clients = []
+server_seen_picks = set()
 
 
 class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
@@ -159,7 +161,31 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        global last_espn_ping, latest_snapshot
+        global last_espn_ping, latest_snapshot, latest_league_info, last_reset_timestamp
+        if self.path.startswith("/api/sync/reset"):
+            with sync_lock:
+                last_reset_timestamp = int(time.time() * 1000)
+                latest_snapshot.clear()
+                latest_league_info.clear()
+                sync_events.clear()
+                server_seen_picks.clear()
+                broadcast_sse(
+                    {
+                        "type": "RESET",
+                        "source": "drafter",
+                        "lastReset": last_reset_timestamp,
+                        "timestamp": last_reset_timestamp,
+                    }
+                )
+            log_event("🧹 Draft state reset on server relay")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(
+                json.dumps({"ok": True, "reset": True, "timestamp": last_reset_timestamp}).encode("utf-8")
+            )
+            return
+
         if self.path.startswith("/api/sync/log"):
             content_length = int(self.headers.get("Content-Length", 0))
             body = (
@@ -199,7 +225,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(
                 json.dumps(
-                    {"ok": True, "pong": True, "timestamp": int(last_espn_ping * 1000)}
+                    {"ok": True, "pong": True, "timestamp": int(last_espn_ping * 1000), "lastReset": last_reset_timestamp}
                 ).encode("utf-8")
             )
             return
@@ -301,6 +327,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             source = pick_data.get("source", "espn")
+            is_new = False
             with sync_lock:
                 if source == "espn":
                     last_espn_ping = time.time()
@@ -314,27 +341,31 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     "by": pick_data.get("by", ""),
                     "timestamp": int(time.time() * 1000),
                 }
-                sync_events.append(pick_event)
-                if len(sync_events) > 100:
-                    sync_events.pop(0)
-                # Only broadcast to browser clients if pick originated externally (e.g. ESPN extension)
-                if source == "espn":
-                    broadcast_sse(pick_event)
+                pick_key = f"{pick_event.get('overall')}_{pick_event.get('name')}"
+                if pick_key not in server_seen_picks:
+                    server_seen_picks.add(pick_key)
+                    is_new = True
+                    sync_events.append(pick_event)
+                    if len(sync_events) > 100:
+                        sync_events.pop(0)
+                    if source == "espn":
+                        broadcast_sse(pick_event)
 
-            pick_num = (
-                f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
-            )
-            details = []
-            if pick_event.get("pos"):
-                details.append(pick_event["pos"])
-            if pick_event.get("team"):
-                details.append(pick_event["team"])
-            detail_str = f" ({' - '.join(details)})" if details else ""
-            by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
-            source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
-            log_event(
-                f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
-            )
+            if is_new:
+                pick_num = (
+                    f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
+                )
+                details = []
+                if pick_event.get("pos"):
+                    details.append(pick_event["pos"])
+                if pick_event.get("team"):
+                    details.append(pick_event["team"])
+                detail_str = f" ({' - '.join(details)})" if details else ""
+                by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
+                source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
+                log_event(
+                    f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
+                )
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -363,6 +394,29 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         # Handle Image Beacon / GET Ping, Snapshot & Pick (bypasses CORS & mixed-content preflights)
+        if self.path.startswith("/api/sync/reset"):
+            global last_reset_timestamp
+            with sync_lock:
+                last_reset_timestamp = int(time.time() * 1000)
+                latest_snapshot.clear()
+                latest_league_info.clear()
+                sync_events.clear()
+                server_seen_picks.clear()
+                broadcast_sse(
+                    {
+                        "type": "RESET",
+                        "source": "drafter",
+                        "lastReset": last_reset_timestamp,
+                        "timestamp": last_reset_timestamp,
+                    }
+                )
+            log_event("🧹 Draft state reset beacon received on server relay")
+            self.send_response(200)
+            self.send_header("Content-Type", "image/gif")
+            self.end_headers()
+            self.wfile.write(GIF_1X1)
+            return
+
         if self.path.startswith("/api/sync/ping"):
             with sync_lock:
                 last_espn_ping = time.time()
@@ -459,6 +513,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             source = pick_data.get("source", "espn")
+            is_new = False
             with sync_lock:
                 if source == "espn":
                     last_espn_ping = time.time()
@@ -472,26 +527,31 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     "by": pick_data.get("by", ""),
                     "timestamp": int(time.time() * 1000),
                 }
-                sync_events.append(pick_event)
-                if len(sync_events) > 100:
-                    sync_events.pop(0)
-                if source == "espn":
-                    broadcast_sse(pick_event)
+                pick_key = f"{pick_event.get('overall')}_{pick_event.get('name')}"
+                if pick_key not in server_seen_picks:
+                    server_seen_picks.add(pick_key)
+                    is_new = True
+                    sync_events.append(pick_event)
+                    if len(sync_events) > 100:
+                        sync_events.pop(0)
+                    if source == "espn":
+                        broadcast_sse(pick_event)
 
-            pick_num = (
-                f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
-            )
-            details = []
-            if pick_event.get("pos"):
-                details.append(pick_event["pos"])
-            if pick_event.get("team"):
-                details.append(pick_event["team"])
-            detail_str = f" ({' - '.join(details)})" if details else ""
-            by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
-            source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
-            log_event(
-                f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
-            )
+            if is_new:
+                pick_num = (
+                    f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
+                )
+                details = []
+                if pick_event.get("pos"):
+                    details.append(pick_event["pos"])
+                if pick_event.get("team"):
+                    details.append(pick_event["team"])
+                detail_str = f" ({' - '.join(details)})" if details else ""
+                by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
+                source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
+                log_event(
+                    f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
+                )
 
             self.send_response(200)
             self.send_header("Content-Type", "image/gif")
@@ -522,6 +582,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     "picks": new_picks,
                     "snapshot": latest_snapshot,
                     "leagueInfo": latest_league_info,
+                    "lastReset": last_reset_timestamp,
                     "serverTime": int(time.time() * 1000),
                 }
 

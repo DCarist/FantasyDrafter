@@ -924,8 +924,9 @@ function reconcileDraftLog(currentLog, remotePicks, playersList, draftContext) {
   }
 
   for (let i = 0; i < targetLength; i++) {
-    const overall = i + 1;
     const rPick = remote[i];
+    if (!rPick) continue;
+    const overall = (typeof rPick === 'object' && (rPick.overall || rPick.pick_no)) ? (rPick.overall || rPick.pick_no) : (i + 1);
     const resolved = resolveRemotePick(rPick, playersList, { unlistedFallback: true });
     const slotInfo = teamForOverall(overall, teams, mode, teamNames, slot);
     const isMine = slotInfo.isMe;

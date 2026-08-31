@@ -43,6 +43,18 @@
     } catch (e) { }
   }
 
+  function reportServerReset() {
+    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    try {
+      fetch(host + '/api/sync/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'drafter', timestamp: Date.now() }),
+        mode: 'cors'
+      }).catch(() => { });
+    } catch (e) { }
+  }
+
   function initBroadcastSync() {
     // 1. Cross-Origin Local HTTP Relay (SSE & Polling)
     initServerSyncRelay();
@@ -405,22 +417,7 @@
           if (typeof global.render === 'function') global.render();
 
           if (rec.added > 0) {
-            for (let i = prevLen; i < global.state.log.length; i++) {
-              const entry = global.state.log[i];
-              const p = entry.playerId != null ? global.PLAYERS[entry.playerId] : null;
-              const name = entry.customName || (p ? p.name : 'Unknown');
-              const pos = entry.customPos || (p ? p.pos : '');
-              const team = entry.customTeam || (p ? p.team : '');
-              const who = teamForOverall(entry.overall, global.state.settings.teams, global.state.settings.mode, global.state.settings.teamNames, global.state.settings.slot, global.state.tradedPicks);
-              reportServerPick({
-                source: 'sleeper',
-                overall: entry.overall,
-                name: name,
-                pos: pos,
-                team: team,
-                by: who.name + (who.isMe ? ' (You)' : '')
-              });
-            }
+            reportServerEvent('⚡ Live Synced ' + rec.added + ' pick(s) from Sleeper draft (Total: #' + global.state.log.length + ')', 'info');
           }
           if (rec.rolledBack > 0) {
             reportServerEvent('↩️ Rolled back ' + rec.rolledBack + ' pick(s) to match Sleeper history (Now at #' + global.state.log.length + ')', 'warn');
@@ -663,6 +660,7 @@
   global.syncState = syncState;
   global.reportServerPick = reportServerPick;
   global.reportServerEvent = reportServerEvent;
+  global.reportServerReset = reportServerReset;
   global.initBroadcastSync = initBroadcastSync;
   global.initServerSyncRelay = initServerSyncRelay;
   global.startFallbackPolling = startFallbackPolling;

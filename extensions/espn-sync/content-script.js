@@ -30,13 +30,6 @@
   let lastSnapshotCount = 0;
   let totalDetectedPicks = [];
 
-  function isDraftRoom() {
-    return window.location.href.includes('/draft') ||
-      window.location.href.includes('/mock') ||
-      window.location.href.includes('/ffl') ||
-      document.querySelector('table, .draft-table, .draft-board, .pick-history, [data-testid*="draft"], .draft-recent-pick, .draft-cell, [class*="draft" i]') !== null;
-  }
-
   function isPlaceholderName(name) {
     if (!name) return true;
     const clean = String(name).trim().toLowerCase();
@@ -49,7 +42,8 @@
   }
 
   function createPill() {
-    if (pill) return;
+    if (pill && document.body.contains(pill)) return;
+    if (pill) pill.remove();
     pill = document.createElement('div');
     pill.id = 'fantasy-drafter-extension-pill';
     pill.innerHTML = '⚡ <b>Fantasy Drafter:</b> Connecting...';
@@ -78,6 +72,7 @@
   }
 
   function setPillStatus(status, text) {
+    if (!pill) createPill();
     if (!pill) return;
     const countTag = totalDetectedPicks.length > 0 ? ` (${totalDetectedPicks.length} picks)` : '';
     if (status === 'connected') {
@@ -185,7 +180,7 @@
         pos = u;
       } else if (!team && NFL_TEAMS.has(u)) {
         team = TEAM_NORM[u] || u;
-      } else if (!/^[0-9]+(\.[0-9]+)?$/.test(t)) { // ignore numeric scores/prices
+      } else if (!/^[0-9]+(\.[0-9]+)?$/.test(t)) {
         nameParts.push(t);
       }
     }
@@ -206,7 +201,6 @@
       if (!isPlaceholderName(linkName)) {
         const parsed = parsePlayerText(linkName);
         if (parsed && parsed.name) {
-          // Also look for pos / team tags in sibling elements
           const posEl = el.querySelector('[class*="position" i], [class*="pos" i]');
           const teamEl = el.querySelector('[class*="proTeam" i], [class*="team" i]');
           if (posEl && posEl.innerText && POS_LIST.includes(posEl.innerText.trim().toUpperCase())) {
@@ -222,7 +216,6 @@
         }
       }
     }
-    // 2. Fallback to parsing element text
     return parsePlayerText(txt);
   }
 
@@ -230,7 +223,7 @@
     if (!text) return null;
     const str = String(text).trim();
 
-    // 1. Check for Round.Pick format like "3.01", "3.1", "1.12", "1.14"
+    // 1. Check for Round.Pick format like "1.1", "1.14", "3.01", "10.14"
     const roundPickMatch = str.match(/\b([0-9]{1,2})\.([0-9]{1,2})\b/);
     if (roundPickMatch) {
       const r = parseInt(roundPickMatch[1], 10);
@@ -241,14 +234,14 @@
       }
     }
 
-    // 2. Check for explicit overall like "Pick 37", "#37", "Pk 37", "(Pick 37)", "P50"
+    // 2. Check for explicit overall like "Pick 37", "#37", "Pk 37", "P50"
     const explicitMatch = str.match(/(?:pick|pk|#|p)\s*([0-9]{1,3})\b/i);
     if (explicitMatch) {
       const num = parseInt(explicitMatch[1], 10);
       if (!isNaN(num) && num > 0 && num <= 600) return num;
     }
 
-    // 3. Standalone integer in a pick column
+    // 3. Standalone integer
     const directMatch = str.match(/^([0-9]{1,3})\.?$/);
     if (directMatch) {
       const num = parseInt(directMatch[1], 10);
@@ -260,11 +253,9 @@
 
   function isAvailablePlayerRow(el) {
     if (!el) return false;
-    // 1. Has an active Draft / Queue button
     if (el.querySelector('button[aria-label*="Draft" i], button[title*="Draft" i], button.btn-draft, [data-testid*="draft-button"], button[aria-label*="Queue" i], [data-testid*="queue-button"]')) {
       return true;
     }
-    // 2. Direct parent table is the available player pool (has PRK / PROJ header)
     const tbl = el.closest('table');
     if (tbl) {
       const thead = tbl.querySelector('thead');
@@ -276,7 +267,29 @@
   }
 
   function detectLeagueInfo() {
-    // 1. Scan column headers above the Draft Board grid
+    // 1. Scan modern ESPN draft board header cells (.draft-board-grid-header-cell)
+    const boardHeaderCells = document.querySelectorAll('.draft-board-grid-header-cell, [class*="draft-board-grid-header-cell" i]');
+    if (boardHeaderCells.length >= 8 && boardHeaderCells.length <= 16) {
+      const names = [];
+      let mySlot = null;
+      boardHeaderCells.forEach((h, idx) => {
+        const text = (h.innerText || '').trim();
+        if (text) {
+          names.push(text);
+          if (h.classList.contains('myTeam') || h.classList.contains('onTheClock') || h.querySelector('.myTeam, [class*="myTeam" i]')) {
+            mySlot = idx + 1;
+          }
+        }
+      });
+      if (names.length >= 8 && names.length <= 16) {
+        detectedLeagueTeams = names.length;
+        detectedTeamNames = names;
+        if (mySlot) detectedMySlot = mySlot;
+        return { teams: detectedLeagueTeams, teamNames: detectedTeamNames, mySlot: detectedMySlot };
+      }
+    }
+
+    // 2. Scan generic column headers above the Draft Board grid
     let headers = document.querySelectorAll(
       '.draft-board-header .team-header, [class*="DraftBoard"] th, [class*="draftBoard"] [class*="team" i], ' +
       '[class*="teamColumn" i] [class*="name" i], .draft-grid-header th, [data-testid*="team-column"]'
@@ -312,7 +325,7 @@
       if (mySlot) detectedMySlot = mySlot;
     }
 
-    // 2. Fallback: check max pick in round R.P across board cells
+    // 3. Fallback: check max pick in round R.P across board cells
     let maxP = 0;
     document.querySelectorAll('[class*="cell" i], td').forEach(c => {
       const m = (c.innerText || '').match(/\b[0-9]{1,2}\.([0-9]{1,2})\b/);
@@ -332,7 +345,37 @@
     };
   }
 
-  async function postRelay(endpoint, payload) {
+  // Relay helper that uses chrome.runtime.sendMessage to background service worker (bypasses loopback PNA block)
+  function postRelay(endpoint, payload) {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        try {
+          chrome.runtime.sendMessage({
+            type: 'RELAY_REQUEST',
+            method: 'POST',
+            endpoint: endpoint,
+            payload: payload
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              directFetch(endpoint, payload).then(resolve);
+            } else if (response && response.success) {
+              if (response.host) activeHost = response.host;
+              resolve(true);
+            } else {
+              directFetch(endpoint, payload).then(resolve);
+            }
+          });
+          return;
+        } catch (e) {
+          directFetch(endpoint, payload).then(resolve);
+          return;
+        }
+      }
+      directFetch(endpoint, payload).then(resolve);
+    });
+  }
+
+  async function directFetch(endpoint, payload) {
     for (const host of [activeHost, ...RELAY_HOSTS]) {
       try {
         const res = await fetch(host + endpoint, {
@@ -352,11 +395,6 @@
 
   function sendPick(pickData) {
     createPill();
-    try {
-      const img = new Image();
-      img.src = activeHost + '/api/sync/pick?d=' + encodeURIComponent(JSON.stringify(pickData)) + '&t=' + Date.now();
-    } catch (e) { }
-
     postRelay('/api/sync/pick', pickData);
     setPillStatus('pick', 'Drafted #' + (pickData.overall || '') + ' ' + pickData.name);
     console.log('⚡ [Fantasy Drafter ESPN Sync] Pick sent:', pickData);
@@ -377,27 +415,11 @@
       timestamp: Date.now()
     };
 
-    try {
-      const img = new Image();
-      img.src = activeHost + '/api/sync/snapshot?d=' + encodeURIComponent(JSON.stringify(payload)) + '&t=' + Date.now();
-    } catch (e) { }
-
     postRelay('/api/sync/snapshot', payload);
   }
 
   function sendPing() {
     createPill();
-    try {
-      const img = new Image();
-      img.onload = () => {
-        if (!isConnected) {
-          isConnected = true;
-          setPillStatus('connected');
-        }
-      };
-      img.src = activeHost + '/api/sync/ping?t=' + Date.now();
-    } catch (e) { }
-
     postRelay('/api/sync/ping', { source: 'espn', timestamp: Date.now() }).then(ok => {
       if (ok && !isConnected) {
         isConnected = true;
@@ -408,39 +430,70 @@
 
   function scanDraftRoom(force) {
     const leagueInfo = detectLeagueInfo();
-    const detectedPicks = new Map(); // Map overall -> pickObject
+    const detectedPicks = new Map();
 
-    // --- Strategy 1: Draft Board Grid Rows & Sequential Left-to-Right Coordinates ---
-    const boardRows = document.querySelectorAll(
-      '.draft-board tbody tr, [class*="DraftBoard"] tbody tr, [class*="draftBoard"] tr, .draft-grid tr'
+    // =========================================================================
+    // Strategy 1 (PRIMARY): Modern ESPN Draft Board Cells (.draft-board-grid-pick-cell.completedPick)
+    // Matches the exact DOM structure in ESPN Live Draft rooms
+    // =========================================================================
+    const completedCells = document.querySelectorAll(
+      '.draft-board-grid-pick-cell.completedPick, [class*="completedPick" i]'
     );
 
-    if (boardRows.length > 0) {
-      boardRows.forEach((tr, rIdx) => {
-        const cells = tr.querySelectorAll('td, [class*="cell" i]');
-        if (cells.length >= 8 && cells.length <= 16) {
-          detectedLeagueTeams = cells.length;
-          cells.forEach((cell, cIdx) => {
-            if (isAvailablePlayerRow(cell)) return;
-            const parsed = extractPlayerFromElement(cell);
-            if (!parsed || !parsed.name || isPlaceholderText(parsed.name)) return;
+    completedCells.forEach(cell => {
+      const firstEl = cell.querySelector('.playerFirstName, [class*="FirstName" i]');
+      const lastEl = cell.querySelector('.playerLastName, [class*="LastName" i]');
+      let name = '';
+      if (firstEl && lastEl) {
+        name = (firstEl.innerText.trim() + ' ' + lastEl.innerText.trim()).trim();
+      } else {
+        const mid = cell.querySelector('.pickCellMiddle, [class*="pickCellMiddle" i]');
+        name = mid ? mid.innerText.trim() : '';
+      }
+      if (!name || isPlaceholderName(name)) return;
 
-            const overall = rIdx * detectedLeagueTeams + (cIdx + 1);
-            detectedPicks.set(overall, {
-              source: 'espn',
-              type: 'PICK_MADE',
-              overall: overall,
-              name: parsed.name,
-              pos: parsed.pos || '',
-              team: parsed.team || '',
-              timestamp: Date.now()
-            });
-          });
+      const teamEl = cell.querySelector('.playerProTeam, [class*="playerProTeam" i]');
+      const posEl = cell.querySelector('.positionPill, [class*="positionPill" i]');
+      const rpEl = cell.querySelector('.roundPick, [class*="roundPick" i]');
+
+      const pos = posEl ? posEl.innerText.trim().toUpperCase() : '';
+      let team = teamEl ? teamEl.innerText.trim().toUpperCase() : '';
+      if (TEAM_NORM[team]) team = TEAM_NORM[team];
+
+      const rpText = rpEl ? rpEl.innerText.trim() : '';
+      let overall = extractPickNumber(rpText, detectedLeagueTeams) || extractPickNumber(cell.innerText, detectedLeagueTeams);
+
+      // Fallback: grid-area: row / col
+      if (!overall && cell.style && cell.style.gridArea) {
+        const gridM = cell.style.gridArea.match(/(\d+)\s*\/\s*(\d+)/);
+        if (gridM) {
+          const round = parseInt(gridM[1], 10);
+          const col = parseInt(gridM[2], 10);
+          const teams = detectedLeagueTeams || 12;
+          if (round % 2 === 1) {
+            overall = (round - 1) * teams + col;
+          } else {
+            overall = (round - 1) * teams + (teams - col + 1);
+          }
         }
-      });
-    }
+      }
 
-    // --- Strategy 2: Individual Draft Board Grid Cells with Explicit Attributes/Text ---
+      if (overall && overall > 0 && !detectedPicks.has(overall)) {
+        detectedPicks.set(overall, {
+          source: 'espn',
+          type: 'PICK_MADE',
+          overall: overall,
+          name: name,
+          pos: pos,
+          team: team,
+          timestamp: Date.now()
+        });
+      }
+    });
+
+    // =========================================================================
+    // Strategy 2 (FALLBACK): Generic Draft Board Grid Cells / Rows
+    // =========================================================================
     const boardCells = document.querySelectorAll(
       '[class*="cell" i], [class*="draftboard" i] td, [class*="grid" i] div, [data-testid*="cell" i], .draft-grid-cell'
     );
@@ -448,7 +501,7 @@
     boardCells.forEach(cell => {
       if (isAvailablePlayerRow(cell)) return;
       const parsed = extractPlayerFromElement(cell);
-      if (!parsed || !parsed.name || isPlaceholderText(parsed.name)) return;
+      if (!parsed || !parsed.name || isPlaceholderName(parsed.name)) return;
 
       const overallAttr = cell.getAttribute('data-overall') || cell.getAttribute('data-pick-number') || cell.getAttribute('data-pick');
       let overall = overallAttr ? parseInt(overallAttr, 10) : null;
@@ -474,7 +527,9 @@
       }
     });
 
-    // --- Strategy 3: Pick History / Activity Stream / Right Sidebar ---
+    // =========================================================================
+    // Strategy 3 (FEED): Pick History / Activity Stream / Right Sidebar
+    // =========================================================================
     const historyRows = document.querySelectorAll(
       'tr.Table__TR, [class*="history" i] tr, [class*="history" i] [class*="row" i], ' +
       '[class*="activity" i] [class*="item" i], [class*="draftcast" i] [class*="item" i], ' +
@@ -484,7 +539,7 @@
     historyRows.forEach(r => {
       if (isAvailablePlayerRow(r)) return;
       const parsed = extractPlayerFromElement(r);
-      if (!parsed || !parsed.name || isPlaceholderText(parsed.name)) return;
+      if (!parsed || !parsed.name || isPlaceholderName(parsed.name)) return;
 
       const pickEl = r.querySelector('.pick-number, .col-pick, td:first-child, [class*="pickNumber" i], [class*="pick" i], [data-testid*="pick" i]');
       const pickText = pickEl ? pickEl.innerText : '';
@@ -554,5 +609,3 @@
     checkAndInit();
   }
 })();
-
-

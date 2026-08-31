@@ -245,7 +245,20 @@ eq(reconciled.log[0].overall, 1, "Pick 1 is Josh Allen");
 eq(reconciled.log[8].overall, 9, "Pick 9 is Breece Hall");
 eq(reconciled.log[9].overall, 10, "Pick 10 is Jahmyr Gibbs");
 
-// --- Test 5: Server Persistent Event Logging & Snapshot Endpoints ---
+// --- Test 5: Background Service Worker & Manifest V3 Extension Relay ---
+const manifestPath = join('.', 'extensions', 'espn-sync', 'manifest.json');
+const manifestContent = readFileSync(manifestPath, 'utf-8');
+const manifestJson = JSON.parse(manifestContent);
+assert(manifestJson.background && manifestJson.background.service_worker === 'background.js', 'manifest.json registers background.js service worker');
+assert(manifestJson.host_permissions.includes('http://127.0.0.1:8517/*'), 'manifest.json grants host permissions for 127.0.0.1:8517');
+
+const backgroundJsPath = join('.', 'extensions', 'espn-sync', 'background.js');
+assert(existsSync(backgroundJsPath), 'extensions/espn-sync/background.js exists');
+const backgroundJsContent = readFileSync(backgroundJsPath, 'utf-8');
+assert(backgroundJsContent.includes('RELAY_REQUEST'), 'background.js listens for RELAY_REQUEST messages');
+assert(backgroundJsContent.includes('127.0.0.1:8517'), 'background.js targets local drafter server');
+
+// --- Test 6: Server Persistent Event Logging, Snapshot & Reset Endpoints ---
 const serverPyPath = join('.', 'server.py');
 const serverPyContent = readFileSync(serverPyPath, 'utf-8');
 
@@ -253,6 +266,8 @@ assert(serverPyContent.includes('LAST_RUN_LOG'), 'server.py defines LAST_RUN_LOG
 assert(serverPyContent.includes('init_logging'), 'server.py defines init_logging');
 assert(serverPyContent.includes('log_event'), 'server.py defines log_event');
 assert(serverPyContent.includes('/api/sync/snapshot'), 'server.py handles /api/sync/snapshot endpoint');
+assert(serverPyContent.includes('/api/sync/reset'), 'server.py handles /api/sync/reset endpoint');
+assert(serverPyContent.includes('server_seen_picks'), 'server.py maintains server_seen_picks deduplication cache');
 assert(serverPyContent.includes('latest_snapshot'), 'server.py maintains latest_snapshot state');
 assert(serverPyContent.includes('"snapshot": latest_snapshot'), 'server.py returns snapshot in status/poll payload');
 assert(serverPyContent.includes('latest_league_info'), 'server.py maintains latest_league_info state');

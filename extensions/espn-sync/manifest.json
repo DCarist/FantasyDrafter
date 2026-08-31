@@ -9,6 +9,9 @@
     "http://127.0.0.1:8517/*",
     "http://localhost:8517/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [
