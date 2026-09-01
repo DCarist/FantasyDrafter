@@ -828,6 +828,19 @@
     if (setupMySlot === slot) setupMySlot = targetSlot;
     else if (setupMySlot === targetSlot) setupMySlot = slot;
 
+    // Remap keepers to travel with the moved team
+    if (Array.isArray(global.state.keepers) && global.state.keepers.length > 0) {
+      if (typeof remapKeepersOnSlotSwap === 'function') {
+        global.state.keepers = remapKeepersOnSlotSwap(global.state.keepers, slot, targetSlot);
+      } else {
+        for (const k of global.state.keepers) {
+          if (k.slot === slot) k.slot = targetSlot;
+          else if (k.slot === targetSlot) k.slot = slot;
+        }
+      }
+      global.save();
+    }
+
     // Re-render table
     const countVal = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     $('setup_teams_body').innerHTML = (function () {

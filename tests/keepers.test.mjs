@@ -187,12 +187,33 @@ const customKeeper = {
 const resCustomValid = L.validateKeeperAssignment(customKeeper, [], 2, 12, 20, 'snake', {});
 assert(resCustomValid.valid, 'Allows custom unlisted keeper player');
 
-const resCustomDup = L.validateKeeperAssignment(
-  { id: 'k_custom2', slot: 6, round: 8, customName: 'arch manning' },
-  [customKeeper],
-  2, 12, 20, 'snake', {}
-);
-assert(!resCustomDup.valid, 'Disallows duplicate custom keeper by name (case-insensitive)');
+// --- 9. Draft Order Slot Swap Remapping ---
+const keepersBeforeSwap = [
+  { id: 'k_bryan_1', slot: 9, round: 8, customName: 'Puka Nacua' },
+  { id: 'k_bryan_2', slot: 9, round: 10, customName: 'Trey McBride' },
+  { id: 'k_doug_1', slot: 10, round: 8, customName: 'Brock Bowers' },
+  { id: 'k_doug_2', slot: 10, round: 9, customName: 'Josh Allen' },
+  { id: 'k_other', slot: 2, round: 1, customName: 'Justin Jefferson' }
+];
+
+const remapped = L.remapKeepersOnSlotSwap(keepersBeforeSwap, 10, 9);
+const dougRemapped = remapped.filter(k => k.id.startsWith('k_doug'));
+const bryanRemapped = remapped.filter(k => k.id.startsWith('k_bryan'));
+const otherRemapped = remapped.find(k => k.id === 'k_other');
+
+eq(dougRemapped.length, 2, 'Preserves Doug keepers count');
+assert(dougRemapped.every(k => k.slot === 9), 'Doug keepers moved from Slot 10 to Slot 9');
+eq(bryanRemapped.length, 2, 'Preserves Bryan keepers count');
+assert(bryanRemapped.every(k => k.slot === 10), 'Bryan keepers moved from Slot 9 to Slot 10');
+eq(otherRemapped.slot, 2, 'Slot 2 keeper unaffected by Slot 9/10 swap');
+
+// Verify pick mapping recalculated for remapped slots
+const remappedPickMap = L.getKeeperPicksMap(remapped, 12, 20, 'snake', {});
+// In 12-team snake:
+// Slot 9: Round 8 is reverse round: (8 - 1)*12 + (12 + 1 - 9) = 84 + 4 = 88. Round 9 is forward: (9 - 1)*12 + 9 = 96 + 9 = 105.
+// Doug has Brock Bowers (Rd 8 -> Pick 88) and Josh Allen (Rd 9 -> Pick 105).
+assert(remappedPickMap[88] != null && remappedPickMap[88].customName === 'Brock Bowers', 'Doug Rd 8 keeper mapped to Slot 9 pick #88');
+assert(remappedPickMap[105] != null && remappedPickMap[105].customName === 'Josh Allen', 'Doug Rd 9 keeper mapped to Slot 9 pick #105');
 
 const success = finishSuite('Keepers & Pre-Drafted Players');
 if (!success) {

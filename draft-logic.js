@@ -1175,6 +1175,25 @@ function isKeeperPick(overall, keepers, teams, rounds, mode, tradedPicks) {
   return map[overall] || null;
 }
 
+// Remaps keeper slot assignments when two draft slots are swapped (e.g. during draft order reordering)
+function remapKeepersOnSlotSwap(keepers, slotA, slotB) {
+  if (!Array.isArray(keepers)) return [];
+  const a = parseInt(slotA, 10);
+  const b = parseInt(slotB, 10);
+  if (isNaN(a) || isNaN(b) || a === b) return keepers.slice();
+
+  return keepers.map(k => {
+    if (!k || typeof k !== 'object') return k;
+    if (k.slot === a) {
+      return Object.assign({}, k, { slot: b });
+    }
+    if (k.slot === b) {
+      return Object.assign({}, k, { slot: a });
+    }
+    return Object.assign({}, k);
+  });
+}
+
 // --- Draft State Serialization & Migration ---
 const DRAFT_SCHEMA_VERSION = 2;
 
@@ -1317,6 +1336,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validateKeeperAssignment: validateKeeperAssignment,
     getKeeperPicksMap: getKeeperPicksMap,
     isKeeperPick: isKeeperPick,
+    remapKeepersOnSlotSwap: remapKeepersOnSlotSwap,
     DRAFT_SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
     serializeDraftState: serializeDraftState,
     deserializeDraftState: deserializeDraftState,
