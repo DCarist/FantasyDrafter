@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Fantasy Drafter — ESPN Live Sync",
   "version": "1.1.4",
-  "description": "Real-time automated sync bridge between ESPN live draft rooms and Ken's Fantasy Drafter board.",
+  "description": "Real-time automated sync bridge between ESPN live draft rooms and DK's Fantasy Drafter board.",
   "host_permissions": [
     "*://fantasy.espn.com/*",
     "*://*.espn.com/*",
