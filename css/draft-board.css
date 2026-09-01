@@ -1389,10 +1389,8 @@ td.clickname:hover .pname {
 }
 
 .board-card.pending-keeper {
-  background: linear-gradient(135deg, rgba(255, 180, 84, 0.18) 0%, rgba(255, 180, 84, 0.05) 100%);
-  border: 1px dashed var(--warn);
-  border-left: 4px solid var(--warn);
-  opacity: 0.9;
+  border: 1.5px dashed var(--warn);
+  opacity: 0.96;
 }
 
 /* Card Internal Typography */
