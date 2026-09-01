@@ -1321,6 +1321,107 @@ function deserializeDraftState(input, currentPlayers) {
   };
 }
 
+// Generates the 2D grid matrix for the interactive Draft Board (rows = rounds, cols = slots 1..T)
+function generateDraftBoardGrid(options) {
+  const opt = options || {};
+  const teams = Math.max(2, Math.min(32, parseInt(opt.teams, 10) || 12));
+  const rounds = Math.max(1, Math.min(50, parseInt(opt.rounds, 10) || 20));
+  const mode = opt.mode || '3rr';
+  const log = Array.isArray(opt.log) ? opt.log : [];
+  const keepers = Array.isArray(opt.keepers) ? opt.keepers : [];
+  const tradedPicks = (opt.tradedPicks && typeof opt.tradedPicks === 'object') ? opt.tradedPicks : {};
+  const teamNames = opt.teamNames || null;
+  const mySlot = parseInt(opt.mySlot, 10) || 1;
+  const currentPickNum = (opt.currentPickNum != null) ? parseInt(opt.currentPickNum, 10) : (log.length + 1);
+  const playersLookup = opt.playersLookup || opt.byId || null;
+
+  // Build lookup maps for fast access
+  const pickMap = new Map();
+  for (const entry of log) {
+    if (entry && entry.overall != null) {
+      pickMap.set(entry.overall, entry);
+    }
+  }
+
+  const keeperMap = (typeof getKeeperPicksMap === 'function')
+    ? getKeeperPicksMap(keepers, teams, rounds, mode, tradedPicks)
+    : {};
+
+  const gridRounds = [];
+
+  for (let r = 1; r <= rounds; r++) {
+    const isFwd = roundIsForward(r, mode);
+    const rowPicks = [];
+
+    for (let s = 1; s <= teams; s++) {
+      const overall = overallPick(r, s, teams, mode);
+      const teamInfo = teamForOverall(overall, teams, mode, teamNames, mySlot, tradedPicks);
+      const entry = pickMap.get(overall);
+      const keeperPick = keeperMap[overall];
+      const isDrafted = Boolean(entry);
+      const isOnClock = (overall === currentPickNum);
+
+      let playerObj = null;
+      let isKeeper = false;
+      let isPendingKeeper = false;
+
+      if (entry) {
+        playerObj = resolvePickPlayer(entry, playersLookup);
+        isKeeper = Boolean(entry.isKeeper || (playerObj && playerObj.isKeeper) || keeperPick);
+      } else if (keeperPick) {
+        const p = (keeperPick.playerId != null && playersLookup)
+          ? ((typeof playersLookup === 'function') ? playersLookup(keeperPick.playerId) : playersLookup[keeperPick.playerId])
+          : null;
+        playerObj = {
+          id: keeperPick.playerId != null ? keeperPick.playerId : null,
+          name: keeperPick.customName || (p ? p.name : ('Keeper #' + (keeperPick.playerId || overall))),
+          pos: (keeperPick.customPos || (p ? p.pos : 'WR') || 'WR').toUpperCase(),
+          team: keeperPick.customTeam || (p ? p.team : '—') || '—',
+          bye: keeperPick.customBye != null ? keeperPick.customBye : (p ? p.bye : null),
+          isKeeper: true,
+          isPendingKeeper: true,
+          isUnlisted: Boolean(keeperPick.customName)
+        };
+        isKeeper = true;
+        isPendingKeeper = true;
+      }
+
+      rowPicks.push({
+        round: r,
+        slot: s,
+        overall: overall,
+        originalSlot: teamInfo.originalSlot != null ? teamInfo.originalSlot : s,
+        effectiveSlot: teamInfo.slot,
+        originalTeamName: (Array.isArray(teamNames) ? teamNames[s - 1] : null) || ('Team ' + s),
+        effectiveTeamName: teamInfo.name,
+        isTraded: Boolean(teamInfo.isTraded),
+        isMe: Boolean(teamInfo.isMe),
+        isOnClock: isOnClock,
+        isDrafted: isDrafted,
+        isKeeper: isKeeper,
+        isPendingKeeper: isPendingKeeper,
+        player: playerObj,
+        entry: entry || null,
+        keeper: keeperPick || null
+      });
+    }
+
+    gridRounds.push({
+      round: r,
+      isForward: isFwd,
+      picks: rowPicks
+    });
+  }
+
+  return {
+    teams: teams,
+    rounds: rounds,
+    mode: mode,
+    currentPick: currentPickNum,
+    grid: gridRounds
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     roundIsForward: roundIsForward,
@@ -1370,5 +1471,6 @@ if (typeof module !== 'undefined' && module.exports) {
     DRAFT_SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
     serializeDraftState: serializeDraftState,
     deserializeDraftState: deserializeDraftState,
+    generateDraftBoardGrid: generateDraftBoardGrid,
   };
 }

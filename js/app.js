@@ -82,6 +82,7 @@
 
     on('undobtn', 'click', undo);
     on('resetbtn', 'click', resetDraft);
+    on('boardbtn', 'click', openDraftBoardModal);
     on('unknownbtn', 'click', openUnlistedPickModal);
     on('jumpbtn', 'click', () => {
       const v = +$('jumppick').value;
@@ -109,6 +110,17 @@
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
         undo();
+      }
+      // Toggle Draft Board modal on 'b' or 'B' if not inside an input/textarea
+      if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        const modalBox = $('modalbox');
+        const overlay = $('overlay');
+        if (overlay && overlay.classList.contains('show') && modalBox && modalBox.classList.contains('modal-board')) {
+          closeModal();
+        } else {
+          openDraftBoardModal();
+        }
       }
     });
   }

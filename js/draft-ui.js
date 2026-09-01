@@ -534,13 +534,293 @@
     renderInspectRoster();
     renderLog();
     renderBanner();
+    if (isBoardModalOpen && $('modalbox') && $('modalbox').classList.contains('modal-board')) {
+      renderDraftBoardModalView();
+    }
   }
 
   // ---------- Modals ----------
+  let isBoardModalOpen = false;
+  let returnToBoardOnClose = false;
+  let boardHighlightFilter = 'ALL';
+  let boardDensity = 'normal';
+
   function closeModal() {
+    isBoardModalOpen = false;
+    returnToBoardOnClose = false;
     const overlay = $('overlay');
     if (overlay) overlay.classList.remove('show');
     if ($('modalbox')) $('modalbox').className = 'modal';
+  }
+
+  function handleClosePlayerModal() {
+    if (returnToBoardOnClose) {
+      returnToBoardOnClose = false;
+      openDraftBoardModal();
+    } else {
+      closeModal();
+    }
+  }
+
+  function openDraftBoardModal() {
+    isBoardModalOpen = true;
+    returnToBoardOnClose = false;
+    renderDraftBoardModalView();
+    setTimeout(() => {
+      scrollBoardToCurrentPick(false);
+    }, 60);
+  }
+
+  function closeBoardModal() {
+    isBoardModalOpen = false;
+    returnToBoardOnClose = false;
+    closeModal();
+  }
+
+  function setBoardFilter(filter) {
+    boardHighlightFilter = filter;
+    renderDraftBoardModalView();
+  }
+
+  function toggleBoardDensity() {
+    boardDensity = (boardDensity === 'normal' ? 'compact' : 'normal');
+    renderDraftBoardModalView();
+  }
+
+  function scrollBoardToCurrentPick(smooth = true) {
+    const container = $('board_container');
+    const clockCell = document.querySelector('.board-cell.on-clock');
+    if (container && clockCell) {
+      const targetLeft = clockCell.offsetLeft - (container.clientWidth / 2) + (clockCell.clientWidth / 2);
+      const targetTop = clockCell.offsetTop - (container.clientHeight / 2) + (clockCell.clientHeight / 2);
+      container.scrollTo({
+        left: Math.max(0, targetLeft),
+        top: Math.max(0, targetTop),
+        behavior: smooth ? 'smooth' : 'auto'
+      });
+    }
+  }
+
+  function showPlayerFromBoard(id) {
+    returnToBoardOnClose = true;
+    showPlayer(id);
+  }
+
+  function showUnlistedPlayerFromBoard(overall) {
+    returnToBoardOnClose = true;
+    showUnlistedPlayer(overall);
+  }
+
+  function renderDraftBoardModalView() {
+    const s = global.state.settings;
+    const pick = currentPick();
+    const totalPicks = s.teams * s.rounds;
+    const isComplete = pick > totalPicks;
+    const onClockTeam = !isComplete ? teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks) : null;
+
+    const boardData = (typeof generateDraftBoardGrid === 'function')
+      ? generateDraftBoardGrid({
+        teams: s.teams,
+        rounds: s.rounds,
+        mode: s.mode,
+        log: global.state.log,
+        keepers: global.state.keepers,
+        tradedPicks: global.state.tradedPicks,
+        teamNames: s.teamNames,
+        mySlot: s.slot,
+        currentPickNum: pick,
+        playersLookup: byId
+      })
+      : null;
+
+    if (!boardData) return;
+
+    const modalBox = $('modalbox');
+    if (modalBox) {
+      modalBox.className = 'modal modal-board';
+    }
+
+    // Filter Buttons
+    const filters = [
+      { id: 'ALL', label: 'ALL' },
+      { id: 'QB', label: 'QB', cls: 'filter-qb' },
+      { id: 'RB', label: 'RB', cls: 'filter-rb' },
+      { id: 'WR', label: 'WR', cls: 'filter-wr' },
+      { id: 'TE', label: 'TE', cls: 'filter-te' },
+      { id: 'K', label: 'K', cls: 'filter-k' },
+      { id: 'DST', label: 'D/ST', cls: 'filter-dst' },
+      { id: 'MY_TEAM', label: '⭐ My Team', cls: 'filter-mine' }
+    ];
+
+    const filterButtonsHtml = filters.map(f => {
+      const active = (boardHighlightFilter === f.id);
+      return '<button type="button" class="board-filter-btn' + (active ? ' active ' + (f.cls || '') : '') + '" onclick="setBoardFilter(\'' + f.id + '\')">' + f.label + '</button>';
+    }).join('');
+
+    const densityBtnLabel = boardDensity === 'normal' ? '🔍 Compact' : '🔎 Normal';
+    const densityClass = boardDensity === 'compact' ? ' board-compact' : '';
+
+    const draftedPicksCount = global.state.log.length;
+    const pct = Math.round((draftedPicksCount / totalPicks) * 100) || 0;
+
+    let clockStatusHtml = '';
+    if (isComplete) {
+      clockStatusHtml = '<span style="color:var(--good); font-weight:700">🏆 Draft Complete</span>';
+    } else {
+      clockStatusHtml = '<span>On Clock: <b style="color:' + (onClockTeam.isMe ? 'var(--good)' : 'var(--accent)') + '">' + onClockTeam.name + (onClockTeam.isMe ? ' (You)' : '') + '</b> · Pick <b>#' + pick + ' (' + fmtPick(pick, s.teams) + ')</b></span>';
+    }
+
+    // Table Header Generation
+    let tableHeadHtml = '<thead><tr class="board-header-row"><th class="board-corner-th">Rnd</th>';
+    for (let sIdx = 1; sIdx <= s.teams; sIdx++) {
+      const isMe = (sIdx === s.slot);
+      const isClock = (onClockTeam && sIdx === onClockTeam.slot);
+      const tName = getTeamName(sIdx);
+      tableHeadHtml += '<th class="board-th' + (isMe ? ' is-me' : '') + (isClock ? ' is-clock' : '') + '">'
+        + '<div class="board-th-team" title="' + tName.replace(/"/g, '&quot;') + '">' + (isMe ? '⭐ ' : '') + tName + '</div>'
+        + '<div class="board-th-slot">'
+        + '<span>Slot ' + sIdx + '</span>'
+        + (isMe ? ' <span style="color:var(--good); font-weight:700">(You)</span>' : '')
+        + '</div>'
+        + '</th>';
+    }
+    tableHeadHtml += '</tr></thead>';
+
+    // Table Body Rows
+    let tableBodyHtml = '<tbody>';
+    for (const roundRow of boardData.grid) {
+      const arrow = roundRow.isForward ? '➡️' : '⬅️';
+      tableBodyHtml += '<tr>';
+      tableBodyHtml += '<th class="board-round-th"><div class="board-round-num">R' + roundRow.round + '</div><div class="board-round-arrow" title="' + (roundRow.isForward ? 'Picks go left-to-right' : 'Picks go right-to-left') + '">' + arrow + '</div></th>';
+
+      for (const pickCell of roundRow.picks) {
+        const overall = pickCell.overall;
+        const isClock = pickCell.isOnClock;
+        const isMe = pickCell.isMe;
+
+        // Determine if cell is filtered out
+        let isDimmed = false;
+        if (boardHighlightFilter === 'MY_TEAM') {
+          isDimmed = !isMe;
+        } else if (boardHighlightFilter !== 'ALL') {
+          if (pickCell.player) {
+            const pPos = (pickCell.player.pos || '').toUpperCase();
+            if (boardHighlightFilter === 'DST') {
+              isDimmed = !['DST', 'DEF', 'D/ST'].includes(pPos);
+            } else {
+              isDimmed = (pPos !== boardHighlightFilter);
+            }
+          } else {
+            isDimmed = true;
+          }
+        }
+
+        const cellClasses = [
+          'board-cell',
+          isClock ? 'on-clock' : '',
+          isMe ? 'is-me' : '',
+          isDimmed ? 'board-dimmed' : ''
+        ].filter(Boolean).join(' ');
+
+        if (pickCell.isDrafted && pickCell.player) {
+          const p = pickCell.player;
+          const posUpper = (p.pos || '').toUpperCase();
+          const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper)
+            ? posUpper.toLowerCase()
+            : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
+
+          const clickFn = (p.id != null)
+            ? ('showPlayerFromBoard(' + p.id + ')')
+            : ('showUnlistedPlayerFromBoard(' + overall + ')');
+
+          const isKeeper = pickCell.isKeeper;
+          const isTraded = pickCell.isTraded;
+          const unlistedBadge = p.isUnlisted ? ' <span style="font-size:10px; font-weight:normal; opacity:0.8">(custom)</span>' : '';
+          const keeperBadge = isKeeper ? '<span class="keeper-tag-chip" title="Keeper Selection">🔒</span>' : '';
+          const tradedChip = isTraded ? '<span class="traded-tag" title="Originally ' + pickCell.originalTeamName + '">via ' + pickCell.originalTeamName + '</span>' : '';
+
+          tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+            + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
+            + '<div class="board-card-top">'
+            + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+            + '<span class="board-card-pos">' + (p.pos || '—') + '</span>'
+            + '</div>'
+            + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
+            + '<div class="board-card-bottom">'
+            + '<span class="board-card-team">' + (p.team && p.team !== '—' ? p.team : '—') + (p.bye ? ' · Wk ' + p.bye : '') + '</span>'
+            + '<div style="display:flex; align-items:center; gap:3px">' + keeperBadge + tradedChip + '</div>'
+            + '</div>'
+            + '</div>'
+            + '</td>';
+        } else if (pickCell.isPendingKeeper && pickCell.player) {
+          const p = pickCell.player;
+          const posUpper = (p.pos || '').toUpperCase();
+          const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper)
+            ? posUpper.toLowerCase()
+            : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
+
+          tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+            + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
+            + '<div class="board-card-top">'
+            + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+            + '<span class="keeper-tag-chip" style="font-size:10px">🔒 KEEPER</span>'
+            + '</div>'
+            + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + p.name + '</div>'
+            + '<div class="board-card-bottom">'
+            + '<span class="board-card-team">' + (p.team || '') + (p.bye ? ' · Wk ' + p.bye : '') + '</span>'
+            + '<span class="board-card-pos" style="font-size:9.5px">' + (p.pos || '—') + '</span>'
+            + '</div>'
+            + '</div>'
+            + '</td>';
+        } else {
+          // Empty upcoming cell
+          const onClockBadge = isClock ? '<span class="on-clock-badge">⚡ ON CLOCK</span>' : '';
+          const tradedChip = pickCell.isTraded ? '<span class="traded-tag">via ' + pickCell.originalTeamName + '</span>' : '';
+
+          tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+            + '<div class="board-empty">'
+            + '<div style="display:flex; justify-content:space-between; align-items:center">'
+            + '<span class="board-empty-pick">' + fmtPick(overall, s.teams) + ' <span style="font-size:10px; font-weight:normal">(#' + overall + ')</span></span>'
+            + onClockBadge
+            + '</div>'
+            + '<div style="display:flex; justify-content:space-between; align-items:flex-end">'
+            + '<span class="board-empty-sub">Slot ' + pickCell.effectiveSlot + '</span>'
+            + tradedChip
+            + '</div>'
+            + '</div>'
+            + '</td>';
+        }
+      }
+      tableBodyHtml += '</tr>';
+    }
+    tableBodyHtml += '</tbody>';
+
+    // Modal Template
+    $('modalbox').innerHTML =
+      '<div class="board-modal-header">'
+      + '<h3>📊 ' + (s.leagueName || "Ken's Draft Board") + ' — Draft Board Grid <span class="meta" style="font-size:13px; font-weight:normal">(' + s.teams + ' Teams · ' + s.rounds + ' Rounds · ' + (s.mode === '3rr' ? '3RR' : 'Snake') + ')</span></h3>'
+      + '<button class="close" onclick="closeBoardModal()">×</button>'
+      + '</div>'
+      + '<div class="board-toolbar">'
+      + '<div class="board-filters">'
+      + '<span class="meta" style="font-size:12px; margin-right:4px">Highlight:</span>'
+      + filterButtonsHtml
+      + '</div>'
+      + '<div class="board-actions">'
+      + '<div class="meta" style="font-size:12px; margin-right:8px">' + clockStatusHtml + ' · <span style="color:var(--dim)">' + draftedPicksCount + '/' + totalPicks + ' (' + pct + '%)</span></div>'
+      + (!isComplete ? '<button type="button" class="act" onclick="scrollBoardToCurrentPick(true)" style="font-size:11.5px; padding:3px 8px; font-weight:600; color:var(--accent); border-color:var(--accent)">⚡ Jump to On-Clock</button>' : '')
+      + '<button type="button" class="act" onclick="toggleBoardDensity()" style="font-size:11.5px; padding:3px 8px">' + densityBtnLabel + '</button>'
+      + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-size:11.5px; padding:3px 10px; font-weight:700">Done</button>'
+      + '</div>'
+      + '</div>'
+      + '<div class="board-container" id="board_container">'
+      + '<table class="board-table' + densityClass + '" id="board_table">'
+      + tableHeadHtml
+      + tableBodyHtml
+      + '</table>'
+      + '</div>';
+
+    $('overlay').classList.add('show');
   }
 
   function showPlayer(id) {
@@ -625,12 +905,19 @@
       ? '<button type="button" class="act' + (watched ? ' primary' : '') + '" onclick="toggleWatch(' + p.id + '); showPlayer(' + p.id + ');" style="margin-left:auto; font-size:12px">' + (watched ? '★ In Watchlist' : '☆ Add to Watchlist') + '</button>'
       : '';
 
+    const backBoardBtn = returnToBoardOnClose
+      ? '<button type="button" class="act" onclick="handleClosePlayerModal()" style="font-size:11.5px; padding:3px 8px; margin-left:auto; margin-right:6px">⬅️ Back to Board</button>'
+      : '';
+
+    if ($('modalbox')) $('modalbox').className = 'modal';
+
     $('modalbox').innerHTML =
       '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
       + (p.rookie ? '<span class="rookietag">R</span>' : '')
       + ' <span class="meta">' + (p.team || '') + '</span>' + status
+      + backBoardBtn
       + watchModalBtn
-      + '<button class="close" onclick="closeModal()">×</button></h3>'
+      + '<button class="close" onclick="handleClosePlayerModal()">×</button></h3>'
       + '<div class="statrow">' + stats + '</div>'
       + byeAlert + blurb + schedHtml + links;
     $('overlay').classList.add('show');
@@ -650,10 +937,17 @@
       + '<a target="_blank" href="https://www.espn.com/search/_/q/' + encodeURIComponent(p.name) + '">ESPN</a>'
       + '</div>';
 
+    const backBoardBtn = returnToBoardOnClose
+      ? '<button type="button" class="act" onclick="handleClosePlayerModal()" style="font-size:11.5px; padding:3px 8px; margin-left:auto; margin-right:6px">⬅️ Back to Board</button>'
+      : '';
+
+    if ($('modalbox')) $('modalbox').className = 'modal';
+
     $('modalbox').innerHTML =
       '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
       + ' <span class="meta">(Custom / Unlisted Pick)</span>'
-      + '<button class="close" onclick="closeModal()">×</button></h3>'
+      + backBoardBtn
+      + '<button class="close" onclick="handleClosePlayerModal()">×</button></h3>'
       + '<div class="statrow">'
       + '<span class="stat">Drafted By<b>' + tInfo.name + (isMine ? ' (You)' : '') + '</b></span>'
       + '<span class="stat">Pick<b>#' + entry.overall + ' (' + fmtPick(entry.overall, global.state.settings.teams) + ')</b></span>'
@@ -1454,5 +1748,14 @@
   global.handleKeeperMaxChange = handleKeeperMaxChange;
   global.saveKeepersAndBackToSetup = saveKeepersAndBackToSetup;
   global.saveAndCloseKeepersModal = saveAndCloseKeepersModal;
+  global.openDraftBoardModal = openDraftBoardModal;
+  global.renderDraftBoardModalView = renderDraftBoardModalView;
+  global.closeBoardModal = closeBoardModal;
+  global.setBoardFilter = setBoardFilter;
+  global.toggleBoardDensity = toggleBoardDensity;
+  global.scrollBoardToCurrentPick = scrollBoardToCurrentPick;
+  global.showPlayerFromBoard = showPlayerFromBoard;
+  global.showUnlistedPlayerFromBoard = showUnlistedPlayerFromBoard;
+  global.handleClosePlayerModal = handleClosePlayerModal;
 })(typeof window !== 'undefined' ? window : globalThis);
 
