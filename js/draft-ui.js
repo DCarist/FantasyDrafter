@@ -666,6 +666,12 @@
       return rows;
     }
 
+    let espnSyncBtn = '';
+    if (global.syncState && global.syncState.espnLeagueInfo && global.syncState.espnLeagueInfo.teams) {
+      const info = global.syncState.espnLeagueInfo;
+      espnSyncBtn = '<button type="button" class="act" onclick="applyEspnLeagueSetup(); openLeagueSetup();" style="font-size:11.5px; padding:3px 9px; color:var(--accent)">📥 Sync Teams & Slot from ESPN (' + info.teams + ' Teams' + (info.mySlot ? ' · Slot #' + info.mySlot : '') + ')</button>';
+    }
+
     $('modalbox').innerHTML =
       '<h3>⚙️ League Setup & Draft Positions'
       + '<button class="close" onclick="closeModal()">×</button></h3>'
@@ -690,7 +696,10 @@
       + '<div class="setup-field"><label>Bench Depth</label><input type="number" id="setup_roster_bench" min="0" max="40" value="' + (rs.bench ?? 15) + '"></div>'
       + '</div>'
       + '<div id="setup_roster_summary" style="margin: 8px 0; padding: 7px 10px; background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; color: var(--dim)"></div>'
-      + '<h4 style="margin-top:14px">Draft Order & Team Names</h4>'
+      + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:6px; flex-wrap:wrap; gap:6px">'
+      + '<h4 style="margin:0">Draft Order & Team Names</h4>'
+      + espnSyncBtn
+      + '</div>'
       + '<div class="meta" style="margin-bottom:6px">Assign team names to each draft slot, designate your team, or use the ▲▼ buttons to reorder positions.</div>'
       + '<div class="setup-teams-wrap"><table class="team-table"><tbody id="setup_teams_body">'
       + renderSetupTable(s.teams)

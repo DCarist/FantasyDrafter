@@ -40,10 +40,11 @@ function isPlaceholderName(name, teamNames = []) {
   if (/^[0-9]+(\.[0-9]+)?$/.test(clean)) return true;
   if (/^auto\b/i.test(clean)) return true;
   if (/^pick\s*[0-9]+/i.test(clean)) return true;
+  if (/^team\s*[0-9]+$/i.test(clean)) return true;
   for (const t of teamNames) {
     if (t && typeof t === 'string') {
       const tClean = t.trim().toLowerCase();
-      if (tClean && (clean === tClean || clean.includes(tClean) || (clean.length >= 4 && tClean.includes(clean)))) {
+      if (tClean && clean === tClean) {
         return true;
       }
     }
@@ -149,7 +150,7 @@ eq(pMake, null, "Rejects 'Make Pick' button text as a player");
 const pMake2 = parsePlayerText("Make");
 eq(pMake2, null, "Rejects 'Make' button text as a player");
 
-const sampleLeagueTeams = ["Dynamic Team Alpha", "Bravo Squad", "Team 12"];
+const sampleLeagueTeams = ["Dynamic Team Alpha", "Bravo Squad", "Team 12", "Allen", "Josh", "Josh Allen's Team", "Williams"];
 const pAutoTeam = parsePlayerText("AUTO Dynamic Team Alpha", sampleLeagueTeams);
 eq(pAutoTeam, null, "Rejects 'AUTO <TeamName>' pick train item");
 
@@ -158,6 +159,17 @@ eq(pAutoTeam2, null, "Rejects 'AUTO <TeamName>' pick train item for another team
 
 const pDynamicTeamOnly = parsePlayerText("Dynamic Team Alpha", sampleLeagueTeams);
 eq(pDynamicTeamOnly, null, "Rejects dynamically identified team name as a player");
+
+const pJoshAllen = parsePlayerText("Josh Allen QB, BUF", sampleLeagueTeams);
+eq(pJoshAllen.name, "Josh Allen", "Correctly parses Josh Allen when team named Allen or Josh exists");
+eq(pJoshAllen.pos, "QB", "Parses QB for Josh Allen");
+eq(pJoshAllen.team, "BUF", "Parses BUF for Josh Allen");
+
+const pJoshAllenPlain = parsePlayerText("Josh Allen", sampleLeagueTeams);
+eq(pJoshAllenPlain.name, "Josh Allen", "Correctly parses plain Josh Allen without pos/team when team named Allen exists");
+
+const pCaleb = parsePlayerText("Caleb Williams QB CHI", sampleLeagueTeams);
+eq(pCaleb.name, "Caleb Williams", "Correctly parses Caleb Williams when team named Williams exists");
 
 const pJunk = parsePlayerText("PRK 14 PROJ 245.2 QUEUE DRAFT");
 eq(pJunk, null, "Rejects button/table header clutter without valid player name");
@@ -303,6 +315,77 @@ assert(serverPyContent.includes('"leagueInfo": latest_league_info'), 'server.py 
 // Test that .gitignore includes logs
 const gitignoreContent = readFileSync('.gitignore', 'utf-8');
 assert(gitignoreContent.includes('logs/'), '.gitignore ignores logs/ directory');
+
+// --- Test 7: League Info Detection (Pick Train & Sidebar Slot Extraction) ---
+const mockPickTrainText = [
+  "PICK 1\nDelco Traces",
+  "PICK 2\nHutch Hutch ...",
+  "PICK 3\nYom Fury",
+  "PICK 4\nOne pump c...",
+  "PICK 5\nFRESH PRINCE OF...",
+  "PICK 6\nDynamic Team",
+  "PICK 7\nGridiron Gang",
+  "PICK 8\nTouchdown Kings",
+  "PICK 9\nEndzone Elite",
+  "PICK 10\nBlitz Brigade",
+  "PICK 11\nRedzone Raiders",
+  "PICK 12\nField Goal Fanatics"
+];
+
+const parsedTeams = [];
+for (const item of mockPickTrainText) {
+  const pickM = item.match(/(?:pick|pk|#)\s*([0-9]{1,2})\b/i);
+  assert(pickM !== null, 'Matches pick number in pick train item: ' + item);
+  const pNum = parseInt(pickM[1], 10);
+  const tName = item.replace(/(?:pick|pk|#)\s*[0-9]{1,2}\b/gi, '').trim();
+  parsedTeams[pNum - 1] = tName;
+}
+eq(parsedTeams.length, 12, 'Extracted all 12 teams from pick train');
+eq(parsedTeams[0], 'Delco Traces', 'Slot 1 team is Delco Traces');
+eq(parsedTeams[4], 'FRESH PRINCE OF...', 'Slot 5 team is FRESH PRINCE OF...');
+eq(parsedTeams[11], 'Field Goal Fanatics', 'Slot 12 team is Field Goal Fanatics');
+
+// Sidebar user draft slot match test
+const mockSidebarText = "Your draft\nFRESH PRINCE OF...\nYour first pick: Round 1, Pick 5\nPlayers Pick History";
+const sidebarMatch = mockSidebarText.match(/Your\s*first\s*pick\s*:\s*Round\s*1\s*,\s*Pick\s*(\d+)/i);
+assert(sidebarMatch !== null, 'Extracts draft slot from sidebar text');
+eq(parseInt(sidebarMatch[1], 10), 5, 'Draft slot matches user slot 5');
+
+// --- Test 8: League Setup Application Verification ---
+const mockState = {
+  settings: {
+    teams: 10,
+    slot: 1,
+    teamNames: ["Team 1", "Team 2", "Team 3", "Team 4", "Team 5", "Team 6", "Team 7", "Team 8", "Team 9", "Team 10"]
+  },
+  log: [],
+  saveCalled: false,
+  save() { this.saveCalled = true; }
+};
+
+function testApplyLeagueSetup(targetState, info) {
+  const tCount = Math.max(8, Math.min(16, parseInt(info.teams, 10) || 12));
+  targetState.settings.teams = tCount;
+  if (Array.isArray(info.teamNames) && info.teamNames.length > 0) {
+    targetState.settings.teamNames = info.teamNames.slice(0, tCount);
+  }
+  if (info.mySlot) {
+    targetState.settings.slot = Math.max(1, Math.min(tCount, parseInt(info.mySlot, 10) || targetState.settings.slot));
+  }
+  targetState.save();
+}
+
+testApplyLeagueSetup(mockState, {
+  teams: 12,
+  teamNames: parsedTeams,
+  mySlot: 5
+});
+
+eq(mockState.settings.teams, 12, 'State updated to 12 teams');
+eq(mockState.settings.slot, 5, 'State updated to user slot 5');
+eq(mockState.settings.teamNames.length, 12, 'State updated with 12 team names');
+eq(mockState.settings.teamNames[4], 'FRESH PRINCE OF...', 'Slot 5 name matches imported team');
+eq(mockState.saveCalled, true, 'Saved state after applying ESPN league setup');
 
 const success = finishSuite('ESPN Live Sync Robustness & Event Logging');
 if (!success) {

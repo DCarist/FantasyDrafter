@@ -130,6 +130,19 @@
     }
   }
 
+  function shouldAutoApplyLeagueInfo(info) {
+    if (!info || !info.teams || !Array.isArray(info.teamNames) || info.teamNames.length === 0) return false;
+    // Auto-apply if the local draft has not started yet (empty log) AND teamNames are still generic/default
+    if (global.state && global.state.log && global.state.log.length === 0 && global.state.settings) {
+      const s = global.state.settings;
+      const isDefaultNames = !s.teamNames || s.teamNames.length === 0 || s.teamNames.every((n, i) => n === ('Team ' + (i + 1)) || n === 'My Team' || n === 'Ken');
+      if (isDefaultNames || s.teams !== info.teams) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   async function pollServerSync() {
     const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
     try {
@@ -139,7 +152,11 @@
       if (data.serverTime) lastSyncTimestamp = data.serverTime;
 
       if (data.leagueInfo && data.leagueInfo.teams) {
+        const wasNew = !syncState.espnLeagueInfo || syncState.espnLeagueInfo.teams !== data.leagueInfo.teams || syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
         syncState.espnLeagueInfo = data.leagueInfo;
+        if (wasNew && shouldAutoApplyLeagueInfo(data.leagueInfo)) {
+          applyEspnLeagueSetup(true);
+        }
       }
 
       if (data.espnConnected) {
@@ -174,7 +191,11 @@
   function handleIncomingSyncEvent(data) {
     if (!data) return;
     if (data.leagueInfo && data.leagueInfo.teams) {
+      const wasNew = !syncState.espnLeagueInfo || syncState.espnLeagueInfo.teams !== data.leagueInfo.teams || syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
       syncState.espnLeagueInfo = data.leagueInfo;
+      if (wasNew && shouldAutoApplyLeagueInfo(data.leagueInfo)) {
+        applyEspnLeagueSetup(true);
+      }
     }
     if (data.type === 'SYNC_CONNECTED' || data.type === 'PONG' || data.type === 'SYNC_STATUS') {
       if (data.espnConnected !== false) {
@@ -509,13 +530,13 @@
     }
   }
 
-  function applyEspnLeagueSetup() {
+  function applyEspnLeagueSetup(silent = false) {
     const info = syncState.espnLeagueInfo;
     if (!info || !info.teams) {
-      alert('No ESPN league info received yet. Open or re-sync your ESPN draft room tab first.');
+      if (!silent) alert('No ESPN league info received yet. Open or re-sync your ESPN draft room tab first.');
       return;
     }
-    const tCount = Math.max(8, Math.min(16, parseInt(info.teams, 10) || 14));
+    const tCount = Math.max(8, Math.min(16, parseInt(info.teams, 10) || 12));
     global.state.settings.teams = tCount;
     if (Array.isArray(info.teamNames) && info.teamNames.length > 0) {
       global.state.settings.teamNames = info.teamNames.slice(0, tCount);
@@ -527,7 +548,9 @@
     if (typeof global.render === 'function') global.render();
     updateEspnStatusBox();
     const teamName = global.getTeamName(global.state.settings.slot);
-    alert(`✅ Successfully imported ${global.state.settings.teams} teams and Slot #${global.state.settings.slot} (${teamName}) from ESPN!`);
+    if (!silent) {
+      alert(`✅ Successfully imported ${global.state.settings.teams} teams and Slot #${global.state.settings.slot} (${teamName}) from ESPN!`);
+    }
   }
 
   function switchSyncTab(tabName) {
