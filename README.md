@@ -15,6 +15,7 @@ Fantasy Drafter is a fast, responsive fantasy football draft board designed for 
 - **Dynamic Roster Allocation**: Live starter slots calculation (`QB`, `RB`, `WR`, `TE`, `FLEX`, `Superflex`, `K`, `DST`) with automatic spillover into bench slots.
 - **Bye Week & Conflict Analysis**: Highlights roster bye week overlaps and stack opportunities in real time.
 - **Unlisted Player Resolution**: Seamlessly record and track custom/unlisted players without breaking consensus ranking data.
+- **Support for Keepers**: Easily add/modify delete keepers for leagues that have keeper rules. Full support for draft modification after keeper addition.
 
 ### ⚡ Automated Live Draft Sync
 - **📺 ESPN Live Sync (Chrome / Edge Extension)**:
