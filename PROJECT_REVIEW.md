@@ -1,9 +1,8 @@
 # Fantasy Drafter — Codebase Review & Functionality Report
 
-**Date:** August 24, 2026  
-**Project:** Ken's Draft Board (Superflex Dynasty Fantasy Football Drafter)  
-**Repository:** `d:\Programming\FantasyDrafter`  
-**Git Branch:** `dev` (clean working tree)  
+**Date:** September 1st, 2026  
+**Project:** DK's Draft Board (Superflex Dynasty Fantasy Football Drafter)  
+**Repository:** [Fantasy Drafter](https://github.com/DCarist/FantasyDrafter)  
 
 ---
 
@@ -72,45 +71,22 @@ FantasyDrafter/
 │   ├── league-setup.test.mjs   # Multi-team 3RR draft simulation test suite
 │   ├── live-sync.test.mjs      # Live draft synchronization and player resolution test suite
 │   ├── pick-trading.test.mjs   # Draft pick trading & dynamic ownership grid test suite
-│   ├── roster-slots.test.mjs   # Starter slots, bench allocation, and badge UI test suite
-│   ├── server-startup.test.mjs # 1-click startup, CLI flags, favicon, SSE & age check test suite
-│   ├── unlisted-picks.test.mjs # Custom unlisted picks and roster tracking test suite
-│   └── watchlist.test.mjs      # Draft watchlist management test suite
-```
-
-### File Details & Responsibilities
-
-| File | Language | Purpose & Functionality |
-| :--- | :--- | :--- |
-| **`draft-board.html`** | HTML5 | Clean semantic skeleton (<125 lines) defining the 3-column layout and modal targets. Links external modular styles and scripts. |
-| **`css/draft-board.css`** | CSS3 | Complete presentation layer: dark-mode tokens, responsive grids, tier breaks, position badges, matrix cards, pulse animations, and modal overlays. |
-| **`js/draft-audio.js`** | JavaScript | Web Audio API synthesizer for offline ascending major triad turn chimes with automatic browser gesture unlocking. |
-| **`js/draft-state.js`** | JavaScript | State normalization, local storage persistence, pick actions (`draftPlayer`, `undo`, `jumpTo`, `resetDraft`), player indexing, and unlisted draft resolution. |
-| **`js/draft-sync-client.js`** | JavaScript | Real-time live synchronization networking: zero-poll SSE stream receiver, Sleeper REST API polling, BroadcastChannel fallback, and server pick logging. |
-| **`js/draft-ui.js`** | JavaScript | DOM rendering engine: player pool table, my roster, inspect roster, draft log, watchlist panel, player detail modal, unlisted pick modal, draft board grid modal, and league setup dialog. |
-| **`js/app.js`** | JavaScript | Entry point: controls binding, keyboard shortcuts (`Esc` modal close, `/` quick search, `Ctrl+Z` undo, `b` toggle draft board), and initialization sequence. |
-| **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical, scoring, trading, queue, and analytics algorithms: `overallPick`, `slotForOverall`, `picksForSlot`, `generateDraftPicks`, `generateDraftBoardGrid`, `analyzeLiveDraftStrategy`, `generateDraftSummaryAnalysis`, `applyPickTrade`, `getPicksForTeam`, `isQueued`, `addToQueue`, `removeFromQueue`, `reorderQueue`, `cleanQueue`, `getAvailableQueue`, `validateKeeperAssignment`, `getKeeperPicksMap`, `isKeeperPick`, `remapKeepersOnSlotSwap`, `getNextDraftPicks`, `serializeDraftState`, `deserializeDraftState`, `compositeScore`, `computeFormatScore`, `assignRosterSlots`, `getByeClashStatus`, `parseSleeperDraft`, `resolveRemotePick`, and `reconcileDraftLog`. |
-| **`server.py`** | Python 3 | Local HTTP relay server providing CORS-enabled endpoints (`/api/sync/ping`, `/api/sync/pick`, `/api/sync/status`, `/api/sync/events`, `/api/sync/log`), directory anchoring, automatic browser tab launching (`webbrowser.open`), SVG football favicon (`/favicon.ico`), automated player data age validation (`ensure_player_data_fresh`), and real-time terminal draft activity feed with Windows UTF-8 support. |
-| **`start.bat`** | Windows Batch | **1-Click Opener** for Windows Explorer. Sets working directory to project root, starts Python server, and opens the draft board in the default web browser with automatic fallbacks for `python`/`py`/`python3`. |
-| **`start.ps1`** | PowerShell | PowerShell script to anchor script root location and start `server.py`. |
 | **`extensions/espn-sync/`** | JavaScript / Manifest V3 | Chrome & Edge unpacked browser extension that observes picks in ESPN Live Draft Rooms and streams them in real-time to Fantasy Drafter via local HTTP relay and Server-Sent Events. |
 | **`DRAFT_SYNC_API_OVERVIEW.md`** | Markdown | Technical specification covering Sleeper REST API polling, ESPN extension synchronization, and local HTTP relay endpoints. |
 | **`update-rankings.py`** | Python 3 | Automated ETL fetcher supporting both live URLs and offline local CSV files (`--ecr-source`, `--values-source`, `--sheet-source`, `--dry-run`), compiling 1,050+ active players into `players-data.js` and `players-data.json`. |
 | **`test-runner.mjs`** | Node.js (ESM) | Discovers and executes all test suites (`test-draft-logic.mjs` and all `tests/*.test.mjs`), reporting comprehensive failure and pass metrics. |
 
+```
 ---
 
-## 3. Current Feature Set & Capabilities
 
+## 3. Current Feature Set & Capabilities
 ### 3.1 Modular Separation & Client Architecture
 - **📦 Clean Decoupling:**
   - Separated inline CSS and 1,670+ lines of JavaScript into focused single-responsibility modules (`css/draft-board.css`, `js/draft-audio.js`, `js/draft-state.js`, `js/draft-sync-client.js`, `js/draft-ui.js`, `js/app.js`).
   - Zero build step or bundler requirement; preserves 100% offline static file execution while enabling modular testing and seamless feature expansion.
   - Semantic HTML skeleton reduced from 1,934 lines to 120 lines.
 
-### 3.2 Extensible Draft Engines
-- **🏈 Pick Ownership & Trading Engine (`draft-logic.js`):**
-  - Generates comprehensive pick ownership grids across all rounds (`generateDraftPicks`).
   - Supports trading pick numbers between teams (`applyPickTrade`) and dynamic slot pick re-computation (`picksForSlot` with traded picks map).
   - Maintains strict backwards compatibility with baseline tests when trades are not active.
 - **🎯 Target Queue & Shortlist Engine:**
@@ -191,32 +167,11 @@ FantasyDrafter/
   - **Sortable Power Rankings Table:** Sortable by Rank, Score, Starters, Bench, Positional Scores, and ADP Value, with clickable accordion drawers to inspect any team's full lineup.
 
 ---
-
-## 4. Testing Infrastructure
-
-The project includes an automated test runner executing **19 comprehensive test suites** covering over 3,050 assertions:
-
-```powershell
-npm test
-```
-
-### Test Suite Summary
-
-| Test Suite | File | Tests / Assertions | Status |
-| :--- | :--- | :--- | :--- |
-| **Baseline Draft Logic** | `test-draft-logic.mjs` | 23 assertions (3RR math, reversal direction, slot coverage, scoring curves) | ✅ Passing |
-| **Bye-Week Conflict Detection** | `tests/bye-conflicts.test.mjs` | 29 assertions (same-pos clashes, cross-pos alignments, self-exclusion) | ✅ Passing |
-| **Data Pipeline & Schema Integrity** | `tests/data-integrity.test.mjs` | 1,071 assertions (1,050+ player schemas, byes, 32 unique D/ST defenses) | ✅ Passing |
-| **Data Pipeline Ingestion & CLI** | `tests/data-pipeline.test.mjs` | 12 assertions (CLI help, offline CSV ingestion, dry-run, schema output) | ✅ Passing |
-| **Draft Board Grid Matrix** | `tests/draft-board-grid.test.mjs` | 38 assertions (2D matrix generation, 3RR reversals, keepers, trades, compact layout) | ✅ Passing |
-| **Draft Target Queue** | `tests/draft-queue.test.mjs` | 20 assertions (queue insertion, deduplication, removal, reordering, pick cleanup) | ✅ Passing |
-| **Draft State Serialization & V1 Migration** | `tests/draft-serialization.test.mjs` | 22 assertions (V2 state serialization, deserialization, legacy V1 migration) | ✅ Passing |
 | **Live Draft Strategy Radar & Threats** | `tests/draft-strategy-radar.test.mjs` | 19 assertions (next pick distance, opponent threat predictions, run danger alerts, user needs) | ✅ Passing |
 | **Post-Draft Summary & Positional Value** | `tests/draft-summary-analysis.test.mjs` | 17 assertions (positional value totals, league unit ranks #1..N, grades, superlatives) | ✅ Passing |
 | **Draft Pick Trading & Ownership Grid** | `tests/pick-trading.test.mjs` | 24 assertions (grid generation, trade assignments, reverting, team picks) | ✅ Passing |
 | **ESPN Live Sync Robustness & Event Logging** | `tests/espn-sync-robustness.test.mjs` | 28 assertions (pick format parsing, autopicker burst reconciliation, out-of-order guard, server log persistence) | ✅ Passing |
 | **Keepers & Pre-Drafted Players** | `tests/keepers.test.mjs` | 42 assertions (assignment validation, traded pick round capacity, slot swaps, in-place edit, inline roster, countdown) | ✅ Passing |
-| **Multi-Format League Scoring** | `tests/league-formats.test.mjs` | 27 assertions (1QB vs SF, PPR/Half/Std, TE Premium, rookie ranks) | ✅ Passing |
 | **League Setup & 3RR Simulation** | `tests/league-setup.test.mjs` | 1,572 assertions (8/10/12/14/16-team 25-round simulations) | ✅ Passing |
 | **Live Draft Synchronization** | `tests/live-sync.test.mjs` | 49 assertions (Sleeper/ESPN parsing, suffixes Jr/III, defenses, rollbacks) | ✅ Passing |
 | **Starter Slots & Lineup Allocation** | `tests/roster-slots.test.mjs` | 56 assertions (starter/bench allocation, inline badges, round totals) | ✅ Passing |
@@ -230,11 +185,8 @@ npm test
 
 ## 5. Development & Execution Quickstart
 
-### 1. Run Automated Test Suite
 ```powershell
 npm test
-```
-
 ### 2. Launch Local Web Server & Draft Board
 **Option A: 1-Click Batch (Windows Explorer)**  
 Double-click `start.bat` in the project folder.
@@ -247,7 +199,6 @@ npm start
 
 **Option C: Headless Server (No Browser Auto-Launch)**
 ```powershell
-npm run start:headless
 ```
 
 ### 3. Update to Latest Live Consensus Rankings
