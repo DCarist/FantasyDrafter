@@ -1321,7 +1321,7 @@ td.clickname:hover .pname {
 }
 
 .board-table.board-compact .board-cell {
-  height: 50px;
+  height: 48px;
 }
 
 /* Player Cards (Sleeper/ESPN Style) */
@@ -1341,7 +1341,9 @@ td.clickname:hover .pname {
 }
 
 .board-table.board-compact .board-card {
-  padding: 3px 5px;
+  padding: 4px 6px;
+  justify-content: center;
+  gap: 3px;
 }
 
 .board-card:hover {
@@ -1401,6 +1403,24 @@ td.clickname:hover .pname {
   gap: 4px;
 }
 
+.board-table.board-compact .board-card-top {
+  margin-bottom: 1px;
+}
+
+.board-card-top-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.board-card-compact-meta {
+  font-size: 10px;
+  font-weight: 600;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+
 .board-card-pick {
   font-size: 10px;
   font-weight: 700;
@@ -1415,6 +1435,11 @@ td.clickname:hover .pname {
   border-radius: 3px;
   color: #111;
   line-height: 1.15;
+}
+
+.board-table.board-compact .board-card-pos {
+  font-size: 9.5px;
+  padding: 0.5px 3px;
 }
 
 .board-card.qb .board-card-pos { background: var(--qb); }
@@ -1437,8 +1462,11 @@ td.clickname:hover .pname {
 }
 
 .board-table.board-compact .board-card-name {
-  font-size: 11.5px;
-  margin: 1px 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0;
+  padding-top: 1px;
 }
 
 .board-card-bottom {

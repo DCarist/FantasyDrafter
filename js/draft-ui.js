@@ -722,6 +722,8 @@
           isDimmed ? 'board-dimmed' : ''
         ].filter(Boolean).join(' ');
 
+        const isCompact = (boardDensity === 'compact');
+
         if (pickCell.isDrafted && pickCell.player) {
           const p = pickCell.player;
           const posUpper = (p.pos || '').toUpperCase();
@@ -738,20 +740,42 @@
           const unlistedBadge = p.isUnlisted ? ' <span style="font-size:10px; font-weight:normal; opacity:0.8">(custom)</span>' : '';
           const keeperBadge = isKeeper ? '<span class="keeper-tag-chip" title="Keeper Selection">🔒</span>' : '';
           const tradedChip = isTraded ? '<span class="traded-tag" title="Originally ' + pickCell.originalTeamName + '">via ' + pickCell.originalTeamName + '</span>' : '';
+          const teamByeStr = (p.team && p.team !== '—' ? p.team : '') + (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
 
-          tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
-            + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
-            + '<div class="board-card-top">'
-            + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
-            + '<span class="board-card-pos">' + (p.pos || '—') + '</span>'
-            + '</div>'
-            + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
-            + '<div class="board-card-bottom">'
-            + '<span class="board-card-team">' + (p.team && p.team !== '—' ? p.team : '—') + (p.bye ? ' · Wk ' + p.bye : '') + '</span>'
-            + '<div style="display:flex; align-items:center; gap:3px">' + keeperBadge + tradedChip + '</div>'
-            + '</div>'
-            + '</div>'
-            + '</td>';
+          if (isCompact) {
+            let topEndHtml = '';
+            if (isKeeper) {
+              topEndHtml = '<span class="board-card-compact-meta">' + keeperBadge + ' ' + (teamByeStr || '—') + '</span>'
+                + '<span class="board-card-pos">' + (p.pos || '—') + '</span>';
+            } else {
+              topEndHtml = (tradedChip ? tradedChip + ' ' : '')
+                + '<span class="board-card-compact-meta">' + (teamByeStr || (p.pos || '—')) + '</span>';
+            }
+
+            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+              + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
+              + '<div class="board-card-top">'
+              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+              + '<div class="board-card-top-end">' + topEndHtml + '</div>'
+              + '</div>'
+              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
+              + '</div>'
+              + '</td>';
+          } else {
+            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+              + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
+              + '<div class="board-card-top">'
+              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+              + '<span class="board-card-pos">' + (p.pos || '—') + '</span>'
+              + '</div>'
+              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
+              + '<div class="board-card-bottom">'
+              + '<span class="board-card-team">' + (teamByeStr || '—') + '</span>'
+              + '<div style="display:flex; align-items:center; gap:3px">' + keeperBadge + tradedChip + '</div>'
+              + '</div>'
+              + '</div>'
+              + '</td>';
+          }
         } else if (pickCell.isPendingKeeper && pickCell.player) {
           const p = pickCell.player;
           const posUpper = (p.pos || '').toUpperCase();
@@ -759,19 +783,40 @@
             ? posUpper.toLowerCase()
             : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
 
-          tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
-            + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
-            + '<div class="board-card-top">'
-            + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
-            + '<span class="keeper-tag-chip" style="font-size:10px">🔒 KEEPER</span>'
-            + '</div>'
-            + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + p.name + '</div>'
-            + '<div class="board-card-bottom">'
-            + '<span class="board-card-team">' + (p.team || '') + (p.bye ? ' · Wk ' + p.bye : '') + '</span>'
-            + '<span class="board-card-pos" style="font-size:9.5px">' + (p.pos || '—') + '</span>'
-            + '</div>'
-            + '</div>'
-            + '</td>';
+          const teamByeStr = (p.team && p.team !== '—' ? p.team : '') + (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
+
+          if (isCompact) {
+            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+              + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
+              + '<div class="board-card-top">'
+              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+              + '<div class="board-card-top-end">'
+              + '<span class="keeper-tag-chip">🔒</span>'
+              + '<span class="board-card-compact-meta">' + (teamByeStr || '—') + '</span>'
+              + '<span class="board-card-pos">' + (p.pos || '—') + '</span>'
+              + '</div>'
+              + '</div>'
+              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + p.name + '</div>'
+              + '</div>'
+              + '</td>';
+          } else {
+            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+              + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
+              + '<div class="board-card-top">'
+              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+              + '<div style="display:inline-flex; align-items:center; gap:4px">'
+              + '<span class="keeper-tag-chip">🔒</span>'
+              + '<span class="board-card-team" style="font-size:10.5px">' + (teamByeStr || '—') + '</span>'
+              + '</div>'
+              + '</div>'
+              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + p.name + '</div>'
+              + '<div class="board-card-bottom">'
+              + '<span class="meta" style="font-size:10px; color:var(--warn)">Keeper Assignment</span>'
+              + '<span class="board-card-pos">' + (p.pos || '—') + '</span>'
+              + '</div>'
+              + '</div>'
+              + '</td>';
+          }
         } else {
           // Empty upcoming cell
           const onClockBadge = isClock ? '<span class="on-clock-badge">⚡ ON CLOCK</span>' : '';
