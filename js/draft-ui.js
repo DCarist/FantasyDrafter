@@ -950,8 +950,9 @@
         + '</table>'
         + '</div>';
     } else if (boardActiveTab === 'strategy') {
+      const taken = (typeof takenMap === 'function') ? takenMap() : (typeof global.takenMap === 'function' ? global.takenMap() : new Map());
       const availablePlayers = (global.data && Array.isArray(global.data.players))
-        ? global.data.players.filter(p => !isTaken(p.id))
+        ? global.data.players.filter(p => !taken.has(p.id))
         : [];
 
       const strat = (typeof analyzeLiveDraftStrategy === 'function')
