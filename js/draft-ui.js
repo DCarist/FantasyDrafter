@@ -951,9 +951,8 @@
         + '</div>';
     } else if (boardActiveTab === 'strategy') {
       const taken = (typeof takenMap === 'function') ? takenMap() : (typeof global.takenMap === 'function' ? global.takenMap() : new Map());
-      const availablePlayers = (global.data && Array.isArray(global.data.players))
-        ? global.data.players.filter(p => !taken.has(p.id))
-        : [];
+      const allScored = (typeof scored === 'function') ? scored() : (Array.isArray(global.PLAYERS) ? global.PLAYERS : []);
+      const availablePlayers = allScored.filter(p => p && p.id != null && !taken.has(p.id));
 
       const strat = (typeof analyzeLiveDraftStrategy === 'function')
         ? analyzeLiveDraftStrategy({
