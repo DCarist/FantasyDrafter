@@ -286,7 +286,7 @@ tr.tierbreak td {
 
 .pos.DST,
 .pos.DEF,
-.pos["D/ST"] {
+.pos.D\/ST {
   background: var(--dst);
 }
 
