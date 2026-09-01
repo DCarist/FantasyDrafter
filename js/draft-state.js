@@ -12,6 +12,7 @@
     qbFormat: 'sf',
     teprem: false,
     blend: 60,
+    maxKeepers: 2,
     audioChime: true,
     visualPulse: true,
     autoUnlistedSync: true,
@@ -40,6 +41,10 @@
 
     if (!['ppr', 'half', 'std'].includes(s.settings.scoring)) s.settings.scoring = 'half';
     if (!['sf', '1qb'].includes(s.settings.qbFormat)) s.settings.qbFormat = 'sf';
+
+    s.settings.maxKeepers = (s.settings.maxKeepers !== undefined && s.settings.maxKeepers !== null)
+      ? Math.max(0, Math.min(10, parseInt(s.settings.maxKeepers, 10) || 0))
+      : 2;
 
     if (s.settings.audioChime === undefined) s.settings.audioChime = true;
     if (s.settings.visualPulse === undefined) s.settings.visualPulse = true;
@@ -76,6 +81,23 @@
       s.settings.rounds = totalRounds;
     }
 
+    const rawKeepers = Array.isArray(s.keepers) ? s.keepers : (Array.isArray(s.settings.keepers) ? s.settings.keepers : []);
+    const validKeepers = [];
+    for (const k of rawKeepers) {
+      if (!k || typeof k !== 'object') continue;
+      validKeepers.push({
+        id: k.id || ('k_' + Math.random().toString(36).substr(2, 9)),
+        slot: Math.max(1, Math.min(tCount, parseInt(k.slot, 10) || 1)),
+        round: Math.max(1, Math.min(s.settings.rounds || 50, parseInt(k.round, 10) || 1)),
+        playerId: k.playerId != null ? parseInt(k.playerId, 10) : null,
+        customName: k.customName ? String(k.customName).trim() : null,
+        customPos: k.customPos ? String(k.customPos).trim().toUpperCase() : null,
+        customTeam: k.customTeam ? String(k.customTeam).trim().toUpperCase() : null,
+        customBye: k.customBye != null ? parseInt(k.customBye, 10) : null
+      });
+    }
+    s.keepers = validKeepers;
+
     if (!Array.isArray(s.log)) s.log = [];
     if (!Array.isArray(s.watchlist)) s.watchlist = [];
     if (!Array.isArray(s.queue)) s.queue = [];
@@ -91,7 +113,7 @@
         return normalizeState(s);
       }
     } catch (e) { /* fallback on error */ }
-    return normalizeState({ settings: Object.assign({}, DEFAULTS), log: [], watchlist: [], queue: [], tradedPicks: {} });
+    return normalizeState({ settings: Object.assign({}, DEFAULTS), keepers: [], log: [], watchlist: [], queue: [], tradedPicks: {} });
   }
 
   function save() {
@@ -126,6 +148,15 @@
 
   function takenMap() {
     const m = new Map();
+    // 1. Mark pre-configured keepers as taken from Pick #1
+    if (Array.isArray(state.keepers)) {
+      for (const k of state.keepers) {
+        if (k && k.playerId != null) {
+          m.set(k.playerId, (k.slot === state.settings.slot) ? 'me' : 'other');
+        }
+      }
+    }
+    // 2. Mark drafted players from log
     for (const entry of state.log) {
       if (entry.playerId != null) {
         const tInfo = teamForOverall(entry.overall, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
@@ -155,6 +186,115 @@
     }
   }
 
+  function autoAdvanceKeepers() {
+    let advanced = false;
+    const totalPicks = state.settings.teams * state.settings.rounds;
+    while (currentPick() <= totalPicks) {
+      const pick = currentPick();
+      const keeper = (typeof isKeeperPick === 'function')
+        ? isKeeperPick(pick, state.keepers, state.settings.teams, state.settings.rounds, state.settings.mode, state.tradedPicks)
+        : null;
+      if (!keeper) break;
+
+      const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
+      const p = (keeper.playerId != null) ? (byId(keeper.playerId) || {}) : {};
+      const posVal = keeper.customPos || p.pos || 'WR';
+      const nameVal = keeper.customName || p.name || ('Keeper ' + posVal);
+      const teamVal = keeper.customTeam || p.team || '';
+      const byeVal = keeper.customBye || p.bye || null;
+
+      state.log.push({
+        overall: pick,
+        playerId: keeper.playerId != null ? keeper.playerId : null,
+        customName: keeper.playerId == null ? nameVal : null,
+        customPos: posVal,
+        customTeam: teamVal || null,
+        customBye: byeVal,
+        mine: who.isMe,
+        isKeeper: true
+      });
+
+      if (keeper.playerId != null) {
+        state.watchlist = cleanWatchlist(state.watchlist, [keeper.playerId]);
+        if (typeof cleanQueue === 'function') {
+          state.queue = cleanQueue(state.queue, [keeper.playerId]);
+        }
+      }
+
+      sendServerPick({
+        source: 'keeper',
+        overall: pick,
+        name: nameVal + ' [Keeper]',
+        pos: posVal,
+        team: teamVal,
+        by: who.name + (who.isMe ? ' (You)' : '')
+      });
+
+      advanced = true;
+    }
+    return advanced;
+  }
+
+  function addKeeper(candidate) {
+    if (!candidate) return { ok: false, error: 'Empty keeper payload' };
+    if (typeof validateKeeperAssignment === 'function') {
+      const validation = validateKeeperAssignment(
+        candidate,
+        state.keepers,
+        state.settings.maxKeepers,
+        state.settings.teams,
+        state.settings.rounds,
+        state.settings.mode,
+        state.tradedPicks
+      );
+      if (!validation.valid) {
+        return { ok: false, error: validation.error };
+      }
+    }
+
+    const newKeeper = {
+      id: candidate.id || ('k_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
+      slot: parseInt(candidate.slot, 10) || 1,
+      round: parseInt(candidate.round, 10) || 1,
+      playerId: candidate.playerId != null ? parseInt(candidate.playerId, 10) : null,
+      customName: candidate.customName ? String(candidate.customName).trim() : null,
+      customPos: candidate.customPos ? String(candidate.customPos).trim().toUpperCase() : null,
+      customTeam: candidate.customTeam ? String(candidate.customTeam).trim().toUpperCase() : null,
+      customBye: candidate.customBye != null ? parseInt(candidate.customBye, 10) : null
+    };
+
+    const existingIndex = candidate.id ? state.keepers.findIndex(k => k && k.id === candidate.id) : -1;
+    if (existingIndex >= 0) {
+      state.keepers[existingIndex] = newKeeper;
+    } else {
+      state.keepers.push(newKeeper);
+    }
+
+    if (newKeeper.playerId != null) {
+      state.watchlist = cleanWatchlist(state.watchlist, [newKeeper.playerId]);
+      if (typeof cleanQueue === 'function') {
+        state.queue = cleanQueue(state.queue, [newKeeper.playerId]);
+      }
+    }
+
+    autoAdvanceKeepers();
+    save();
+    if (typeof render === 'function') render();
+    return { ok: true, keeper: newKeeper };
+  }
+
+  function removeKeeper(keeperId) {
+    if (!keeperId) return;
+    state.keepers = state.keepers.filter(k => k && k.id !== keeperId);
+    save();
+    if (typeof render === 'function') render();
+  }
+
+  function updateMaxKeepers(val) {
+    state.settings.maxKeepers = Math.max(0, Math.min(10, parseInt(val, 10) || 0));
+    save();
+  }
+
   function draftPlayer(id, mine) {
     const pick = currentPick();
     state.log.push({ overall: pick, playerId: id, mine: Boolean(mine) });
@@ -162,6 +302,7 @@
     if (typeof cleanQueue === 'function') {
       state.queue = cleanQueue(state.queue, [id]);
     }
+    autoAdvanceKeepers();
     save();
     if (typeof render === 'function') render();
 
@@ -200,8 +341,9 @@
       customBye: (bye && bye >= 1 && bye <= 18) ? bye : null,
       mine: who.isMe
     });
-    save();
     if (typeof closeModal === 'function') closeModal();
+    autoAdvanceKeepers();
+    save();
     if (typeof render === 'function') render();
 
     sendServerPick({
@@ -226,8 +368,28 @@
     pick = Math.max(1, Math.floor(pick));
     while (state.log.length > pick - 1) state.log.pop();
     while (state.log.length < pick - 1) {
-      state.log.push({ overall: state.log.length + 1, playerId: null, customName: 'Skipped pick', customPos: 'OTHER', mine: false });
+      const nextPickNum = state.log.length + 1;
+      const keeper = (typeof isKeeperPick === 'function')
+        ? isKeeperPick(nextPickNum, state.keepers, state.settings.teams, state.settings.rounds, state.settings.mode, state.tradedPicks)
+        : null;
+      if (keeper) {
+        const who = teamForOverall(nextPickNum, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
+        const p = (keeper.playerId != null) ? (byId(keeper.playerId) || {}) : {};
+        state.log.push({
+          overall: nextPickNum,
+          playerId: keeper.playerId != null ? keeper.playerId : null,
+          customName: keeper.playerId == null ? (keeper.customName || 'Keeper') : null,
+          customPos: keeper.customPos || p.pos || 'WR',
+          customTeam: keeper.customTeam || p.team || null,
+          customBye: keeper.customBye || p.bye || null,
+          mine: who.isMe,
+          isKeeper: true
+        });
+      } else {
+        state.log.push({ overall: nextPickNum, playerId: null, customName: 'Skipped pick', customPos: 'OTHER', mine: false });
+      }
     }
+    autoAdvanceKeepers();
     const taken = takenMap();
     state.watchlist = cleanWatchlist(state.watchlist, taken);
     if (typeof cleanQueue === 'function') {
@@ -237,9 +399,21 @@
     if (typeof render === 'function') render();
   }
 
-  function resetDraft() {
-    if (!confirm('Clear the whole draft (all picks and rosters)?')) return;
-    state.log = [];
+  function resetDraft(wipeKeepers) {
+    if (wipeKeepers === true) {
+      if (!confirm('Clear all draft picks AND all keeper assignments?')) return;
+      state.log = [];
+      state.keepers = [];
+    } else {
+      if (state.keepers && state.keepers.length > 0) {
+        const choice = confirm('Clear the draft board back to Pick #1?\n\n• Click OK to reset draft picks (configured Keepers will be preserved)\n• Click Cancel to abort reset');
+        if (!choice) return;
+      } else {
+        if (!confirm('Clear the whole draft (all picks and rosters)?')) return;
+      }
+      state.log = [];
+    }
+    autoAdvanceKeepers();
     save();
     if (typeof render === 'function') render();
     sendServerEvent('🔄 Draft board reset to Pick #1', 'info');
@@ -269,6 +443,10 @@
   global.byId = byId;
   global.takenMap = takenMap;
   global.currentPick = currentPick;
+  global.autoAdvanceKeepers = autoAdvanceKeepers;
+  global.addKeeper = addKeeper;
+  global.removeKeeper = removeKeeper;
+  global.updateMaxKeepers = updateMaxKeepers;
   global.draftPlayer = draftPlayer;
   global.toggleWatch = toggleWatch;
   global.draftUnlistedPlayer = draftUnlistedPlayer;

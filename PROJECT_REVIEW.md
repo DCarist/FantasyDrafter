@@ -63,6 +63,7 @@ FantasyDrafter/
     ├── data-pipeline.test.mjs  # Data pipeline CLI, offline file ingestion & schema test suite
     ├── draft-queue.test.mjs    # Target queue ordering, deduplication & pick cleanup test suite
     ├── draft-serialization.test.mjs # V2 schema serialization, deserialization & legacy V1 migration test suite
+    ├── keepers.test.mjs        # Keeper player selection, trade slot remapping, and inline roster allocation test suite
     ├── league-formats.test.mjs # Multi-format rankings and scoring models test suite
     ├── league-setup.test.mjs   # Multi-team 3RR draft simulation test suite
     ├── live-sync.test.mjs      # Live draft synchronization and player resolution test suite
@@ -84,7 +85,7 @@ FantasyDrafter/
 | **`js/draft-sync-client.js`** | JavaScript | Real-time live synchronization networking: zero-poll SSE stream receiver, Sleeper REST API polling, BroadcastChannel fallback, and server pick logging. |
 | **`js/draft-ui.js`** | JavaScript | DOM rendering engine: player pool table, my roster, inspect roster, draft log, watchlist panel, player detail modal, unlisted pick modal, and league setup dialog. |
 | **`js/app.js`** | JavaScript | Entry point: controls binding, keyboard shortcuts (`Esc` modal close, `/` quick search, `Ctrl+Z` undo), and initialization sequence. |
-| **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical, scoring, trading, queue, and sync algorithms: `overallPick`, `slotForOverall`, `picksForSlot`, `generateDraftPicks`, `applyPickTrade`, `getPicksForTeam`, `isQueued`, `addToQueue`, `removeFromQueue`, `reorderQueue`, `cleanQueue`, `getAvailableQueue`, `serializeDraftState`, `deserializeDraftState`, `compositeScore`, `computeFormatScore`, `assignRosterSlots`, `getByeClashStatus`, `parseSleeperDraft`, `resolveRemotePick`, and `reconcileDraftLog`. |
+| **`draft-logic.js`** | JavaScript (UMD) | Pure mathematical, scoring, trading, queue, and sync algorithms: `overallPick`, `slotForOverall`, `picksForSlot`, `generateDraftPicks`, `applyPickTrade`, `getPicksForTeam`, `isQueued`, `addToQueue`, `removeFromQueue`, `reorderQueue`, `cleanQueue`, `getAvailableQueue`, `validateKeeperAssignment`, `getKeeperPicksMap`, `isKeeperPick`, `remapKeepersOnSlotSwap`, `getNextDraftPicks`, `serializeDraftState`, `deserializeDraftState`, `compositeScore`, `computeFormatScore`, `assignRosterSlots`, `getByeClashStatus`, `parseSleeperDraft`, `resolveRemotePick`, and `reconcileDraftLog`. |
 | **`server.py`** | Python 3 | Local HTTP relay server providing CORS-enabled endpoints (`/api/sync/ping`, `/api/sync/pick`, `/api/sync/status`, `/api/sync/events`, `/api/sync/log`), directory anchoring, automatic browser tab launching (`webbrowser.open`), SVG football favicon (`/favicon.ico`), automated player data age validation (`ensure_player_data_fresh`), and real-time terminal draft activity feed with Windows UTF-8 support. |
 | **`start.bat`** | Windows Batch | **1-Click Opener** for Windows Explorer. Sets working directory to project root, starts Python server, and opens the draft board in the default web browser with automatic fallbacks for `python`/`py`/`python3`. |
 | **`start.ps1`** | PowerShell | PowerShell script to anchor script root location and start `server.py`. |
@@ -153,11 +154,23 @@ FantasyDrafter/
   - **Full League Inspector:** Dropdown allows inspecting any team's roster and position count across the league at any time.
   - **Draft Log:** Reverse chronological history showing pick number, round.slot, drafting team, player name, position, and NFL team.
 
+### 3.6 Keepers & Pre-Drafted Players Management
+- **🔒 Flexible Keeper Configuration (`#keepersModal`):**
+  - Configurable max keepers per team (`maxKeepers`, default `2`, range `0–10`). Teams can have 0, 1, or multiple keepers up to the league limit.
+  - Search and select real NFL players from the player pool or input custom unlisted players with custom name, position, NFL team, and bye week.
+  - Cost round validation (`validateKeeperAssignment`) ensures teams have sufficient owned picks in the assigned round (accounting for traded picks) and prevents assigning duplicate players.
+  - In-place keeper editing allows modifying an existing keeper's round, team slot, or player without self-collision errors or needing to delete and re-add.
+  - Automatic team slot remapping (`remapKeepersOnSlotSwap`) when draft order is rearranged in League Setup, ensuring keepers stay attached to their teams.
+- **⚡ Pre-Draft Inline Lineup Allocation & Dynamic Countdown:**
+  - Configured keepers populate directly into team rosters from pick 1 of the draft, immediately occupying starter slots (`[QB badge] Josh Allen BUF 🔒 9.09 bye 7`) and factoring into positional needs and starter capacity.
+  - Automated draft execution (`autoAdvanceKeepers`): automatically records keeper picks to `draftLog` and syncs them via local relay when the draft reaches that pick number.
+  - Accurate countdown & clock alerts (`getNextDraftPicks`): skips automated keeper picks when determining the user's next active draft selection, preventing premature `soon` clock alerts.
+
 ---
 
 ## 4. Testing Infrastructure
 
-The project includes an automated test runner executing **15 comprehensive test suites** covering over 2,850 assertions:
+The project includes an automated test runner executing **16 comprehensive test suites** covering over 2,890 assertions:
 
 ```powershell
 npm test
@@ -175,6 +188,7 @@ npm test
 | **Draft State Serialization & V1 Migration** | `tests/draft-serialization.test.mjs` | 22 assertions (V2 state serialization, deserialization, legacy V1 migration) | ✅ Passing |
 | **Draft Pick Trading & Ownership Grid** | `tests/pick-trading.test.mjs` | 24 assertions (grid generation, trade assignments, reverting, team picks) | ✅ Passing |
 | **ESPN Live Sync Robustness & Event Logging** | `tests/espn-sync-robustness.test.mjs` | 28 assertions (pick format parsing, autopicker burst reconciliation, out-of-order guard, server log persistence) | ✅ Passing |
+| **Keepers & Pre-Drafted Players** | `tests/keepers.test.mjs` | 42 assertions (assignment validation, traded pick round capacity, slot swaps, in-place edit, inline roster, countdown) | ✅ Passing |
 | **Multi-Format League Scoring** | `tests/league-formats.test.mjs` | 27 assertions (1QB vs SF, PPR/Half/Std, TE Premium, rookie ranks) | ✅ Passing |
 | **League Setup & 3RR Simulation** | `tests/league-setup.test.mjs` | 1,572 assertions (8/10/12/14/16-team 25-round simulations) | ✅ Passing |
 | **Live Draft Synchronization** | `tests/live-sync.test.mjs` | 49 assertions (Sleeper/ESPN parsing, suffixes Jr/III, defenses, rollbacks) | ✅ Passing |
@@ -183,7 +197,7 @@ npm test
 | **Unlisted Picks & Custom Resolution** | `tests/unlisted-picks.test.mjs` | 13 assertions (custom name/pos/bye/team resolution, fallback naming) | ✅ Passing |
 | **Draft Watchlist Management** | `tests/watchlist.test.mjs` | 18 assertions (star toggle, add/remove, auto-cleanup on draft, persistence) | ✅ Passing |
 
-**Total:** 15 suites passing (0 failures).
+**Total:** 16 suites passing (0 failures).
 
 ---
 

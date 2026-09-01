@@ -35,10 +35,30 @@
     } else {
       const who = teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
       const isMe = who.isMe;
-      clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + (isMe ? ' (YOU ARE ON THE CLOCK)' : ' (Slot ' + who.slot + ')');
+
+      const currentKeeper = (typeof isKeeperPick === 'function')
+        ? isKeeperPick(pick, global.state.keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
+        : null;
+
+      const nextData = (typeof getNextDraftPicks === 'function')
+        ? getNextDraftPicks(s.slot, pick, s.teams, s.rounds, s.mode, global.state.tradedPicks, global.state.keepers)
+        : {
+          upcoming: picksForSlot(s.slot, s.teams, s.rounds, s.mode, global.state.tradedPicks).filter(p => p >= pick),
+          draftPicks: [],
+          nextDraftPick: null,
+          distanceToNextDraftPick: null,
+          isSoon: false
+        };
 
       // Auditory and visual cues for user's turn
-      if (isMe) {
+      if (currentKeeper) {
+        const kp = (currentKeeper.playerId != null) ? (byId(currentKeeper.playerId) || {}) : {};
+        const kName = currentKeeper.customName || kp.name || ('Player #' + currentKeeper.playerId);
+        clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + ' (🔒 Keeper: ' + kName + ')';
+        clock.className = 'clock';
+        lastOnClockPickNotified = null;
+      } else if (isMe) {
+        clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + ' (YOU ARE ON THE CLOCK)';
         clock.className = 'clock mine' + (s.visualPulse ? ' pulse-anim' : '');
         if (lastOnClockPickNotified !== pick) {
           lastOnClockPickNotified = pick;
@@ -46,19 +66,34 @@
         }
       } else {
         lastOnClockPickNotified = null;
-        const myPicks = picksForSlot(s.slot, s.teams, s.rounds, s.mode, global.state.tradedPicks).filter(p => p >= pick);
-        if (myPicks.length && myPicks[0] - pick <= 3) {
+        clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + ' (Slot ' + who.slot + ')';
+        if (nextData.isSoon) {
           clock.className = 'clock soon';
         } else {
           clock.className = 'clock';
         }
       }
 
-      const myPicks = picksForSlot(s.slot, s.teams, s.rounds, s.mode, global.state.tradedPicks).filter(p => p >= pick);
       if ($('nextpicks')) {
-        $('nextpicks').innerHTML = myPicks.length
-          ? 'Your next picks: ' + myPicks.slice(0, 5).map((p, i) => i === 0 ? '<b>#' + p + ' (in ' + (p - pick) + ')</b>' : '#' + p).join(', ')
-          : 'No picks left';
+        if (!nextData.upcoming || nextData.upcoming.length === 0) {
+          $('nextpicks').innerHTML = 'No picks left';
+        } else {
+          const items = nextData.upcoming.slice(0, 5).map(p => {
+            const k = (typeof isKeeperPick === 'function')
+              ? isKeeperPick(p, global.state.keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
+              : null;
+            if (k) {
+              const kp = (k.playerId != null) ? (byId(k.playerId) || {}) : {};
+              const kName = k.customName || kp.name || 'Keeper';
+              return '<span title="Keeper: ' + kName.replace(/"/g, '&quot;') + '">#' + p + ' <span class="meta" style="color:var(--warn); font-size:11.5px">(🔒 Keeper)</span></span>';
+            }
+            if (p === nextData.nextDraftPick) {
+              return '<b>#' + p + ' (in ' + (p - pick) + ')</b>';
+            }
+            return '#' + p;
+          });
+          $('nextpicks').innerHTML = 'Your next picks: ' + items.join(', ');
+        }
       }
       if ($('unknownbtn')) $('unknownbtn').textContent = 'Unlisted pick for ' + who.name + ' ➜';
     }
@@ -156,11 +191,22 @@
       let actionCell = '';
       if (isTaken) {
         const pickEntry = pickOf.get(p.id);
-        const tInfo = teamForOverall(pickEntry.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
-        const isMine = taken.get(p.id) === 'me' || tInfo.isMe;
-        actionCell = '<td><span class="picktag' + (isMine ? ' mine' : '') + '">'
-          + (isMine ? '✅ ' : '') + tInfo.name + ' · '
-          + fmtPick(pickEntry.overall, s.teams) + ' (#' + pickEntry.overall + ')</span></td>';
+        const keeperObj = Array.isArray(global.state.keepers) ? global.state.keepers.find(k => k && k.playerId === p.id) : null;
+        if (keeperObj) {
+          const isMine = keeperObj.slot === s.slot;
+          const kTeamName = getTeamName(keeperObj.slot);
+          actionCell = '<td><span class="picktag keeper-tag' + (isMine ? ' mine' : '') + '">'
+            + '🔒 Keeper · ' + kTeamName + ' (Rd ' + keeperObj.round + ')</span></td>';
+        } else if (pickEntry) {
+          const tInfo = teamForOverall(pickEntry.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
+          const isMine = taken.get(p.id) === 'me' || tInfo.isMe;
+          const isKp = pickEntry.isKeeper;
+          actionCell = '<td><span class="picktag' + (isKp ? ' keeper-tag' : '') + (isMine ? ' mine' : '') + '">'
+            + (isKp ? '🔒 ' : '') + (isMine ? '✅ ' : '') + tInfo.name + ' · '
+            + fmtPick(pickEntry.overall, s.teams) + ' (#' + pickEntry.overall + ')</span></td>';
+        } else {
+          actionCell = '<td><span class="picktag">Taken</span></td>';
+        }
       } else {
         if (isOurPick) {
           actionCell = '<td style="white-space:nowrap"><button class="act mine" title="Draft ' + p.name.replace(/"/g, '&quot;') + ' for our team" onclick="draftPlayer(' + p.id + ',true)">Select our Player</button></td>';
@@ -260,23 +306,71 @@
     };
   }
 
-  function renderMyRoster() {
+  function getRosterPicksForSlot(targetSlot) {
     const s = global.state.settings;
-    const targetSlot = s.slot;
-    const myTeamName = getTeamName(targetSlot);
-    const myPicks = global.state.log.filter(e => {
+    const teamPicks = global.state.log.filter(e => {
       const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
       return tInfo.slot === targetSlot;
     });
 
-    if ($('myrosterheader')) {
-      $('myrosterheader').innerHTML = '⭐ ' + myTeamName + ' <span class="meta" style="font-size:12px; margin-left:auto; font-weight:normal">Slot ' + targetSlot + ' · ' + myPicks.length + ' picks</span>';
-    }
-
-    const resolvedPicks = myPicks.map(e => ({
+    const resolved = teamPicks.map(e => ({
       entry: e,
       player: resolvePickPlayer(e, byId)
     }));
+
+    const keeperPicksMap = (typeof getKeeperPicksMap === 'function')
+      ? getKeeperPicksMap(global.state.keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
+      : {};
+
+    const loggedOveralls = new Set(teamPicks.map(e => e.overall));
+    const loggedPlayerIds = new Set(teamPicks.map(e => e.playerId).filter(id => id != null));
+    const loggedNames = new Set(teamPicks.map(e => e.customName ? normalizeName(e.customName) : '').filter(Boolean));
+
+    for (const [overallStr, k] of Object.entries(keeperPicksMap)) {
+      if (!k || k.slot !== targetSlot) continue;
+      const overall = parseInt(overallStr, 10);
+      if (loggedOveralls.has(overall)) continue;
+      if (k.playerId != null && loggedPlayerIds.has(k.playerId)) continue;
+      if (k.customName && loggedNames.has(normalizeName(k.customName))) continue;
+
+      const p = (k.playerId != null) ? (byId(k.playerId) || {}) : {};
+      resolved.push({
+        entry: {
+          overall: overall,
+          mine: targetSlot === s.slot,
+          isKeeper: true,
+          isPendingKeeper: true
+        },
+        player: {
+          id: k.playerId != null ? k.playerId : null,
+          name: k.customName || p.name || ('Keeper #' + (k.playerId || overall)),
+          pos: k.customPos || p.pos || 'WR',
+          team: k.customTeam || p.team || '',
+          bye: k.customBye != null ? k.customBye : (p.bye || null),
+          isKeeper: true,
+          isUnlisted: Boolean(k.customName)
+        }
+      });
+    }
+
+    resolved.sort((a, b) => (a.entry.overall || 0) - (b.entry.overall || 0));
+    return {
+      resolved: resolved,
+      draftedCount: teamPicks.length,
+      keeperCount: (global.state.keepers || []).filter(k => k && k.slot === targetSlot).length
+    };
+  }
+
+  function renderMyRoster() {
+    const s = global.state.settings;
+    const targetSlot = s.slot;
+    const myTeamName = getTeamName(targetSlot);
+    const { resolved: resolvedPicks, draftedCount, keeperCount } = getRosterPicksForSlot(targetSlot);
+
+    if ($('myrosterheader')) {
+      const kText = keeperCount > 0 ? (' · ' + keeperCount + ' kept') : '';
+      $('myrosterheader').innerHTML = '⭐ ' + myTeamName + ' <span class="meta" style="font-size:12px; margin-left:auto; font-weight:normal">Slot ' + targetSlot + ' · ' + draftedCount + ' drafted' + kText + '</span>';
+    }
 
     const res = renderRosterSection(resolvedPicks, s.rosterSlots, s.teams);
     if ($('myroster')) $('myroster').innerHTML = res.rosterHtml;
@@ -298,12 +392,10 @@
         const isClock = (i === onClockTeam.slot);
         const isMe = (i === s.slot);
         const isSelected = (global.viewingRosterSlot === i);
-        const count = global.state.log.filter(e => {
-          const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
-          return tInfo.slot === i;
-        }).length;
+        const { draftedCount, keeperCount } = getRosterPicksForSlot(i);
+        const kStr = keeperCount > 0 ? (' · ' + keeperCount + ' kept') : '';
         selectHtml += '<option value="' + i + '"' + (isSelected ? ' selected' : '') + '>'
-          + (isClock ? '🕒 ' : (isMe ? '⭐ ' : '')) + getTeamName(i) + ' (Slot ' + i + ' · ' + count + ' picks)' + (isMe ? ' [You]' : '')
+          + (isClock ? '🕒 ' : (isMe ? '⭐ ' : '')) + getTeamName(i) + ' (Slot ' + i + ' · ' + draftedCount + ' picks' + kStr + ')' + (isMe ? ' [You]' : '')
           + '</option>';
       }
       $('rosterTeamSelect').innerHTML = selectHtml;
@@ -312,24 +404,17 @@
       $('onclockquickbtn').style.display = (global.viewingRosterSlot != null && global.viewingRosterSlot !== onClockTeam.slot) ? 'inline-block' : 'none';
     }
 
+    const { resolved: resolvedPicks, draftedCount, keeperCount } = getRosterPicksForSlot(targetSlot);
+    const kLabel = keeperCount > 0 ? (' <span class="meta" style="font-size:11px">(' + keeperCount + ' kept)</span>') : '';
+
     // Label
     if ($('clockteamlabel')) {
       if (isFollowingClock) {
-        $('clockteamlabel').innerHTML = '🕒 <b style="color:var(--accent)">On The Clock:</b> <span style="color:var(--text); font-weight:600">' + onClockTeam.name + '</span>' + (onClockTeam.isMe ? ' <span style="color:var(--good); font-weight:700">(Your Turn!)</span>' : ' (Slot ' + onClockTeam.slot + ')');
+        $('clockteamlabel').innerHTML = '🕒 <b style="color:var(--accent)">On The Clock:</b> <span style="color:var(--text); font-weight:600">' + onClockTeam.name + '</span>' + (onClockTeam.isMe ? ' <span style="color:var(--good); font-weight:700">(Your Turn!)</span>' : ' (Slot ' + onClockTeam.slot + ')') + kLabel;
       } else {
-        $('clockteamlabel').innerHTML = '👥 <b style="color:var(--dim)">Inspecting:</b> <span style="color:var(--text); font-weight:600">' + getTeamName(targetSlot) + '</span> (Slot ' + targetSlot + ') · <a href="javascript:void(0)" onclick="selectRosterSlot(null)" style="color:var(--accent); text-decoration:underline">Back to On-Clock</a>';
+        $('clockteamlabel').innerHTML = '👥 <b style="color:var(--dim)">Inspecting:</b> <span style="color:var(--text); font-weight:600">' + getTeamName(targetSlot) + '</span> (Slot ' + targetSlot + ' · ' + draftedCount + ' picks' + (keeperCount > 0 ? ' · ' + keeperCount + ' kept' : '') + ') · <a href="javascript:void(0)" onclick="selectRosterSlot(null)" style="color:var(--accent); text-decoration:underline">Back to On-Clock</a>';
       }
     }
-
-    // Filter all picks belonging to target slot
-    const teamPicks = global.state.log.filter(e => {
-      const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
-      return tInfo.slot === targetSlot;
-    });
-    const resolvedPicks = teamPicks.map(e => ({
-      entry: e,
-      player: resolvePickPlayer(e, byId)
-    }));
 
     const res = renderRosterSection(resolvedPicks, s.rosterSlots, s.teams);
     if ($('roster')) $('roster').innerHTML = res.rosterHtml;
@@ -348,10 +433,12 @@
       const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
       const isMe = e.mine || tInfo.isMe;
       const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(unlisted)</span>' : '';
+      const isKeeper = e.isKeeper || p.isKeeper;
+      const keeperBadge = isKeeper ? ' <span class="keeper-badge" title="Keeper Selection" style="background:#3a2818; color:var(--warn); border:1px solid var(--warn); padding:1px 4px; border-radius:3px; font-size:10px; font-weight:600">🔒 Keeper</span>' : '';
       return '<div class="logitem' + (isMe ? ' mine' : '') + '">'
         + '<span class="meta">#' + e.overall + ' (' + fmtPick(e.overall, s.teams) + ')</span> '
         + '<b style="color:' + (isMe ? 'var(--good)' : 'var(--text)') + '">' + tInfo.name + (isMe ? ' (You)' : '') + '</b>: '
-        + p.name + posTeam + unlistedBadge + (isMe ? ' ✅' : '') + '</div>';
+        + p.name + posTeam + unlistedBadge + keeperBadge + (isMe ? ' ✅' : '') + '</div>';
     }).join('') || '<div class="meta">Draft hasn\'t started.</div>';
   }
 
@@ -453,6 +540,7 @@
   function closeModal() {
     const overlay = $('overlay');
     if (overlay) overlay.classList.remove('show');
+    if ($('modalbox')) $('modalbox').className = 'modal';
   }
 
   function showPlayer(id) {
@@ -475,12 +563,18 @@
     let status = '';
     if (taken.has(id)) {
       const pickEntry = global.state.log.find(e => e.playerId === id);
-      if (pickEntry) {
+      const keeperObj = Array.isArray(global.state.keepers) ? global.state.keepers.find(k => k && k.playerId === id) : null;
+      if (keeperObj) {
+        const isMine = keeperObj.slot === s.slot;
+        const kTeamName = getTeamName(keeperObj.slot);
+        status = '<span class="picktag keeper-tag' + (isMine ? ' mine' : '') + '">🔒 Keeper · ' + kTeamName + ' (Round ' + keeperObj.round + ')</span>';
+      } else if (pickEntry) {
         const tInfo = teamForOverall(pickEntry.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
         const isMine = taken.get(id) === 'me' || tInfo.isMe;
+        const isKp = pickEntry.isKeeper;
         status = isMine
-          ? '<span class="picktag mine">✅ On your team (Pick #' + pickEntry.overall + ', ' + fmtPick(pickEntry.overall, s.teams) + ')</span>'
-          : '<span class="picktag">Drafted by ' + tInfo.name + ' (Pick #' + pickEntry.overall + ', ' + fmtPick(pickEntry.overall, s.teams) + ')</span>';
+          ? '<span class="picktag' + (isKp ? ' keeper-tag' : '') + ' mine">' + (isKp ? '🔒 ' : '✅ ') + 'On your team ' + (isKp ? '(Keeper - ' : '(') + 'Pick #' + pickEntry.overall + ', ' + fmtPick(pickEntry.overall, s.teams) + ')</span>'
+          : '<span class="picktag' + (isKp ? ' keeper-tag' : '') + '">' + (isKp ? '🔒 Keeper · ' : '') + 'Drafted by ' + tInfo.name + ' (Pick #' + pickEntry.overall + ', ' + fmtPick(pickEntry.overall, s.teams) + ')</span>';
       } else {
         status = '<span class="picktag">Taken</span>';
       }
@@ -672,6 +766,9 @@
       espnSyncBtn = '<button type="button" class="act" onclick="applyEspnLeagueSetup(); openLeagueSetup();" style="font-size:11.5px; padding:3px 9px; color:var(--accent)">📥 Sync Teams & Slot from ESPN (' + info.teams + ' Teams' + (info.mySlot ? ' · Slot #' + info.mySlot : '') + ')</button>';
     }
 
+    const keeperCount = (global.state.keepers || []).length;
+    const maxKeepersVal = (s.maxKeepers !== undefined && s.maxKeepers !== null) ? s.maxKeepers : 2;
+
     $('modalbox').innerHTML =
       '<h3>⚙️ League Setup & Draft Positions'
       + '<button class="close" onclick="closeModal()">×</button></h3>'
@@ -682,6 +779,14 @@
       + '<div class="setup-field"><label>Draft Order</label><select id="setup_mode_select"><option value="3rr"' + (s.mode === '3rr' ? ' selected' : '') + '>3rd-Round Reversal (3RR)</option><option value="snake"' + (s.mode === 'snake' ? ' selected' : '') + '>Normal Snake</option></select></div>'
       + '<div class="setup-field"><label>Scoring Format</label><select id="setup_scoring_select"><option value="half"' + (s.scoring === 'half' ? ' selected' : '') + '>Half-PPR (0.5)</option><option value="ppr"' + (s.scoring === 'ppr' ? ' selected' : '') + '>Full PPR (1.0)</option><option value="std"' + (s.scoring === 'std' ? ' selected' : '') + '>Standard (0 PPR)</option></select></div>'
       + '<div class="setup-field"><label>QB Format</label><select id="setup_qb_select"><option value="sf"' + (s.qbFormat === 'sf' ? ' selected' : '') + '>Superflex (2QB/SF)</option><option value="1qb"' + (s.qbFormat === '1qb' ? ' selected' : '') + '>1 QB (Single QB)</option></select></div>'
+      + '<div class="setup-field"><label>Max Keepers per Team</label><input type="number" id="setup_max_keepers" min="0" max="10" value="' + maxKeepersVal + '"></div>'
+      + '</div>'
+      + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:6px; padding:10px 12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; flex-wrap:wrap; gap:10px">'
+      + '<div>'
+      + '<div style="font-weight:700; color:var(--text); font-size:13.5px">🔒 Keepers & Pre-Drafted Players</div>'
+      + '<div class="meta" style="font-size:12px; margin-top:2px">Configure retained players assigned to each team and round. (Currently: <b style="color:var(--accent)">' + keeperCount + ' keeper' + (keeperCount === 1 ? '' : 's') + '</b> assigned)</div>'
+      + '</div>'
+      + '<button type="button" class="act primary" onclick="openKeepersModal()" style="font-weight:700; white-space:nowrap; padding:5px 14px">⭐ Manage Keepers (' + keeperCount + ')</button>'
       + '</div>'
       + '<h4 style="margin-top:14px">📋 Roster Positions & Starting Lineup</h4>'
       + '<div class="setup-grid" style="grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">'
@@ -798,6 +903,19 @@
     if (setupMySlot === slot) setupMySlot = targetSlot;
     else if (setupMySlot === targetSlot) setupMySlot = slot;
 
+    // Remap keepers to travel with the moved team
+    if (Array.isArray(global.state.keepers) && global.state.keepers.length > 0) {
+      if (typeof remapKeepersOnSlotSwap === 'function') {
+        global.state.keepers = remapKeepersOnSlotSwap(global.state.keepers, slot, targetSlot);
+      } else {
+        for (const k of global.state.keepers) {
+          if (k.slot === slot) k.slot = targetSlot;
+          else if (k.slot === targetSlot) k.slot = slot;
+        }
+      }
+      global.save();
+    }
+
     // Re-render table
     const countVal = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     $('setup_teams_body').innerHTML = (function () {
@@ -843,6 +961,10 @@
     s.teamNames = setupDraftNames.slice(0, s.teams);
     while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
 
+    if ($('setup_max_keepers')) {
+      s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
+    }
+
     s.rosterSlots = {
       qb: Math.max(0, parseInt($('setup_roster_qb').value, 10) || 0),
       rb: Math.max(0, parseInt($('setup_roster_rb').value, 10) || 0),
@@ -862,6 +984,431 @@
     global.save();
     closeModal();
     if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
+    render();
+  }
+
+  // ---------- Keepers Management Modal ----------
+  let editingKeeperId = null;
+  let selectedKeeperPlayer = null;
+  let keeperIsCustom = false;
+  let keeperCustomPos = 'WR';
+
+  function buildKeeperRoundOptions(slot, teams, rounds, mode, tradedPicks, keepers, editingId) {
+    let options = '';
+    const tCount = Math.max(2, Math.min(32, parseInt(teams, 10) || 12));
+    const rCount = Math.max(1, Math.min(50, parseInt(rounds, 10) || 20));
+    const allPicks = (typeof picksForSlot === 'function')
+      ? picksForSlot(slot, tCount, rCount, mode || 'snake', tradedPicks || {})
+      : [];
+
+    for (let r = 1; r <= rCount; r++) {
+      const owned = allPicks.filter(o => Math.ceil(o / tCount) === r).sort((a, b) => a - b);
+      const assigned = (keepers || []).filter(k => k && k.slot === slot && k.round === r && k.id !== editingId).length;
+      if (owned.length === 0) {
+        options += '<option value="' + r + '" disabled>Round ' + r + ' (0 picks owned - traded away)</option>';
+      } else if (owned.length === 1) {
+        const fullTag = (assigned >= 1) ? ' [Full]' : '';
+        options += '<option value="' + r + '"' + (assigned >= 1 ? ' disabled' : '') + '>Round ' + r + ' (Pick #' + owned[0] + ', ' + fmtPick(owned[0], tCount) + ')' + fullTag + '</option>';
+      } else {
+        const fullTag = (assigned >= owned.length) ? ' [Full]' : '';
+        options += '<option value="' + r + '"' + (assigned >= owned.length ? ' disabled' : '') + '>Round ' + r + ' (' + owned.length + ' picks owned)' + fullTag + '</option>';
+      }
+    }
+    return options;
+  }
+
+  function openKeepersModal() {
+    if ($('setup_team_count')) {
+      syncSetupInputsFromDom();
+      const s = global.state.settings;
+      s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
+      s.slot = setupMySlot;
+      s.teamNames = setupDraftNames.slice(0, s.teams);
+      if ($('setup_max_keepers')) {
+        s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
+      }
+      global.save();
+    }
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
+    keeperCustomPos = 'WR';
+    renderKeepersModalView();
+  }
+
+  function startEditKeeper(keeperId) {
+    const k = (global.state.keepers || []).find(item => item && item.id === keeperId);
+    if (!k) return;
+    editingKeeperId = keeperId;
+    if (k.playerId != null) {
+      keeperIsCustom = false;
+      selectedKeeperPlayer = byId(k.playerId) || { id: k.playerId, name: 'Player #' + k.playerId, pos: 'WR', team: '' };
+    } else {
+      keeperIsCustom = true;
+      keeperCustomPos = k.customPos || 'WR';
+      selectedKeeperPlayer = null;
+    }
+    renderKeepersModalView(k.slot);
+  }
+
+  function cancelEditKeeper() {
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
+    keeperCustomPos = 'WR';
+    renderKeepersModalView();
+  }
+
+  function renderKeepersModalView(explicitSlot) {
+    const s = global.state.settings;
+    const keepers = global.state.keepers || [];
+    const maxK = (s.maxKeepers !== undefined && s.maxKeepers !== null) ? s.maxKeepers : 2;
+
+    const editingKeeper = editingKeeperId ? keepers.find(item => item && item.id === editingKeeperId) : null;
+    if (editingKeeperId && !editingKeeper) {
+      editingKeeperId = null;
+    }
+
+    let initialSlot = 1;
+    if (explicitSlot) {
+      initialSlot = explicitSlot;
+    } else if (editingKeeper) {
+      initialSlot = editingKeeper.slot;
+    } else if ($('keeper_team_select')) {
+      initialSlot = parseInt($('keeper_team_select').value, 10) || (s.slot || 1);
+    } else {
+      initialSlot = s.slot || 1;
+    }
+
+    let teamOptions = '';
+    for (let i = 1; i <= s.teams; i++) {
+      const tName = getTeamName(i);
+      const tKeepers = keepers.filter(k => k && k.slot === i && k.id !== editingKeeperId).length;
+      const isMe = (i === s.slot);
+      const isSelected = (i === initialSlot);
+      teamOptions += '<option value="' + i + '"' + (isSelected ? ' selected' : '') + '>'
+        + (isMe ? '⭐ ' : '') + tName + ' (Slot ' + i + ' · ' + tKeepers + '/' + maxK + ' keepers)' + (isMe ? ' [You]' : '')
+        + '</option>';
+    }
+
+    const roundOptions = buildKeeperRoundOptions(initialSlot, s.teams, s.rounds, s.mode, global.state.tradedPicks, keepers, editingKeeperId);
+
+    const keeperPicksMap = (typeof getKeeperPicksMap === 'function')
+      ? getKeeperPicksMap(keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
+      : {};
+
+    const pickForKeeperId = {};
+    for (const [overall, kObj] of Object.entries(keeperPicksMap)) {
+      if (kObj && kObj.id) {
+        pickForKeeperId[kObj.id] = parseInt(overall, 10);
+      }
+    }
+
+    let rowsHtml = '';
+    if (keepers.length === 0) {
+      rowsHtml = '<tr><td colspan="6" style="text-align:center; padding:16px; color:var(--dim); font-style:italic">No keepers configured yet. Use the form above to add keeper players.</td></tr>';
+    } else {
+      const sorted = keepers.slice().sort((a, b) => (a.slot - b.slot) || (a.round - b.round));
+      for (const k of sorted) {
+        const p = (k.playerId != null) ? (byId(k.playerId) || {}) : {};
+        const name = k.customName || p.name || ('Player #' + k.playerId);
+        const pos = k.customPos || p.pos || '—';
+        const team = k.customTeam || p.team || '—';
+        const posClass = ['QB', 'RB', 'WR', 'TE'].includes(pos) ? pos : (['DST', 'DEF', 'D/ST'].includes(pos) ? 'DST' : (pos === 'K' ? 'K' : 'other'));
+        const isMe = (k.slot === s.slot);
+        const isEditing = (k.id === editingKeeperId);
+        const overall = pickForKeeperId[k.id];
+        const pickStr = overall ? ('#' + overall + ' (' + fmtPick(overall, s.teams) + ')') : ('Rd ' + k.round);
+
+        rowsHtml += '<tr class="' + (isMe ? 'is-me ' : '') + (isEditing ? 'is-editing' : '') + '">'
+          + '<td><b style="color:' + (isMe ? 'var(--good)' : 'var(--text)') + '">' + getTeamName(k.slot) + '</b> <span class="meta">(Slot ' + k.slot + ')</span></td>'
+          + '<td><b>Round ' + k.round + '</b></td>'
+          + '<td><span class="meta">' + pickStr + '</span></td>'
+          + '<td><span class="pos ' + posClass + '" style="margin-right:4px">' + pos + '</span> <b>' + name + '</b>' + (k.customName ? ' <span class="meta">(custom)</span>' : '') + '</td>'
+          + '<td><span class="meta">' + team + '</span></td>'
+          + '<td style="text-align:right"><div style="display:inline-flex; gap:6px; justify-content:flex-end">'
+          + '<button type="button" class="small" style="color:var(--accent); font-weight:600; cursor:pointer" onclick="startEditKeeper(\'' + k.id + '\')">✏️ Edit</button>'
+          + '<button type="button" class="small" style="color:var(--bad); font-weight:600; cursor:pointer" onclick="handleRemoveKeeper(\'' + k.id + '\')">🗑️ Remove</button>'
+          + '</div></td>'
+          + '</tr>';
+      }
+    }
+
+    const customPosButtons = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'OTHER'].map(pos =>
+      '<button type="button" class="tab' + (pos === keeperCustomPos ? ' on' : '') + '" onclick="selectKeeperCustomPos(\'' + pos + '\')">' + pos + '</button>'
+    ).join('');
+
+    let selectedPillHtml = '';
+    if (selectedKeeperPlayer) {
+      const p = selectedKeeperPlayer;
+      const posClass = ['QB', 'RB', 'WR', 'TE'].includes(p.pos) ? p.pos : (['DST', 'DEF', 'D/ST'].includes(p.pos) ? 'DST' : (p.pos === 'K' ? 'K' : 'other'));
+      selectedPillHtml = '<div style="display:inline-flex; align-items:center; gap:6px; background:var(--panel2); border:1px solid var(--good); padding:4px 8px; border-radius:6px; font-size:12px; margin-top:6px">'
+        + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
+        + '<b>' + p.name + '</b>'
+        + '<span class="meta">' + (p.team || '') + '</span>'
+        + '<button type="button" class="close" style="font-size:16px; margin-left:4px" onclick="clearKeeperSearch()">×</button>'
+        + '</div>';
+    }
+
+    const modalBox = $('modalbox');
+    if (modalBox) {
+      modalBox.className = 'modal modal-wide keepers-modal-box';
+    }
+
+    let formHeaderHtml = '<h4 style="margin:0 0 10px 0; color:var(--accent); font-size:13px; text-transform:none">➕ Add New Keeper</h4>';
+    let formActionBtnHtml = '<button type="button" class="act primary" onclick="submitKeeperForm()" style="font-weight:700">Add Keeper</button>';
+    if (editingKeeper) {
+      const editingName = editingKeeper.customName || (byId(editingKeeper.playerId) ? byId(editingKeeper.playerId).name : ('Player #' + editingKeeper.playerId));
+      formHeaderHtml = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">'
+        + '<h4 style="margin:0; color:var(--accent); font-size:13px; text-transform:none">✏️ Edit Keeper: <span style="color:var(--text)">' + editingName + '</span> (' + getTeamName(editingKeeper.slot) + ')</h4>'
+        + '<button type="button" class="small" style="color:var(--dim); font-size:11.5px; cursor:pointer" onclick="cancelEditKeeper()">Cancel Edit</button>'
+        + '</div>';
+      formActionBtnHtml = '<div style="display:inline-flex; gap:8px">'
+        + '<button type="button" class="act" onclick="cancelEditKeeper()">Cancel</button>'
+        + '<button type="button" class="act primary" onclick="submitKeeperForm()" style="font-weight:700">💾 Update Keeper</button>'
+        + '</div>';
+    }
+
+    const customNameVal = (editingKeeper && editingKeeper.customName) ? editingKeeper.customName : '';
+    const customTeamVal = (editingKeeper && editingKeeper.customTeam) ? editingKeeper.customTeam : '';
+    const customByeVal = (editingKeeper && editingKeeper.customBye != null) ? editingKeeper.customBye : '';
+    const searchVal = (!keeperIsCustom && selectedKeeperPlayer) ? selectedKeeperPlayer.name : '';
+
+    $('modalbox').innerHTML =
+      '<h3>🔒 Keepers Management'
+      + '<button class="close" onclick="saveAndCloseKeepersModal()">×</button></h3>'
+      + '<div style="display:flex; justify-content:space-between; align-items:center; margin:10px 0; padding:8px 12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; flex-wrap:wrap; gap:10px">'
+      + '<div><b style="color:var(--text)">Total Keepers Configured:</b> <span style="color:var(--accent); font-weight:700">' + keepers.length + '</span></div>'
+      + '<div style="display:flex; align-items:center; gap:6px"><label style="font-size:12.5px; color:var(--dim)">Max Keepers per Team:</label> <input type="number" id="keeper_modal_max" min="0" max="10" style="width:54px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:2px 6px" value="' + maxK + '" onchange="handleKeeperMaxChange(this.value)"></div>'
+      + '</div>'
+      + '<div style="background:#141923; border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:12px">'
+      + formHeaderHtml
+      + '<div class="setup-grid" style="grid-template-columns: 1fr 1fr; gap:10px">'
+      + '<div class="setup-field"><label>Team</label><select id="keeper_team_select" onchange="handleKeeperTeamChange()">' + teamOptions + '</select></div>'
+      + '<div class="setup-field"><label>Draft Round Cost</label><select id="keeper_round_select">' + roundOptions + '</select></div>'
+      + '</div>'
+      + '<div style="margin-top:10px">'
+      + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px">'
+      + '<label style="font-size:12px; color:var(--dim)">Player Selection <b style="color:var(--warn)">*</b></label>'
+      + '<label style="font-size:12px; color:var(--dim); cursor:pointer"><input type="checkbox" id="keeper_custom_check" onchange="toggleKeeperCustom(this.checked)"' + (keeperIsCustom ? ' checked' : '') + '> Unlisted / Custom Player</label>'
+      + '</div>'
+      + '<div id="keeper_pool_search_wrap" style="' + (keeperIsCustom ? 'display:none;' : 'display:block;') + '" class="keeper-search-container">'
+      + '<input type="text" id="keeper_search_input" placeholder="Search NFL player by name, team, position..." autocomplete="off" value="' + searchVal.replace(/"/g, '&quot;') + '" oninput="handleKeeperSearchInput(this.value)">'
+      + '<div id="keeper_autocomplete" class="keeper-autocomplete-list" style="display:none"></div>'
+      + '<div id="keeper_selected_pill">' + selectedPillHtml + '</div>'
+      + '</div>'
+      + '<div id="keeper_custom_wrap" style="' + (keeperIsCustom ? 'display:block;' : 'display:none;') + '">'
+      + '<div class="tabs" style="flex-wrap:wrap; gap:4px; margin-bottom:8px" id="keeper_custom_pos_tabs">' + customPosButtons + '</div>'
+      + '<div class="setup-grid" style="grid-template-columns: 2fr 1fr 1fr; gap:8px">'
+      + '<div class="setup-field"><label>Player Name</label><input type="text" id="keeper_custom_name" placeholder="e.g. Travis Hunter" value="' + customNameVal.replace(/"/g, '&quot;') + '"></div>'
+      + '<div class="setup-field"><label>NFL Team</label><input type="text" id="keeper_custom_team" placeholder="e.g. JAX" maxlength="4" value="' + customTeamVal.replace(/"/g, '&quot;') + '"></div>'
+      + '<div class="setup-field"><label>Bye Week</label><input type="number" id="keeper_custom_bye" min="1" max="18" placeholder="e.g. 9" value="' + customByeVal + '"></div>'
+      + '</div>'
+      + '</div>'
+      + '</div>'
+      + '<div id="keeper_error_box" style="display:none; margin-top:10px; color:var(--bad); font-size:12px; background:rgba(255,100,112,0.12); padding:6px 10px; border-radius:6px; border:1px solid rgba(255,100,112,0.4)"></div>'
+      + '<div style="margin-top:12px; display:flex; justify-content:flex-end">'
+      + formActionBtnHtml
+      + '</div>'
+      + '</div>'
+      + '<h4 style="margin:16px 0 6px 0">📋 Current Keepers (' + keepers.length + ')</h4>'
+      + '<div style="max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:6px">'
+      + '<table class="keeper-table"><thead><tr><th>Team</th><th>Round</th><th>Pick</th><th>Player</th><th>Team</th><th style="text-align:right">Action</th></tr></thead>'
+      + '<tbody id="keepers_table_body">' + rowsHtml + '</tbody></table>'
+      + '</div>'
+      + '<div class="modal-actions">'
+      + '<button type="button" class="act" onclick="saveKeepersAndBackToSetup()">⬅️ Back to League Setup</button>'
+      + '<button type="button" class="act primary" onclick="saveAndCloseKeepersModal()">Save & Close</button>'
+      + '</div>';
+
+    if (editingKeeper && editingKeeper.round && $('keeper_round_select')) {
+      $('keeper_round_select').value = editingKeeper.round;
+    }
+
+    $('overlay').classList.add('show');
+  }
+
+  function handleKeeperTeamChange() {
+    const slot = parseInt($('keeper_team_select').value, 10) || 1;
+    const s = global.state.settings;
+    const keepers = global.state.keepers || [];
+    $('keeper_round_select').innerHTML = buildKeeperRoundOptions(slot, s.teams, s.rounds, s.mode, global.state.tradedPicks, keepers, editingKeeperId);
+  }
+
+  function toggleKeeperCustom(checked) {
+    keeperIsCustom = Boolean(checked);
+    if ($('keeper_pool_search_wrap')) $('keeper_pool_search_wrap').style.display = keeperIsCustom ? 'none' : 'block';
+    if ($('keeper_custom_wrap')) $('keeper_custom_wrap').style.display = keeperIsCustom ? 'block' : 'none';
+  }
+
+  function selectKeeperCustomPos(pos) {
+    keeperCustomPos = pos;
+    const buttons = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'OTHER'].map(p =>
+      '<button type="button" class="tab' + (p === keeperCustomPos ? ' on' : '') + '" onclick="selectKeeperCustomPos(\'' + p + '\')">' + p + '</button>'
+    ).join('');
+    if ($('keeper_custom_pos_tabs')) $('keeper_custom_pos_tabs').innerHTML = buttons;
+  }
+
+  function handleKeeperSearchInput(val) {
+    const q = normalizeName(val || '');
+    const box = $('keeper_autocomplete');
+    if (!box) return;
+    if (!q || q.length < 1) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+
+    const takenIds = new Set((global.state.keepers || []).filter(k => k && k.id !== editingKeeperId).map(k => k.playerId).filter(id => id != null));
+    const players = (global.PLAYERS || []).filter(p => {
+      if (takenIds.has(p.id)) return false;
+      if (normalizeName(p.name).includes(q)) return true;
+      if (p.team && normalizeName(p.team) === q) return true;
+      return false;
+    });
+
+    if (players.length === 0) {
+      box.innerHTML = '<div style="padding:8px 10px; font-size:12px; color:var(--dim); font-style:italic">No matching players in pool</div>';
+      box.style.display = 'block';
+      return;
+    }
+
+    let itemsHtml = '';
+    players.slice(0, 6).forEach(p => {
+      const posClass = ['QB', 'RB', 'WR', 'TE'].includes(p.pos) ? p.pos : (['DST', 'DEF', 'D/ST'].includes(p.pos) ? 'DST' : (p.pos === 'K' ? 'K' : 'other'));
+      itemsHtml += '<div class="keeper-autocomplete-item" onclick="selectKeeperSearchPlayer(' + p.id + ')">'
+        + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
+        + '<b>' + p.name + '</b>'
+        + '<span class="meta">' + (p.team || '') + '</span>'
+        + (p.bye ? '<span class="meta">· Wk ' + p.bye + '</span>' : '')
+        + '</div>';
+    });
+
+    box.innerHTML = itemsHtml;
+    box.style.display = 'block';
+  }
+
+  function selectKeeperSearchPlayer(playerId) {
+    const p = byId(playerId);
+    if (!p) return;
+    selectedKeeperPlayer = p;
+    if ($('keeper_search_input')) $('keeper_search_input').value = p.name;
+    if ($('keeper_autocomplete')) $('keeper_autocomplete').style.display = 'none';
+    const posClass = ['QB', 'RB', 'WR', 'TE'].includes(p.pos) ? p.pos : (['DST', 'DEF', 'D/ST'].includes(p.pos) ? 'DST' : (p.pos === 'K' ? 'K' : 'other'));
+    if ($('keeper_selected_pill')) {
+      $('keeper_selected_pill').innerHTML = '<div style="display:inline-flex; align-items:center; gap:6px; background:var(--panel2); border:1px solid var(--good); padding:4px 8px; border-radius:6px; font-size:12px; margin-top:6px">'
+        + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
+        + '<b>' + p.name + '</b>'
+        + '<span class="meta">' + (p.team || '') + '</span>'
+        + '<button type="button" class="close" style="font-size:16px; margin-left:4px" onclick="clearKeeperSearch()">×</button>'
+        + '</div>';
+      $('keeper_selected_pill').style.display = 'block';
+    }
+  }
+
+  function clearKeeperSearch() {
+    selectedKeeperPlayer = null;
+    if ($('keeper_search_input')) $('keeper_search_input').value = '';
+    if ($('keeper_selected_pill')) {
+      $('keeper_selected_pill').innerHTML = '';
+      $('keeper_selected_pill').style.display = 'none';
+    }
+  }
+
+  function submitKeeperForm() {
+    const slot = parseInt($('keeper_team_select').value, 10);
+    const round = parseInt($('keeper_round_select').value, 10);
+    const errBox = $('keeper_error_box');
+    if (errBox) errBox.style.display = 'none';
+
+    let candidate = null;
+    if (keeperIsCustom) {
+      const name = ($('keeper_custom_name').value || '').trim();
+      if (!name) {
+        if (errBox) {
+          errBox.textContent = 'Please enter a name for the custom keeper player';
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+      const team = ($('keeper_custom_team').value || '').trim().toUpperCase();
+      const bye = ($('keeper_custom_bye').value) ? parseInt($('keeper_custom_bye').value, 10) : null;
+      candidate = {
+        id: editingKeeperId || undefined,
+        slot: slot,
+        round: round,
+        playerId: null,
+        customName: name,
+        customPos: keeperCustomPos,
+        customTeam: team || null,
+        customBye: bye
+      };
+    } else {
+      if (!selectedKeeperPlayer) {
+        if (errBox) {
+          errBox.textContent = 'Please search and select a player from the pool, or check Unlisted / Custom Player';
+          errBox.style.display = 'block';
+        }
+        return;
+      }
+      candidate = {
+        id: editingKeeperId || undefined,
+        slot: slot,
+        round: round,
+        playerId: selectedKeeperPlayer.id
+      };
+    }
+
+    const res = global.addKeeper(candidate);
+    if (!res.ok) {
+      if (errBox) {
+        errBox.textContent = res.error || 'Failed to add keeper';
+        errBox.style.display = 'block';
+      }
+      return;
+    }
+
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
+    renderKeepersModalView();
+  }
+
+  function handleRemoveKeeper(id) {
+    if (editingKeeperId === id) {
+      editingKeeperId = null;
+      selectedKeeperPlayer = null;
+      keeperIsCustom = false;
+    }
+    global.removeKeeper(id);
+    renderKeepersModalView();
+  }
+
+  function handleKeeperMaxChange(val) {
+    global.updateMaxKeepers(val);
+    renderKeepersModalView();
+  }
+
+  function saveKeepersAndBackToSetup() {
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
+    if ($('keeper_modal_max')) {
+      global.updateMaxKeepers($('keeper_modal_max').value);
+    }
+    global.save();
+    openLeagueSetup();
+  }
+
+  function saveAndCloseKeepersModal() {
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
+    if ($('keeper_modal_max')) {
+      global.updateMaxKeepers($('keeper_modal_max').value);
+    }
+    global.save();
+    closeModal();
     render();
   }
 
@@ -891,5 +1438,21 @@
   global.moveSetupTeam = moveSetupTeam;
   global.resetSetupDefaults = resetSetupDefaults;
   global.saveLeagueSetup = saveLeagueSetup;
+  global.getRosterPicksForSlot = getRosterPicksForSlot;
+  global.openKeepersModal = openKeepersModal;
+  global.renderKeepersModalView = renderKeepersModalView;
+  global.startEditKeeper = startEditKeeper;
+  global.cancelEditKeeper = cancelEditKeeper;
+  global.handleKeeperTeamChange = handleKeeperTeamChange;
+  global.toggleKeeperCustom = toggleKeeperCustom;
+  global.selectKeeperCustomPos = selectKeeperCustomPos;
+  global.handleKeeperSearchInput = handleKeeperSearchInput;
+  global.selectKeeperSearchPlayer = selectKeeperSearchPlayer;
+  global.clearKeeperSearch = clearKeeperSearch;
+  global.submitKeeperForm = submitKeeperForm;
+  global.handleRemoveKeeper = handleRemoveKeeper;
+  global.handleKeeperMaxChange = handleKeeperMaxChange;
+  global.saveKeepersAndBackToSetup = saveKeepersAndBackToSetup;
+  global.saveAndCloseKeepersModal = saveAndCloseKeepersModal;
 })(typeof window !== 'undefined' ? window : globalThis);
 
