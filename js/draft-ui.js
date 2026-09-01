@@ -534,6 +534,18 @@
     renderInspectRoster();
     renderLog();
     renderBanner();
+
+    const s = global.state.settings;
+    const pick = currentPick();
+    const totalPicks = s.teams * s.rounds;
+    const isComplete = pick > totalPicks;
+    if (isComplete && !wasDraftComplete) {
+      wasDraftComplete = true;
+      openDraftBoardModal('summary');
+    } else if (!isComplete) {
+      wasDraftComplete = false;
+    }
+
     if (isBoardModalOpen && $('modalbox') && $('modalbox').classList.contains('modal-board')) {
       renderDraftBoardModalView();
     }
@@ -544,6 +556,11 @@
   let returnToBoardOnClose = false;
   let boardHighlightFilter = 'ALL';
   let boardDensity = 'normal';
+  let boardActiveTab = 'grid';
+  let summarySortKey = 'rank';
+  let summarySortAsc = true;
+  let expandedTeamSlot = null;
+  let wasDraftComplete = false;
 
   function closeModal() {
     isBoardModalOpen = false;
@@ -562,19 +579,42 @@
     }
   }
 
-  function openDraftBoardModal() {
+  function openDraftBoardModal(initialTab) {
     isBoardModalOpen = true;
     returnToBoardOnClose = false;
+    const s = global.state.settings;
+    const pick = currentPick();
+    const totalPicks = s.teams * s.rounds;
+    const isComplete = pick > totalPicks;
+
+    if (initialTab) {
+      boardActiveTab = initialTab;
+    } else if (isComplete && boardActiveTab === 'strategy') {
+      boardActiveTab = 'summary';
+    }
+
     renderDraftBoardModalView();
-    setTimeout(() => {
-      scrollBoardToCurrentPick(false);
-    }, 60);
+    if (boardActiveTab === 'grid') {
+      setTimeout(() => {
+        scrollBoardToCurrentPick(false);
+      }, 60);
+    }
   }
 
   function closeBoardModal() {
     isBoardModalOpen = false;
     returnToBoardOnClose = false;
     closeModal();
+  }
+
+  function setBoardActiveTab(tab) {
+    boardActiveTab = tab;
+    renderDraftBoardModalView();
+    if (tab === 'grid') {
+      setTimeout(() => {
+        scrollBoardToCurrentPick(false);
+      }, 60);
+    }
   }
 
   function setBoardFilter(filter) {
@@ -584,6 +624,21 @@
 
   function toggleBoardDensity() {
     boardDensity = (boardDensity === 'normal' ? 'compact' : 'normal');
+    renderDraftBoardModalView();
+  }
+
+  function setSummarySort(key) {
+    if (summarySortKey === key) {
+      summarySortAsc = !summarySortAsc;
+    } else {
+      summarySortKey = key;
+      summarySortAsc = (key === 'rank' || key === 'slot');
+    }
+    renderDraftBoardModalView();
+  }
+
+  function toggleTeamRosterDrawer(slot) {
+    expandedTeamSlot = (expandedTeamSlot === slot ? null : slot);
     renderDraftBoardModalView();
   }
 
@@ -617,247 +672,580 @@
     const totalPicks = s.teams * s.rounds;
     const isComplete = pick > totalPicks;
     const onClockTeam = !isComplete ? teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks) : null;
-
-    const boardData = (typeof generateDraftBoardGrid === 'function')
-      ? generateDraftBoardGrid({
-        teams: s.teams,
-        rounds: s.rounds,
-        mode: s.mode,
-        log: global.state.log,
-        keepers: global.state.keepers,
-        tradedPicks: global.state.tradedPicks,
-        teamNames: s.teamNames,
-        mySlot: s.slot,
-        currentPickNum: pick,
-        playersLookup: byId
-      })
-      : null;
-
-    if (!boardData) return;
+    const draftedPicksCount = Math.min(totalPicks, global.state.log.length);
+    const pct = Math.round((draftedPicksCount / totalPicks) * 100);
 
     const modalBox = $('modalbox');
     if (modalBox) {
       modalBox.className = 'modal modal-board';
     }
 
-    // Filter Buttons
-    const filters = [
-      { id: 'ALL', label: 'ALL' },
-      { id: 'QB', label: 'QB', cls: 'filter-qb' },
-      { id: 'RB', label: 'RB', cls: 'filter-rb' },
-      { id: 'WR', label: 'WR', cls: 'filter-wr' },
-      { id: 'TE', label: 'TE', cls: 'filter-te' },
-      { id: 'K', label: 'K', cls: 'filter-k' },
-      { id: 'DST', label: 'D/ST', cls: 'filter-dst' },
-      { id: 'MY_TEAM', label: '⭐ My Team', cls: 'filter-mine' }
-    ];
+    const overlay = $('overlay');
+    if (overlay) overlay.classList.add('show');
 
-    const filterButtonsHtml = filters.map(f => {
-      const active = (boardHighlightFilter === f.id);
-      return '<button type="button" class="board-filter-btn' + (active ? ' active ' + (f.cls || '') : '') + '" onclick="setBoardFilter(\'' + f.id + '\')">' + f.label + '</button>';
-    }).join('');
+    // 1. Tab Switcher
+    const tabGridActive = (boardActiveTab === 'grid') ? ' active' : '';
+    const tabStratActive = (boardActiveTab === 'strategy') ? ' active' : '';
+    const tabSumActive = (boardActiveTab === 'summary') ? ' active' : '';
 
-    const densityBtnLabel = boardDensity === 'normal' ? '🔍 Compact' : '🔎 Normal';
-    const densityClass = boardDensity === 'compact' ? ' board-compact' : '';
-
-    const draftedPicksCount = global.state.log.length;
-    const pct = Math.round((draftedPicksCount / totalPicks) * 100) || 0;
+    const tabsHtml = '<div class="board-tabs">'
+      + '<button type="button" class="board-tab-btn' + tabGridActive + '" onclick="setBoardActiveTab(\'grid\')">📊 Board Grid</button>'
+      + '<button type="button" class="board-tab-btn' + tabStratActive + '" onclick="setBoardActiveTab(\'strategy\')">🎯 Live Strategy & Needs</button>'
+      + '<button type="button" class="board-tab-btn' + tabSumActive + '" onclick="setBoardActiveTab(\'summary\')">🏆 League Value & Grades</button>'
+      + '</div>';
 
     let clockStatusHtml = '';
     if (isComplete) {
       clockStatusHtml = '<span style="color:var(--good); font-weight:700">🏆 Draft Complete</span>';
-    } else {
-      clockStatusHtml = '<span>On Clock: <b style="color:' + (onClockTeam.isMe ? 'var(--good)' : 'var(--accent)') + '">' + onClockTeam.name + (onClockTeam.isMe ? ' (You)' : '') + '</b> · Pick <b>#' + pick + ' (' + fmtPick(pick, s.teams) + ')</b></span>';
+    } else if (onClockTeam) {
+      clockStatusHtml = 'On Clock: <strong style="color:var(--accent)">' + onClockTeam.name + '</strong> (Pick #' + pick + ')';
     }
 
-    // Table Header Generation
-    let tableHeadHtml = '<thead><tr class="board-header-row"><th class="board-corner-th">Rnd</th>';
-    for (let sIdx = 1; sIdx <= s.teams; sIdx++) {
-      const isMe = (sIdx === s.slot);
-      const isClock = (onClockTeam && sIdx === onClockTeam.slot);
-      const tName = getTeamName(sIdx);
-      tableHeadHtml += '<th class="board-th' + (isMe ? ' is-me' : '') + (isClock ? ' is-clock' : '') + '">'
-        + '<div class="board-th-team" title="' + tName.replace(/"/g, '&quot;') + '">' + (isMe ? '⭐ ' : '') + tName + '</div>'
-        + '<div class="board-th-slot">'
-        + '<span>Slot ' + sIdx + '</span>'
-        + (isMe ? ' <span style="color:var(--good); font-weight:700">(You)</span>' : '')
+    // 2. Toolbar Actions depending on active tab
+    let toolbarActionsHtml = '';
+    if (boardActiveTab === 'grid') {
+      const filters = [
+        { id: 'ALL', label: 'ALL' },
+        { id: 'QB', label: 'QB', cls: 'filter-qb' },
+        { id: 'RB', label: 'RB', cls: 'filter-rb' },
+        { id: 'WR', label: 'WR', cls: 'filter-wr' },
+        { id: 'TE', label: 'TE', cls: 'filter-te' },
+        { id: 'K', label: 'K', cls: 'filter-k' },
+        { id: 'DST', label: 'D/ST', cls: 'filter-dst' },
+        { id: 'MY_TEAM', label: '⭐ My Team', cls: 'filter-my-team' }
+      ];
+
+      const filterButtonsHtml = filters.map(f => {
+        const activeClass = (boardHighlightFilter === f.id) ? ' active' : '';
+        const customClass = f.cls ? (' ' + f.cls) : '';
+        return '<button type="button" class="board-filter-btn' + customClass + activeClass + '" onclick="setBoardFilter(\'' + f.id + '\')">' + f.label + '</button>';
+      }).join('');
+
+      const densityBtnLabel = (boardDensity === 'normal') ? '🗜️ Compact' : '👁️ Normal';
+
+      toolbarActionsHtml = '<div class="board-filters">'
+        + '<span class="meta" style="font-size:12px; margin-right:4px">Highlight:</span>'
+        + filterButtonsHtml
         + '</div>'
-        + '</th>';
+        + '<div class="board-actions">'
+        + (!isComplete ? '<button type="button" class="act" onclick="scrollBoardToCurrentPick(true)" style="font-size:11.5px; padding:3px 8px; font-weight:600; color:var(--accent); border-color:var(--accent)">⚡ Jump to On-Clock</button>' : '')
+        + '<button type="button" class="act" onclick="toggleBoardDensity()" style="font-size:11.5px; padding:3px 8px">' + densityBtnLabel + '</button>'
+        + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-size:11.5px; padding:3px 10px; font-weight:700">Done</button>'
+        + '</div>';
+    } else if (boardActiveTab === 'strategy') {
+      toolbarActionsHtml = '<div class="board-actions">'
+        + (!isComplete ? '<button type="button" class="act" onclick="setBoardActiveTab(\'grid\'); setTimeout(() => scrollBoardToCurrentPick(true), 60)" style="font-size:11.5px; padding:3px 8px; font-weight:600; color:var(--accent); border-color:var(--accent)">⚡ Jump to Grid On-Clock</button>' : '')
+        + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-size:11.5px; padding:3px 10px; font-weight:700">Done</button>'
+        + '</div>';
+    } else {
+      toolbarActionsHtml = '<div class="board-actions">'
+        + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-size:11.5px; padding:3px 10px; font-weight:700">Done</button>'
+        + '</div>';
     }
-    tableHeadHtml += '</tr></thead>';
 
-    // Table Body Rows
-    let tableBodyHtml = '<tbody>';
-    for (const roundRow of boardData.grid) {
-      const arrow = roundRow.isForward ? '➡️' : '⬅️';
-      tableBodyHtml += '<tr>';
-      tableBodyHtml += '<th class="board-round-th"><div class="board-round-num">R' + roundRow.round + '</div><div class="board-round-arrow" title="' + (roundRow.isForward ? 'Picks go left-to-right' : 'Picks go right-to-left') + '">' + arrow + '</div></th>';
+    // 3. Render Main View Content
+    let mainViewHtml = '';
+    if (boardActiveTab === 'grid') {
+      const boardData = (typeof generateDraftBoardGrid === 'function')
+        ? generateDraftBoardGrid({
+          teams: s.teams,
+          rounds: s.rounds,
+          mode: s.mode,
+          log: global.state.log,
+          keepers: global.state.keepers,
+          tradedPicks: global.state.tradedPicks,
+          teamNames: s.teamNames,
+          mySlot: s.slot,
+          currentPickNum: pick,
+          playersLookup: byId
+        })
+        : null;
 
-      for (const pickCell of roundRow.picks) {
-        const overall = pickCell.overall;
-        const isClock = pickCell.isOnClock;
-        const isMe = pickCell.isMe;
+      if (!boardData) return;
 
-        // Determine if cell is filtered out
-        let isDimmed = false;
-        if (boardHighlightFilter === 'MY_TEAM') {
-          isDimmed = !isMe;
-        } else if (boardHighlightFilter !== 'ALL') {
-          if (pickCell.player) {
-            const pPos = (pickCell.player.pos || '').toUpperCase();
-            if (boardHighlightFilter === 'DST') {
-              isDimmed = !['DST', 'DEF', 'D/ST'].includes(pPos);
-            } else {
-              isDimmed = (pPos !== boardHighlightFilter);
-            }
-          } else {
-            isDimmed = true;
-          }
-        }
+      const densityClass = (boardDensity === 'compact') ? ' board-compact' : '';
 
-        const cellClasses = [
-          'board-cell',
-          isClock ? 'on-clock' : '',
+      let tableHeadHtml = '<thead><tr>';
+      tableHeadHtml += '<th class="board-corner-th">RND</th>';
+      for (let slot = 1; slot <= s.teams; slot++) {
+        const isMe = (slot === s.slot);
+        const name = (Array.isArray(s.teamNames) ? s.teamNames[slot - 1] : null) || (isMe ? 'My Team' : ('Team ' + slot));
+        const isClock = (onClockTeam && onClockTeam.slot === slot);
+        const thClasses = [
+          'board-th',
           isMe ? 'is-me' : '',
-          isDimmed ? 'board-dimmed' : ''
+          isClock ? 'is-clock' : ''
         ].filter(Boolean).join(' ');
 
-        const isCompact = (boardDensity === 'compact');
-
-        if (pickCell.isDrafted && pickCell.player) {
-          const p = pickCell.player;
-          const posUpper = (p.pos || '').toUpperCase();
-          const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper)
-            ? posUpper.toLowerCase()
-            : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
-
-          const clickFn = (p.id != null)
-            ? ('showPlayerFromBoard(' + p.id + ')')
-            : ('showUnlistedPlayerFromBoard(' + overall + ')');
-
-          const isKeeper = pickCell.isKeeper;
-          const isTraded = pickCell.isTraded;
-          const unlistedBadge = p.isUnlisted ? ' <span style="font-size:10px; font-weight:normal; opacity:0.8">(custom)</span>' : '';
-          const keeperBadge = isKeeper ? '<span class="keeper-tag-chip" title="Keeper Selection">🔒</span>' : '';
-          const tradedChip = isTraded ? '<span class="traded-tag" title="Originally ' + pickCell.originalTeamName + '">via ' + pickCell.originalTeamName + '</span>' : '';
-          const teamByeStr = (p.team && p.team !== '—' ? p.team : '') + (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
-
-          if (isCompact) {
-            let topEndHtml = '';
-            if (isKeeper) {
-              topEndHtml = '<span class="board-card-compact-meta">' + keeperBadge + ' ' + (teamByeStr || '—') + '</span>'
-                + '<span class="board-card-pos">' + (p.pos || '—') + '</span>';
-            } else {
-              topEndHtml = (tradedChip ? tradedChip + ' ' : '')
-                + '<span class="board-card-compact-meta">' + (teamByeStr || (p.pos || '—')) + '</span>';
-            }
-
-            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
-              + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
-              + '<div class="board-card-top">'
-              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
-              + '<div class="board-card-top-end">' + topEndHtml + '</div>'
-              + '</div>'
-              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
-              + '</div>'
-              + '</td>';
-          } else {
-            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
-              + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
-              + '<div class="board-card-top">'
-              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
-              + '<span class="board-card-pos">' + (p.pos || '—') + '</span>'
-              + '</div>'
-              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
-              + '<div class="board-card-bottom">'
-              + '<span class="board-card-team">' + (teamByeStr || '—') + '</span>'
-              + '<div style="display:flex; align-items:center; gap:3px">' + keeperBadge + tradedChip + '</div>'
-              + '</div>'
-              + '</div>'
-              + '</td>';
-          }
-        } else if (pickCell.isPendingKeeper && pickCell.player) {
-          const p = pickCell.player;
-          const posUpper = (p.pos || '').toUpperCase();
-          const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper)
-            ? posUpper.toLowerCase()
-            : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
-
-          const teamByeStr = (p.team && p.team !== '—' ? p.team : '') + (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
-
-          if (isCompact) {
-            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
-              + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
-              + '<div class="board-card-top">'
-              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
-              + '<div class="board-card-top-end">'
-              + '<span class="board-card-compact-meta">' + (teamByeStr || '—') + '</span>'
-              + '</div>'
-              + '</div>'
-              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '"><span class="keeper-tag-chip" style="margin-right:3px">🔒</span>' + p.name + '</div>'
-              + '</div>'
-              + '</td>';
-          } else {
-            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
-              + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
-              + '<div class="board-card-top">'
-              + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
-              + '<span class="board-card-team" style="font-size:10.5px">' + (teamByeStr || '—') + '</span>'
-              + '</div>'
-              + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '"><span class="keeper-tag-chip" style="margin-right:3px">🔒</span>' + p.name + '</div>'
-              + '<div class="board-card-bottom">'
-              + '<span class="meta" style="font-size:10px; color:var(--warn)">Keeper Assignment</span>'
-              + '</div>'
-              + '</div>'
-              + '</td>';
-          }
-        } else {
-          // Empty upcoming cell
-          const onClockBadge = isClock ? '<span class="on-clock-badge">⚡ ON CLOCK</span>' : '';
-          const tradedChip = pickCell.isTraded ? '<span class="traded-tag">via ' + pickCell.originalTeamName + '</span>' : '';
-
-          tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
-            + '<div class="board-empty">'
-            + '<div style="display:flex; justify-content:space-between; align-items:center">'
-            + '<span class="board-empty-pick">' + fmtPick(overall, s.teams) + ' <span style="font-size:10px; font-weight:normal">(#' + overall + ')</span></span>'
-            + onClockBadge
-            + '</div>'
-            + '<div style="display:flex; justify-content:space-between; align-items:flex-end">'
-            + '<span class="board-empty-sub">Slot ' + pickCell.effectiveSlot + '</span>'
-            + tradedChip
-            + '</div>'
-            + '</div>'
-            + '</td>';
-        }
+        tableHeadHtml += '<th class="' + thClasses + '">'
+          + '<div class="board-th-team" title="' + name + '">' + (isMe ? '⭐ ' : '') + name + '</div>'
+          + '<div class="board-th-slot">SLOT ' + slot + (isMe ? ' <span style="font-size:9px; color:var(--good)">(YOU)</span>' : '') + '</div>'
+          + '</th>';
       }
-      tableBodyHtml += '</tr>';
-    }
-    tableBodyHtml += '</tbody>';
+      tableHeadHtml += '</tr></thead>';
 
-    // Modal Template
+      let tableBodyHtml = '<tbody>';
+      for (let rIdx = 0; rIdx < boardData.grid.length; rIdx++) {
+        const row = boardData.grid[rIdx];
+        const rNum = row.round;
+        const arrow = row.isForward ? '➡️' : '⬅️';
+
+        tableBodyHtml += '<tr>';
+        tableBodyHtml += '<th class="board-round-th">'
+          + '<div class="board-round-num">R' + rNum + '</div>'
+          + '<div class="board-round-arrow" title="' + (row.isForward ? 'Forward (1 to N)' : 'Reverse (N to 1)') + '">' + arrow + '</div>'
+          + '</th>';
+
+        for (let cIdx = 0; cIdx < row.picks.length; cIdx++) {
+          const pickCell = row.picks[cIdx];
+          const overall = pickCell.overall;
+          const isClock = pickCell.isOnClock;
+          const isMe = pickCell.isMe;
+
+          let isDimmed = false;
+          if (boardHighlightFilter === 'MY_TEAM') {
+            isDimmed = !isMe;
+          } else if (boardHighlightFilter !== 'ALL') {
+            if (pickCell.player) {
+              const pPos = (pickCell.player.pos || '').toUpperCase();
+              if (boardHighlightFilter === 'DST') {
+                isDimmed = !['DST', 'DEF', 'D/ST'].includes(pPos);
+              } else {
+                isDimmed = (pPos !== boardHighlightFilter);
+              }
+            } else {
+              isDimmed = true;
+            }
+          }
+
+          const cellClasses = [
+            'board-cell',
+            isClock ? 'on-clock' : '',
+            isMe ? 'is-me' : '',
+            isDimmed ? 'board-dimmed' : ''
+          ].filter(Boolean).join(' ');
+
+          const isCompact = (boardDensity === 'compact');
+
+          if (pickCell.isDrafted && pickCell.player) {
+            const p = pickCell.player;
+            const posUpper = (p.pos || '').toUpperCase();
+            const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper)
+              ? posUpper.toLowerCase()
+              : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
+
+            const clickFn = (p.id != null)
+              ? ('showPlayerFromBoard(' + p.id + ')')
+              : ('showUnlistedPlayerFromBoard(' + overall + ')');
+
+            const isKeeper = pickCell.isKeeper;
+            const isTraded = pickCell.isTraded;
+            const unlistedBadge = p.isUnlisted ? ' <span style="font-size:10px; font-weight:normal; opacity:0.8">(custom)</span>' : '';
+            const keeperBadge = isKeeper ? '<span class="keeper-tag-chip" title="Keeper Selection">🔒</span>' : '';
+            const tradedChip = isTraded ? '<span class="traded-tag" title="Originally ' + pickCell.originalTeamName + '">via ' + pickCell.originalTeamName + '</span>' : '';
+            const teamByeStr = (p.team && p.team !== '—' ? p.team : '') + (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
+
+            if (isCompact) {
+              let topEndHtml = '';
+              if (isKeeper) {
+                topEndHtml = '<span class="board-card-compact-meta">' + keeperBadge + ' ' + (teamByeStr || '—') + '</span>'
+                  + '<span class="board-card-pos">' + (p.pos || '—') + '</span>';
+              } else {
+                topEndHtml = (tradedChip ? tradedChip + ' ' : '')
+                  + '<span class="board-card-compact-meta">' + (teamByeStr || (p.pos || '—')) + '</span>';
+              }
+
+              tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+                + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
+                + '<div class="board-card-top">'
+                + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+                + '<div class="board-card-top-end">' + topEndHtml + '</div>'
+                + '</div>'
+                + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
+                + '</div>'
+                + '</td>';
+            } else {
+              tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+                + '<div class="board-card ' + posClass + '" onclick="' + clickFn + '">'
+                + '<div class="board-card-top">'
+                + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+                + '<span class="board-card-pos">' + (p.pos || '—') + '</span>'
+                + '</div>'
+                + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + (p.name || 'Unlisted') + unlistedBadge + '</div>'
+                + '<div class="board-card-bottom">'
+                + '<span class="board-card-team">' + (teamByeStr || '—') + '</span>'
+                + '<div style="display:flex; align-items:center; gap:3px">' + keeperBadge + tradedChip + '</div>'
+                + '</div>'
+                + '</div>'
+                + '</td>';
+            }
+          } else if (pickCell.isPendingKeeper && pickCell.player) {
+            const p = pickCell.player;
+            const posUpper = (p.pos || '').toUpperCase();
+            const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper)
+              ? posClass.toLowerCase()
+              : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
+
+            const teamByeStr = (p.team && p.team !== '—' ? p.team : '') + (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
+
+            if (isCompact) {
+              tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+                + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
+                + '<div class="board-card-top">'
+                + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+                + '<div class="board-card-top-end">'
+                + '<span class="board-card-compact-meta">' + (teamByeStr || '—') + '</span>'
+                + '</div>'
+                + '</div>'
+                + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '"><span class="keeper-tag-chip" style="margin-right:3px">🔒</span>' + p.name + '</div>'
+                + '</div>'
+                + '</td>';
+            } else {
+              tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+                + '<div class="board-card pending-keeper ' + posClass + '" title="Keeper Assignment (Round ' + pickCell.round + ')">'
+                + '<div class="board-card-top">'
+                + '<span class="board-card-pick">#' + overall + ' (' + fmtPick(overall, s.teams) + ')</span>'
+                + '<span class="board-card-team" style="font-size:10.5px">' + (teamByeStr || '—') + '</span>'
+                + '</div>'
+                + '<div class="board-card-name" title="' + (p.name || '').replace(/"/g, '&quot;') + '"><span class="keeper-tag-chip" style="margin-right:3px">🔒</span>' + p.name + '</div>'
+                + '<div class="board-card-bottom">'
+                + '<span class="meta" style="font-size:10px; color:var(--warn)">Keeper Assignment</span>'
+                + '</div>'
+                + '</div>'
+                + '</td>';
+            }
+          } else {
+            // Empty upcoming cell
+            const onClockBadge = isClock ? '<span class="on-clock-badge">⚡ ON CLOCK</span>' : '';
+            const tradedChip = pickCell.isTraded ? '<span class="traded-tag">via ' + pickCell.originalTeamName + '</span>' : '';
+
+            tableBodyHtml += '<td class="' + cellClasses + '" data-overall="' + overall + '">'
+              + '<div class="board-empty">'
+              + '<div style="display:flex; justify-content:space-between; align-items:center">'
+              + '<span class="board-empty-pick">' + fmtPick(overall, s.teams) + ' <span style="font-size:10px; font-weight:normal">(#' + overall + ')</span></span>'
+              + onClockBadge
+              + '</div>'
+              + '<div style="display:flex; justify-content:space-between; align-items:flex-end">'
+              + '<span class="board-empty-sub">Slot ' + pickCell.effectiveSlot + '</span>'
+              + tradedChip
+              + '</div>'
+              + '</div>'
+              + '</td>';
+          }
+        }
+        tableBodyHtml += '</tr>';
+      }
+      tableBodyHtml += '</tbody>';
+
+      mainViewHtml = '<div class="board-container" id="board_container">'
+        + '<table class="board-table' + densityClass + '" id="board_table">'
+        + tableHeadHtml
+        + tableBodyHtml
+        + '</table>'
+        + '</div>';
+    } else if (boardActiveTab === 'strategy') {
+      const availablePlayers = (global.data && Array.isArray(global.data.players))
+        ? global.data.players.filter(p => !isTaken(p.id))
+        : [];
+
+      const strat = (typeof analyzeLiveDraftStrategy === 'function')
+        ? analyzeLiveDraftStrategy({
+          teams: s.teams,
+          rounds: s.rounds,
+          mode: s.mode,
+          log: global.state.log,
+          keepers: global.state.keepers,
+          tradedPicks: global.state.tradedPicks,
+          teamNames: s.teamNames,
+          mySlot: s.slot,
+          currentPickNum: pick,
+          playersLookup: byId,
+          rosterSlots: s.rosterSlots,
+          scoringSettings: { blend: s.blend / 100, qbFormat: s.qbFormat, scoring: s.scoring, tePremium: s.teprem },
+          availablePlayers: availablePlayers
+        })
+        : null;
+
+      if (!strat) return;
+
+      // Banner
+      let bannerHtml = '';
+      if (strat.isOnClock) {
+        bannerHtml = '<div class="strategy-banner on-clock">'
+          + '<div>'
+          + '<h4 style="margin:0; font-size:16px; color:var(--good); display:flex; align-items:center; gap:6px">⚡ YOU ARE ON THE CLOCK! (Pick #' + pick + ')</h4>'
+          + '<div style="font-size:12px; color:#cbd5e1; margin-top:2px">It is your turn to pick. Check your top recommended targets below or view the player pool.</div>'
+          + '</div>'
+          + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-weight:700">Make Pick ➔</button>'
+          + '</div>';
+      } else if (strat.isComplete) {
+        bannerHtml = '<div class="strategy-banner">'
+          + '<div>'
+          + '<h4 style="margin:0; font-size:15px; color:var(--good)">🏆 Draft Complete</h4>'
+          + '<div style="font-size:12px; color:#cbd5e1">All ' + totalPicks + ' picks have been drafted. Switch to the League Value & Grades tab to view full team rankings and superlatives.</div>'
+          + '</div>'
+          + '<button type="button" class="act primary" onclick="setBoardActiveTab(\'summary\')" style="font-weight:700">View Final Rankings ➔</button>'
+          + '</div>';
+      } else {
+        bannerHtml = '<div class="strategy-banner">'
+          + '<div>'
+          + '<h4 style="margin:0; font-size:15px; color:var(--text)">⏳ ' + strat.picksUntilUserTurn + ' Pick' + (strat.picksUntilUserTurn === 1 ? '' : 's') + ' Until Your Turn</h4>'
+          + '<div style="font-size:12px; color:var(--dim); margin-top:2px">Your next turn is <strong style="color:var(--accent)">Pick #' + strat.nextUserPick + ' (' + fmtPick(strat.nextUserPick, s.teams) + ')</strong> · Currently on clock: <strong style="color:var(--text)">' + (onClockTeam ? onClockTeam.name : 'Pick #' + pick) + '</strong></div>'
+          + '</div>'
+          + '</div>';
+      }
+
+      // Opponent Threats
+      let threatsHtml = '';
+      if (strat.opponentThreats.length > 0) {
+        const cardsHtml = strat.opponentThreats.map(t => {
+          const needsHtml = t.urgentNeeds.map(n => {
+            const cls = n.isCritical ? 'threat-need-pill critical' : 'threat-need-pill';
+            return '<span class="' + cls + '">' + n.pos + '</span>';
+          }).join('') || '<span style="font-size:10px; color:var(--dim)">Depth / Bench</span>';
+
+          return '<div class="threat-card">'
+            + '<div class="threat-card-top">'
+            + '<span style="font-weight:800; color:var(--accent)">' + t.pickFmt + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">(#' + t.overall + ')</span></span>'
+            + '<span style="font-size:10px; color:var(--dim)">Slot ' + t.slot + '</span>'
+            + '</div>'
+            + '<div class="threat-card-team">' + t.teamName + '</div>'
+            + '<div style="font-size:10px; color:var(--dim); margin-top:2px">Target Needs:</div>'
+            + '<div class="threat-needs-list">' + needsHtml + '</div>'
+            + '</div>';
+        }).join('');
+
+        const dangersHtml = strat.runDangers.map(d => {
+          return '<span class="threat-danger-badge">🚨 ' + d.message + '</span>';
+        }).join('');
+
+        threatsHtml = '<div class="threat-timeline-wrapper">'
+          + '<div class="strategy-section-title">🛡️ Opponents Drafting Before Your Turn (' + strat.opponentThreats.length + ' Picks Ahead)</div>'
+          + '<div class="threat-timeline">' + cardsHtml + '</div>'
+          + (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
+          + '</div>';
+      }
+
+      // User Needs Grid
+      const needsCardsHtml = strat.userNeeds.map(n => {
+        let statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
+        let barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
+        let barColor = (n.urgency === 'CRITICAL') ? 'var(--qb)' : (n.urgency === 'NEEDED' ? 'var(--warn)' : 'var(--good)');
+
+        return '<div class="need-card">'
+          + '<div class="need-card-header">'
+          + '<span class="pos ' + (n.pos === 'DST' ? 'DST' : n.pos) + '" style="font-size:10px">' + n.pos + '</span>'
+          + '<span class="' + statusCls + '">' + n.label + '</span>'
+          + '</div>'
+          + '<div style="font-size:13px; font-weight:800; color:var(--text)">' + n.filled + ' / ' + n.baseReq + ' <span style="font-size:11px; font-weight:normal; color:var(--dim)">starters</span></div>'
+          + '<div style="background:rgba(255,255,255,0.08); height:4px; border-radius:2px; overflow:hidden"><div style="background:' + barColor + '; width:' + barPct + '%; height:100%"></div></div>'
+          + '</div>';
+      }).join('');
+
+      // Target Suggestions
+      let targetsHtml = '';
+      if (strat.recommendedTargets.length > 0) {
+        const tCards = strat.recommendedTargets.map(t => {
+          const posClass = t.pos.toLowerCase();
+          const adpTag = t.adp ? ('ADP ' + t.adp) : '';
+          const surplusTag = (t.valSurplus > 0) ? ('<span style="color:var(--good); font-weight:700">+' + t.valSurplus + ' vs ADP</span>') : '';
+          return '<div class="target-card" onclick="showPlayer(' + t.id + ')">'
+            + '<div>'
+            + '<div style="display:flex; align-items:center; gap:5px">'
+            + '<span class="pos ' + (t.pos === 'DST' ? 'DST' : t.pos) + '" style="font-size:9.5px">' + t.pos + '</span>'
+            + '<strong style="color:var(--text); font-size:12px">' + t.name + '</strong>'
+            + '</div>'
+            + '<div style="font-size:10.5px; color:var(--dim); margin-top:2px">' + (t.team || '—') + (t.bye ? ' · Wk ' + t.bye : '') + ' · ' + adpTag + '</div>'
+            + '</div>'
+            + '<div style="text-align:right">'
+            + '<div style="font-size:13px; font-weight:800; color:var(--accent)">' + t.score + ' <span style="font-size:10px; font-weight:normal; color:var(--dim)">pts</span></div>'
+            + '<div style="font-size:10px">' + surplusTag + '</div>'
+            + '</div>'
+            + '</div>';
+        }).join('');
+
+        targetsHtml = '<div>'
+          + '<div class="strategy-section-title">🎯 Recommended Value Targets for Your Roster</div>'
+          + '<div class="targets-grid">' + tCards + '</div>'
+          + '</div>';
+      }
+
+      mainViewHtml = '<div class="strategy-container">'
+        + bannerHtml
+        + threatsHtml
+        + '<div>'
+        + '<div class="strategy-section-title">📋 Your Team Starter Needs & Roster Health</div>'
+        + '<div class="needs-grid">' + needsCardsHtml + '</div>'
+        + '</div>'
+        + targetsHtml
+        + '</div>';
+    } else {
+      // Summary View
+      const summary = (typeof generateDraftSummaryAnalysis === 'function')
+        ? generateDraftSummaryAnalysis({
+          teams: s.teams,
+          rounds: s.rounds,
+          mode: s.mode,
+          log: global.state.log,
+          keepers: global.state.keepers,
+          tradedPicks: global.state.tradedPicks,
+          teamNames: s.teamNames,
+          mySlot: s.slot,
+          playersLookup: byId,
+          rosterSlots: s.rosterSlots,
+          scoringSettings: { blend: s.blend / 100, qbFormat: s.qbFormat, scoring: s.scoring, tePremium: s.teprem }
+        })
+        : null;
+
+      if (!summary) return;
+
+      const myT = summary.myTeam;
+      const myGradeLetter = (myT && myT.grade) ? myT.grade.charAt(0).toLowerCase() : 'b';
+
+      const myReportHtml = myT
+        ? '<div class="summary-report-card">'
+        + '<div class="summary-stat-box">'
+        + '<div class="summary-stat-label">Your Grade</div>'
+        + '<div class="summary-stat-val"><span class="grade-badge ' + myGradeLetter + '">' + myT.grade + '</span></div>'
+        + '</div>'
+        + '<div class="summary-stat-box">'
+        + '<div class="summary-stat-label">League Rank</div>'
+        + '<div class="summary-stat-val">#' + myT.rank + ' <span style="font-size:12px; font-weight:normal; color:var(--dim)">of ' + s.teams + '</span></div>'
+        + '</div>'
+        + '<div class="summary-stat-box">'
+        + '<div class="summary-stat-label">Total Value Score</div>'
+        + '<div class="summary-stat-val" style="color:var(--accent)">' + myT.totalScore + ' <span style="font-size:11px; font-weight:normal; color:var(--dim)">pts</span></div>'
+        + '</div>'
+        + '<div class="summary-stat-box">'
+        + '<div class="summary-stat-label">Starters Value</div>'
+        + '<div class="summary-stat-val">' + myT.startersScore + ' <span style="font-size:11px; font-weight:normal; color:var(--dim)">pts</span></div>'
+        + '</div>'
+        + '<div class="summary-stat-box">'
+        + '<div class="summary-stat-label">Value vs ADP</div>'
+        + '<div class="summary-stat-val" style="color:' + (myT.netAdpSurplus >= 0 ? 'var(--good)' : 'var(--warn)') + '">' + (myT.netAdpSurplus >= 0 ? '+' : '') + myT.netAdpSurplus + '</div>'
+        + '</div>'
+        + '<div class="summary-stat-box">'
+        + '<div class="summary-stat-label">Best Value Pick</div>'
+        + '<div class="summary-stat-val" style="font-size:12px; font-weight:700">' + (myT.bestSteal ? (myT.bestSteal.player.name + ' (+' + Math.round(myT.bestSteal.surplus) + ')') : '—') + '</div>'
+        + '</div>'
+        + '</div>'
+        : '';
+
+      // Superlatives
+      const sup = summary.superlatives;
+      const superlativesHtml = '<div class="superlatives-grid">'
+        + '<div class="superlative-card"><div class="superlative-title">👑 Top Rated Team</div><div class="superlative-winner">' + (sup.champion ? sup.champion.teamName : '—') + '</div><div class="superlative-detail">' + (sup.champion ? sup.champion.totalScore + ' total points (' + sup.champion.grade + ')' : '') + '</div></div>'
+        + '<div class="superlative-card"><div class="superlative-title">💎 Steal of the Draft</div><div class="superlative-winner">' + (sup.bestSteal ? sup.bestSteal.player.name : '—') + '</div><div class="superlative-detail">' + (sup.bestSteal ? '+' + Math.round(sup.bestSteal.surplus) + ' picks past ADP (' + (sup.bestSteal.player.effectiveTeamName || '') + ')' : '') + '</div></div>'
+        + '<div class="superlative-card"><div class="superlative-title">🚨 Biggest Reach</div><div class="superlative-winner">' + (sup.biggestReach ? sup.biggestReach.player.name : '—') + '</div><div class="superlative-detail">' + (sup.biggestReach ? Math.round(sup.biggestReach.surplus) + ' picks ahead of ADP (' + (sup.biggestReach.player.effectiveTeamName || '') + ')' : '') + '</div></div>'
+        + '<div class="superlative-card"><div class="superlative-title">🥇 Best QB Room</div><div class="superlative-winner">' + (sup.bestQb ? sup.bestQb.teamName : '—') + '</div><div class="superlative-detail">' + (sup.bestQb ? sup.bestQb.qbScore + ' QB points' : '') + '</div></div>'
+        + '<div class="superlative-card"><div class="superlative-title">🥇 Best RB Room</div><div class="superlative-winner">' + (sup.bestRb ? sup.bestRb.teamName : '—') + '</div><div class="superlative-detail">' + (sup.bestRb ? sup.bestRb.rbScore + ' RB points' : '') + '</div></div>'
+        + '<div class="superlative-card"><div class="superlative-title">🥇 Best WR Room</div><div class="superlative-winner">' + (sup.bestWr ? sup.bestWr.teamName : '—') + '</div><div class="superlative-detail">' + (sup.bestWr ? sup.bestWr.wrScore + ' WR points' : '') + '</div></div>'
+        + '<div class="superlative-card"><div class="superlative-title">🥇 Best TE Room</div><div class="superlative-winner">' + (sup.bestTe ? sup.bestTe.teamName : '—') + '</div><div class="superlative-detail">' + (sup.bestTe ? sup.bestTe.teScore + ' TE points' : '') + '</div></div>'
+        + '</div>';
+
+      // Power Rankings Table
+      const sortedTeams = summary.teams.slice().sort((a, b) => {
+        let valA = a[summarySortKey];
+        let valB = b[summarySortKey];
+        if (summarySortKey === 'rank') {
+          return summarySortAsc ? (a.rank - b.rank) : (b.rank - a.rank);
+        }
+        return summarySortAsc ? (valA - valB) : (valB - valA);
+      });
+
+      const sortIndicator = key => (summarySortKey === key ? (summarySortAsc ? ' ▲' : ' ▼') : '');
+
+      const tableRowsHtml = sortedTeams.map(t => {
+        const gLetter = t.grade ? t.grade.charAt(0).toLowerCase() : 'b';
+        const isExpanded = (expandedTeamSlot === t.slot);
+
+        let drawerHtml = '';
+        if (isExpanded) {
+          const startersListHtml = t.starters.map(st => {
+            const p = st.player;
+            if (!p) return '<div style="font-size:11px; color:var(--dim)">' + st.label + ': <span style="font-style:italic">Open</span></div>';
+            return '<div style="font-size:11px; display:flex; align-items:center; justify-content:space-between">'
+              + '<span><strong style="color:var(--accent)">[' + st.label + ']</strong> ' + p.name + '</span>'
+              + '<span style="color:var(--dim)">' + Math.round(p.score || 0) + ' pts</span>'
+              + '</div>';
+          }).join('');
+
+          const benchListHtml = t.bench.map(bn => {
+            const p = bn.player;
+            if (!p) return '';
+            return '<div style="font-size:11px; display:flex; align-items:center; justify-content:space-between">'
+              + '<span><span class="pos ' + (p.pos === 'DST' ? 'DST' : p.pos) + '" style="font-size:9px">' + p.pos + '</span> ' + p.name + '</span>'
+              + '<span style="color:var(--dim)">' + Math.round(p.score || 0) + ' pts</span>'
+              + '</div>';
+          }).join('');
+
+          drawerHtml = '<tr><td colspan="10" style="padding:0">'
+            + '<div class="team-roster-drawer">'
+            + '<div><strong style="font-size:11px; color:var(--text); text-transform:uppercase">Starters (' + t.startersScore + ' pts)</strong><div style="display:flex; flex-direction:column; gap:3px; margin-top:4px">' + startersListHtml + '</div></div>'
+            + '<div><strong style="font-size:11px; color:var(--text); text-transform:uppercase">Bench (' + t.benchScore + ' pts)</strong><div style="display:flex; flex-direction:column; gap:3px; margin-top:4px">' + (benchListHtml || '<span style="font-size:11px; color:var(--dim)">No bench players</span>') + '</div></div>'
+            + '</div>'
+            + '</td></tr>';
+        }
+
+        return '<tr class="' + (t.isMe ? 'is-me' : '') + '" onclick="toggleTeamRosterDrawer(' + t.slot + ')" style="cursor:pointer" title="Click to view full roster">'
+          + '<td class="summary-rank-cell">#' + t.rank + '</td>'
+          + '<td><strong style="color:var(--text)">' + (t.isMe ? '⭐ ' : '') + t.teamName + '</strong> <span style="font-size:10px; color:var(--dim)">Slot ' + t.slot + '</span></td>'
+          + '<td><span class="grade-badge ' + gLetter + '">' + t.grade + '</span></td>'
+          + '<td style="font-weight:800; color:var(--accent)">' + t.totalScore + '</td>'
+          + '<td style="color:var(--dim)">' + t.startersScore + ' / ' + t.benchScore + '</td>'
+          + '<td><div class="summary-pos-cell"><span>' + t.qbScore + '</span><span class="pos-rank-pill' + (t.qbRank === 1 ? ' top' : '') + '">#' + t.qbRank + '</span></div></td>'
+          + '<td><div class="summary-pos-cell"><span>' + t.rbScore + '</span><span class="pos-rank-pill' + (t.rbRank === 1 ? ' top' : '') + '">#' + t.rbRank + '</span></div></td>'
+          + '<td><div class="summary-pos-cell"><span>' + t.wrScore + '</span><span class="pos-rank-pill' + (t.wrRank === 1 ? ' top' : '') + '">#' + t.wrRank + '</span></div></td>'
+          + '<td><div class="summary-pos-cell"><span>' + t.teScore + '</span><span class="pos-rank-pill' + (t.teRank === 1 ? ' top' : '') + '">#' + t.teRank + '</span></div></td>'
+          + '<td style="color:' + (t.netAdpSurplus >= 0 ? 'var(--good)' : 'var(--warn)') + '">' + (t.netAdpSurplus >= 0 ? '+' : '') + t.netAdpSurplus + '</td>'
+          + '</tr>'
+          + drawerHtml;
+      }).join('');
+
+      mainViewHtml = '<div class="summary-container">'
+        + myReportHtml
+        + '<div>'
+        + '<div class="strategy-section-title">🏆 Draft Superlatives & Unit Awards</div>'
+        + superlativesHtml
+        + '</div>'
+        + '<div>'
+        + '<div class="strategy-section-title">📊 Team Power Rankings & Positional Value Table (Click Team to View Roster)</div>'
+        + '<div class="summary-table-wrapper">'
+        + '<table class="summary-table">'
+        + '<thead>'
+        + '<tr>'
+        + '<th onclick="setSummarySort(\'rank\')">Rank' + sortIndicator('rank') + '</th>'
+        + '<th onclick="setSummarySort(\'slot\')">Team' + sortIndicator('slot') + '</th>'
+        + '<th>Grade</th>'
+        + '<th onclick="setSummarySort(\'totalScore\')">Total Score' + sortIndicator('totalScore') + '</th>'
+        + '<th onclick="setSummarySort(\'startersScore\')">Starters / Bench' + sortIndicator('startersScore') + '</th>'
+        + '<th onclick="setSummarySort(\'qbScore\')">QB Value' + sortIndicator('qbScore') + '</th>'
+        + '<th onclick="setSummarySort(\'rbScore\')">RB Value' + sortIndicator('rbScore') + '</th>'
+        + '<th onclick="setSummarySort(\'wrScore\')">WR Value' + sortIndicator('wrScore') + '</th>'
+        + '<th onclick="setSummarySort(\'teScore\')">TE Value' + sortIndicator('teScore') + '</th>'
+        + '<th onclick="setSummarySort(\'netAdpSurplus\')">ADP Value' + sortIndicator('netAdpSurplus') + '</th>'
+        + '</tr>'
+        + '</thead>'
+        + '<tbody>'
+        + tableRowsHtml
+        + '</tbody>'
+        + '</table>'
+        + '</div>'
+        + '</div>'
+        + '</div>';
+    }
+
+    // 4. Modal Template Shell
     $('modalbox').innerHTML =
       '<div class="board-modal-header">'
-      + '<h3>📊 ' + (s.leagueName || "Ken's Draft Board") + ' — Draft Board Grid <span class="meta" style="font-size:13px; font-weight:normal">(' + s.teams + ' Teams · ' + s.rounds + ' Rounds · ' + (s.mode === '3rr' ? '3RR' : 'Snake') + ')</span></h3>'
+      + '<h3>📊 ' + (s.leagueName || "Ken's Draft Board") + ' <span class="meta" style="font-size:13px; font-weight:normal">(' + s.teams + ' Teams · ' + s.rounds + ' Rounds · ' + (s.mode === '3rr' ? '3RR' : 'Snake') + ')</span></h3>'
       + '<button class="close" onclick="closeBoardModal()">×</button>'
       + '</div>'
       + '<div class="board-toolbar">'
-      + '<div class="board-filters">'
-      + '<span class="meta" style="font-size:12px; margin-right:4px">Highlight:</span>'
-      + filterButtonsHtml
+      + tabsHtml
+      + toolbarActionsHtml
       + '</div>'
-      + '<div class="board-actions">'
-      + '<div class="meta" style="font-size:12px; margin-right:8px">' + clockStatusHtml + ' · <span style="color:var(--dim)">' + draftedPicksCount + '/' + totalPicks + ' (' + pct + '%)</span></div>'
-      + (!isComplete ? '<button type="button" class="act" onclick="scrollBoardToCurrentPick(true)" style="font-size:11.5px; padding:3px 8px; font-weight:600; color:var(--accent); border-color:var(--accent)">⚡ Jump to On-Clock</button>' : '')
-      + '<button type="button" class="act" onclick="toggleBoardDensity()" style="font-size:11.5px; padding:3px 8px">' + densityBtnLabel + '</button>'
-      + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-size:11.5px; padding:3px 10px; font-weight:700">Done</button>'
-      + '</div>'
-      + '</div>'
-      + '<div class="board-container" id="board_container">'
-      + '<table class="board-table' + densityClass + '" id="board_table">'
-      + tableHeadHtml
-      + tableBodyHtml
-      + '</table>'
-      + '</div>';
+      + mainViewHtml;
 
     $('overlay').classList.add('show');
   }
@@ -1785,13 +2173,14 @@
   global.submitKeeperForm = submitKeeperForm;
   global.handleRemoveKeeper = handleRemoveKeeper;
   global.handleKeeperMaxChange = handleKeeperMaxChange;
-  global.saveKeepersAndBackToSetup = saveKeepersAndBackToSetup;
-  global.saveAndCloseKeepersModal = saveAndCloseKeepersModal;
   global.openDraftBoardModal = openDraftBoardModal;
   global.renderDraftBoardModalView = renderDraftBoardModalView;
   global.closeBoardModal = closeBoardModal;
+  global.setBoardActiveTab = setBoardActiveTab;
   global.setBoardFilter = setBoardFilter;
   global.toggleBoardDensity = toggleBoardDensity;
+  global.setSummarySort = setSummarySort;
+  global.toggleTeamRosterDrawer = toggleTeamRosterDrawer;
   global.scrollBoardToCurrentPick = scrollBoardToCurrentPick;
   global.showPlayerFromBoard = showPlayerFromBoard;
   global.showUnlistedPlayerFromBoard = showUnlistedPlayerFromBoard;
