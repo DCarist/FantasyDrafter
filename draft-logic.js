@@ -309,23 +309,30 @@ function teamForOverall(overall, teamsCount, mode, teamNames, mySlot, tradedPick
   return res;
 }
 
-// Resolves the player object for any draft log entry (supporting unlisted picks).
+// Resolves the player object for any draft log entry (supporting unlisted picks and keepers).
 function resolvePickPlayer(entry, players) {
   if (!entry) return null;
+  let res = null;
   if (entry.playerId != null && players) {
     const p = (typeof players === 'function') ? players(entry.playerId) : players[entry.playerId];
-    if (p) return Object.assign({ team: p.team || '—' }, p);
+    if (p) res = Object.assign({ team: p.team || '—' }, p);
   }
-  const pos = (entry.customPos || 'OTHER').toUpperCase();
-  const name = entry.customName ? entry.customName.trim() : ('Unlisted ' + (pos !== 'OTHER' ? pos : 'Player'));
-  return {
-    id: entry.playerId != null ? entry.playerId : null,
-    name: name,
-    pos: pos,
-    team: entry.customTeam ? entry.customTeam.trim().toUpperCase() : '—',
-    bye: entry.customBye || null,
-    isUnlisted: true,
-  };
+  if (!res) {
+    const pos = (entry.customPos || 'OTHER').toUpperCase();
+    const name = entry.customName ? entry.customName.trim() : ('Unlisted ' + (pos !== 'OTHER' ? pos : 'Player'));
+    res = {
+      id: entry.playerId != null ? entry.playerId : null,
+      name: name,
+      pos: pos,
+      team: entry.customTeam ? entry.customTeam.trim().toUpperCase() : '—',
+      bye: entry.customBye || null,
+      isUnlisted: true,
+    };
+  }
+  if (entry.isKeeper) {
+    res.isKeeper = true;
+  }
+  return res;
 }
 
 // Resolves all player objects currently drafted to a given user/slot's roster.
@@ -567,9 +574,11 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
   const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + (p.entry ? p.entry.overall : 0) + ')');
   const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
   const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
-  const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + fmtPick(p.entry.overall, teamsCount) + '</span>' : '';
+  const isKeeper = p.isKeeper || (p.entry && p.entry.isKeeper);
+  const keeperBadge = isKeeper ? '<span class="keeper-badge" title="Keeper" style="font-size:11px; margin-right:2px">🔒</span>' : '';
+  const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + fmtPick(p.entry.overall, teamsCount) + '</span>' : (isKeeper ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + '</span>' : '');
 
-  return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + '">'
+  return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + (isKeeper ? ' keeper-slot' : '') + '">'
     + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
     + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
     + teamBadge
@@ -1061,15 +1070,122 @@ function getAvailableQueue(queue, takenContainer, players) {
   }).filter(Boolean);
 }
 
+// --- Keeper Validation & Pick Resolution Logic ---
+
+// Validates whether a candidate keeper can be assigned to a team and round
+function validateKeeperAssignment(candidate, existingKeepers, maxKeepers, teams, rounds, mode, tradedPicks) {
+  if (!candidate || typeof candidate !== 'object') {
+    return { valid: false, error: 'Invalid keeper configuration' };
+  }
+  const tCount = Math.max(2, Math.min(32, parseInt(teams, 10) || 12));
+  const rCount = Math.max(1, Math.min(50, parseInt(rounds, 10) || 20));
+  const slot = parseInt(candidate.slot, 10);
+  if (isNaN(slot) || slot < 1 || slot > tCount) {
+    return { valid: false, error: 'Invalid team slot ' + candidate.slot };
+  }
+  const round = parseInt(candidate.round, 10);
+  if (isNaN(round) || round < 1 || round > rCount) {
+    return { valid: false, error: 'Invalid draft round ' + candidate.round };
+  }
+  const hasPlayer = (candidate.playerId != null) || (candidate.customName && String(candidate.customName).trim().length > 0);
+  if (!hasPlayer) {
+    return { valid: false, error: 'A player must be selected for the keeper pick' };
+  }
+
+  const keepers = Array.isArray(existingKeepers) ? existingKeepers : [];
+  const currentKeepersForTeam = keepers.filter(k => k && k.slot === slot && k.id !== candidate.id);
+
+  // 1. Max Keepers limit check
+  const maxLimit = (maxKeepers !== undefined && maxKeepers !== null) ? parseInt(maxKeepers, 10) : 2;
+  if (maxLimit != null && currentKeepersForTeam.length >= maxLimit) {
+    return { valid: false, error: 'Team ' + slot + ' has reached the maximum of ' + maxLimit + ' keepers' };
+  }
+
+  // 2. Duplicate player check
+  for (const k of keepers) {
+    if (!k || k.id === candidate.id) continue;
+    if (candidate.playerId != null && k.playerId != null && candidate.playerId === k.playerId) {
+      return { valid: false, error: 'Player is already kept by Team ' + k.slot };
+    }
+    if (candidate.customName && k.customName && normalizeName(candidate.customName) === normalizeName(k.customName)) {
+      return { valid: false, error: 'Player "' + candidate.customName + '" is already kept by Team ' + k.slot };
+    }
+  }
+
+  // 3. Round pick ownership check
+  const allTeamPicks = picksForSlot(slot, tCount, rCount, mode || 'snake', tradedPicks || {});
+  const roundPicks = allTeamPicks.filter(o => Math.ceil(o / tCount) === round);
+
+  if (roundPicks.length === 0) {
+    return { valid: false, error: 'Team ' + slot + ' owns 0 picks in Round ' + round + ' (due to traded picks)' };
+  }
+
+  const existingKeepersInRound = currentKeepersForTeam.filter(k => parseInt(k.round, 10) === round);
+  if (existingKeepersInRound.length >= roundPicks.length) {
+    return {
+      valid: false,
+      error: 'Team ' + slot + ' already has ' + existingKeepersInRound.length + ' keeper(s) assigned in Round ' + round + ' (owns ' + roundPicks.length + ' pick(s))'
+    };
+  }
+
+  return { valid: true };
+}
+
+// Maps all keepers to their exact overall pick numbers based on draft order and traded picks
+function getKeeperPicksMap(keepers, teams, rounds, mode, tradedPicks) {
+  const map = {};
+  if (!Array.isArray(keepers) || keepers.length === 0) return map;
+  const tCount = Math.max(2, Math.min(32, parseInt(teams, 10) || 12));
+  const rCount = Math.max(1, Math.min(50, parseInt(rounds, 10) || 20));
+  const m = mode || 'snake';
+  const trades = (tradedPicks && typeof tradedPicks === 'object') ? tradedPicks : {};
+
+  // Group keepers by (slot, round)
+  const grouped = {};
+  for (const k of keepers) {
+    if (!k || k.slot == null || k.round == null) continue;
+    const key = k.slot + '_' + k.round;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(k);
+  }
+
+  for (const [key, list] of Object.entries(grouped)) {
+    const [slotStr, roundStr] = key.split('_');
+    const slot = parseInt(slotStr, 10);
+    const round = parseInt(roundStr, 10);
+    const allTeamPicks = picksForSlot(slot, tCount, rCount, m, trades);
+    const roundPicks = allTeamPicks.filter(o => Math.ceil(o / tCount) === round).sort((a, b) => a - b);
+
+    for (let i = 0; i < list.length; i++) {
+      const keeper = list[i];
+      if (i < roundPicks.length) {
+        const overall = roundPicks[i];
+        map[overall] = Object.assign({}, keeper, { overall: overall });
+      }
+    }
+  }
+
+  return map;
+}
+
+// Returns the keeper data if overall is a designated keeper pick, otherwise null
+function isKeeperPick(overall, keepers, teams, rounds, mode, tradedPicks) {
+  if (!overall || !Array.isArray(keepers) || keepers.length === 0) return null;
+  const map = getKeeperPicksMap(keepers, teams, rounds, mode, tradedPicks);
+  return map[overall] || null;
+}
+
 // --- Draft State Serialization & Migration ---
 const DRAFT_SCHEMA_VERSION = 2;
 
 function serializeDraftState(state) {
   const s = state || {};
+  const keepers = Array.isArray(s.keepers) ? s.keepers.slice() : (Array.isArray(s.settings?.keepers) ? s.settings.keepers.slice() : []);
   return {
     version: DRAFT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
-    settings: Object.assign({}, s.settings || {}),
+    settings: Object.assign({ maxKeepers: 2 }, s.settings || {}),
+    keepers: keepers,
     draftLog: Array.isArray(s.draftLog) ? s.draftLog.slice() : [],
     watchlist: Array.isArray(s.watchlist) ? s.watchlist.slice() : [],
     queue: Array.isArray(s.queue) ? s.queue.slice() : [],
@@ -1096,7 +1212,29 @@ function deserializeDraftState(input, currentPlayers) {
 
   // Handle version detection and migration
   const version = raw.version || 1;
-  const settings = raw.settings || {};
+  const settings = Object.assign({}, raw.settings || {});
+  if (settings.maxKeepers === undefined || settings.maxKeepers === null) {
+    settings.maxKeepers = 2;
+  } else {
+    settings.maxKeepers = Math.max(0, Math.min(10, parseInt(settings.maxKeepers, 10) || 0));
+  }
+
+  const rawKeepers = Array.isArray(raw.keepers) ? raw.keepers : (Array.isArray(settings.keepers) ? settings.keepers : []);
+  const validKeepers = [];
+  for (const k of rawKeepers) {
+    if (!k || typeof k !== 'object') continue;
+    validKeepers.push({
+      id: k.id || ('k_' + Math.random().toString(36).substr(2, 9)),
+      slot: parseInt(k.slot, 10) || 1,
+      round: parseInt(k.round, 10) || 1,
+      playerId: k.playerId != null ? parseInt(k.playerId, 10) : null,
+      customName: k.customName ? String(k.customName).trim() : null,
+      customPos: k.customPos ? String(k.customPos).trim().toUpperCase() : null,
+      customTeam: k.customTeam ? String(k.customTeam).trim().toUpperCase() : null,
+      customBye: k.customBye != null ? parseInt(k.customBye, 10) : null
+    });
+  }
+
   const draftLog = Array.isArray(raw.draftLog) ? raw.draftLog : [];
   const watchlist = Array.isArray(raw.watchlist) ? raw.watchlist : [];
   const queue = Array.isArray(raw.queue) ? raw.queue : [];
@@ -1114,7 +1252,8 @@ function deserializeDraftState(input, currentPlayers) {
       customPos: entry.customPos ? String(entry.customPos).trim().toUpperCase() : null,
       customTeam: entry.customTeam ? String(entry.customTeam).trim().toUpperCase() : null,
       customBye: entry.customBye != null ? parseInt(entry.customBye, 10) : null,
-      mine: !!entry.mine
+      mine: !!entry.mine,
+      isKeeper: !!entry.isKeeper
     });
   }
 
@@ -1124,6 +1263,7 @@ function deserializeDraftState(input, currentPlayers) {
     migratedFrom: version < DRAFT_SCHEMA_VERSION ? version : null,
     state: {
       settings: settings,
+      keepers: validKeepers,
       draftLog: validLog,
       watchlist: watchlist.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
       queue: queue.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
@@ -1174,6 +1314,9 @@ if (typeof module !== 'undefined' && module.exports) {
     reorderQueue: reorderQueue,
     cleanQueue: cleanQueue,
     getAvailableQueue: getAvailableQueue,
+    validateKeeperAssignment: validateKeeperAssignment,
+    getKeeperPicksMap: getKeeperPicksMap,
+    isKeeperPick: isKeeperPick,
     DRAFT_SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
     serializeDraftState: serializeDraftState,
     deserializeDraftState: deserializeDraftState,

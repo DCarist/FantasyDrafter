@@ -976,3 +976,83 @@ td.clickname:hover .pname {
   color: var(--dim);
   line-height: 1.6;
 }
+
+/* Keeper & Pre-Drafted Player Styles */
+.picktag.keeper-tag {
+  color: var(--warn);
+}
+
+.picktag.keeper-tag.mine {
+  color: var(--good);
+}
+
+.keeper-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.rosteritem.keeper-slot {
+  border-left-color: var(--warn);
+}
+
+.keeper-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+
+.keeper-table th {
+  text-align: left;
+  padding: 6px 8px;
+  background: var(--panel2);
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+.keeper-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: middle;
+}
+
+.keeper-table tr.is-me {
+  background: rgba(61, 220, 132, 0.04);
+}
+
+.keeper-search-container {
+  position: relative;
+}
+
+.keeper-autocomplete-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #181d29;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  margin-top: 2px;
+}
+
+.keeper-autocomplete-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.keeper-autocomplete-item:hover {
+  background: var(--panel2);
+}
