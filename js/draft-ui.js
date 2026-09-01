@@ -589,8 +589,10 @@
 
     if (initialTab) {
       boardActiveTab = initialTab;
-    } else if (isComplete && boardActiveTab === 'strategy') {
+    } else if (isComplete) {
       boardActiveTab = 'summary';
+    } else {
+      boardActiveTab = 'grid';
     }
 
     renderDraftBoardModalView();
@@ -1000,8 +1002,9 @@
       if (strat.opponentThreats.length > 0) {
         const cardsHtml = strat.opponentThreats.map(t => {
           const needsHtml = t.urgentNeeds.map(n => {
-            const cls = n.isCritical ? 'threat-need-pill critical' : 'threat-need-pill';
-            return '<span class="' + cls + '">' + n.pos + '</span>';
+            const posUpper = (n.pos || '').toUpperCase();
+            const posBadgeClass = (posUpper === 'DST' || posUpper === 'DEF' || posUpper === 'D/ST') ? 'DST' : posUpper;
+            return '<span class="pos ' + posBadgeClass + '" style="font-size:9.5px; font-weight:800; padding:1px 5px; border-radius:3px">' + n.pos + '</span>';
           }).join('') || '<span style="font-size:10px; color:var(--dim)">Depth / Bench</span>';
 
           return '<div class="threat-card">'

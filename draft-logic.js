@@ -1493,6 +1493,9 @@ function analyzeLiveDraftStrategy(options) {
   const picksUntilUserTurn = nextUserPick != null ? Math.max(0, nextUserPick - currentPickNum) : 0;
   const isOnClock = (currentPickNum === nextUserPick);
 
+  const currentRound = Math.ceil(currentPickNum / teams);
+  const isLateRounds = (currentRound >= rounds - 2);
+
   // 3. User Roster Allocation & Needs
   const myPlayers = teamDraftedMap[mySlot] || [];
   const myAllocation = assignRosterSlots(myPlayers, rosterSlots);
@@ -1525,12 +1528,24 @@ function analyzeLiveDraftStrategy(options) {
     let urgency = 'FILLED';
     let label = 'Filled';
 
+    const isKOrDst = (pos === 'K' || pos === 'DST');
+
     if (filled === 0 && baseReq > 0) {
-      urgency = 'CRITICAL';
-      label = 'Need Starter';
+      if (isKOrDst && !isLateRounds) {
+        urgency = 'OPTIONAL';
+        label = 'Late Rounds';
+      } else {
+        urgency = 'CRITICAL';
+        label = 'Need Starter';
+      }
     } else if (filled < baseReq) {
-      urgency = 'NEEDED';
-      label = `Need ${baseReq - filled} Starter${(baseReq - filled) > 1 ? 's' : ''}`;
+      if (isKOrDst && !isLateRounds) {
+        urgency = 'OPTIONAL';
+        label = 'Late Rounds';
+      } else {
+        urgency = 'NEEDED';
+        label = `Need ${baseReq - filled} Starter${(baseReq - filled) > 1 ? 's' : ''}`;
+      }
     } else if (filled < maxReq) {
       urgency = 'OPTIONAL';
       label = 'Depth / Flex';
@@ -1548,7 +1563,12 @@ function analyzeLiveDraftStrategy(options) {
 
   // 4. Opponent Threat Timeline between currentPickNum and nextUserPick
   const opponentThreats = [];
-  const threatPosCounts = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
+  const uniqueTeamsNeedingPos = {
+    QB: new Set(),
+    RB: new Set(),
+    WR: new Set(),
+    TE: new Set()
+  };
 
   if (nextUserPick != null && nextUserPick > currentPickNum) {
     for (let pNum = currentPickNum; pNum < nextUserPick; pNum++) {
@@ -1557,15 +1577,19 @@ function analyzeLiveDraftStrategy(options) {
       const oppAllocation = assignRosterSlots(oppDrafted, rosterSlots);
       const oppCounts = oppAllocation.counts || { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
 
+      // Identify this opponent's open starter holes (suppress K/DST unless late rounds)
       const oppHoles = [];
       for (const pos of ['QB', 'RB', 'WR', 'TE', 'K', 'DST']) {
+        const isKOrDst = (pos === 'K' || pos === 'DST');
+        if (isKOrDst && !isLateRounds) continue;
+
         const oppFilled = oppCounts[pos] || 0;
         const oppBaseReq = baseStarterReqs[pos] || 0;
         if (oppFilled < oppBaseReq) {
           const isCritical = (oppFilled === 0 && oppBaseReq > 0);
           oppHoles.push({ pos: pos, needed: oppBaseReq - oppFilled, isCritical: isCritical });
-          if (isCritical || oppHoles.length <= 2) {
-            threatPosCounts[pos]++;
+          if (['QB', 'RB', 'WR', 'TE'].includes(pos)) {
+            uniqueTeamsNeedingPos[pos].add(oppTeamInfo.slot);
           }
         }
       }
@@ -1583,16 +1607,16 @@ function analyzeLiveDraftStrategy(options) {
     }
   }
 
-  // 5. Aggregate Run Danger Alerts
+  // 5. Aggregate Run Danger Alerts (based on unique teams ahead needing that starter)
   const runDangers = [];
   for (const pos of ['QB', 'RB', 'WR', 'TE']) {
-    const count = threatPosCounts[pos] || 0;
+    const count = uniqueTeamsNeedingPos[pos].size;
     if (count >= 2) {
       runDangers.push({
         pos: pos,
         threatCount: count,
         level: count >= 3 ? 'HIGH' : 'MED',
-        message: `${count} teams ahead need ${pos} starters`
+        message: `${count} team${count === 1 ? '' : 's'} ahead need ${pos} starters`
       });
     }
   }
