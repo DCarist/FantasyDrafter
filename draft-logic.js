@@ -573,14 +573,14 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
   const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
   const clickHandler = (p.id != null) ? ('showPlayer(' + p.id + ')') : ('showUnlistedPlayer(' + (p.entry ? p.entry.overall : 0) + ')');
   const unlistedBadge = p.isUnlisted ? ' <span class="meta" style="font-size:10px">(custom)</span>' : '';
-  const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
+  const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta team-meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
   const isKeeper = p.isKeeper || (p.entry && p.entry.isKeeper);
   const keeperBadge = isKeeper ? '<span class="keeper-badge" title="Keeper" style="font-size:11px; margin-right:2px">🔒</span>' : '';
   const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + fmtPick(p.entry.overall, teamsCount) + '</span>' : (isKeeper ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + '</span>' : '');
 
   return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + (isKeeper ? ' keeper-slot' : '') + '">'
     + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
-    + '<span class="pname" onclick="' + clickHandler + '">' + p.name + unlistedBadge + '</span>'
+    + '<span class="pname" onclick="' + clickHandler + '" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + p.name + unlistedBadge + '</span>'
     + teamBadge
     + pkStr
     + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span>'

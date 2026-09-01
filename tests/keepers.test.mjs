@@ -237,6 +237,28 @@ const resEditTeam = L.validateKeeperAssignment(
 );
 assert(resEditTeam.valid, 'Allows editing keeper team slot without duplicate collision against itself');
 
+// --- 11. Pre-Draft Inline Keeper Roster Allocation ---
+// Verify keepers display in starting slots prior to their pick being reached
+const dougPreDraftPicks = [
+  {
+    entry: { overall: 88, isKeeper: true, isPendingKeeper: true },
+    player: { id: 17, name: 'Brock Bowers', pos: 'TE', team: 'LV', bye: 13, isKeeper: true }
+  },
+  {
+    entry: { overall: 105, isKeeper: true, isPendingKeeper: true },
+    player: { id: 25, name: 'Josh Allen', pos: 'QB', team: 'BUF', bye: 7, isKeeper: true }
+  }
+];
+
+const dougAllocation = L.assignRosterSlots(dougPreDraftPicks.map(p => Object.assign({ entry: p.entry }, p.player)), { qb: 1, te: 1, flex: 1 });
+const qbStarter = dougAllocation.starters.find(s => s.slotType === 'QB');
+const teStarter = dougAllocation.starters.find(s => s.slotType === 'TE');
+assert(qbStarter && qbStarter.player && qbStarter.player.name === 'Josh Allen', 'Josh Allen occupies starter QB slot inline');
+assert(teStarter && teStarter.player && teStarter.player.name === 'Brock Bowers', 'Brock Bowers occupies starter TE slot inline');
+
+const qbHtml = L.formatRosterSlotHtml(qbStarter, true, 12);
+assert(qbHtml.includes('🔒') && qbHtml.includes('9.09'), 'Renders keeper lock badge and formatted pick in starter slot');
+
 const success = finishSuite('Keepers & Pre-Drafted Players');
 if (!success) {
   process.exit(1);

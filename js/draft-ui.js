@@ -271,23 +271,71 @@
     };
   }
 
-  function renderMyRoster() {
+  function getRosterPicksForSlot(targetSlot) {
     const s = global.state.settings;
-    const targetSlot = s.slot;
-    const myTeamName = getTeamName(targetSlot);
-    const myPicks = global.state.log.filter(e => {
+    const teamPicks = global.state.log.filter(e => {
       const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
       return tInfo.slot === targetSlot;
     });
 
-    if ($('myrosterheader')) {
-      $('myrosterheader').innerHTML = '⭐ ' + myTeamName + ' <span class="meta" style="font-size:12px; margin-left:auto; font-weight:normal">Slot ' + targetSlot + ' · ' + myPicks.length + ' picks</span>';
-    }
-
-    const resolvedPicks = myPicks.map(e => ({
+    const resolved = teamPicks.map(e => ({
       entry: e,
       player: resolvePickPlayer(e, byId)
     }));
+
+    const keeperPicksMap = (typeof getKeeperPicksMap === 'function')
+      ? getKeeperPicksMap(global.state.keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
+      : {};
+
+    const loggedOveralls = new Set(teamPicks.map(e => e.overall));
+    const loggedPlayerIds = new Set(teamPicks.map(e => e.playerId).filter(id => id != null));
+    const loggedNames = new Set(teamPicks.map(e => e.customName ? normalizeName(e.customName) : '').filter(Boolean));
+
+    for (const [overallStr, k] of Object.entries(keeperPicksMap)) {
+      if (!k || k.slot !== targetSlot) continue;
+      const overall = parseInt(overallStr, 10);
+      if (loggedOveralls.has(overall)) continue;
+      if (k.playerId != null && loggedPlayerIds.has(k.playerId)) continue;
+      if (k.customName && loggedNames.has(normalizeName(k.customName))) continue;
+
+      const p = (k.playerId != null) ? (byId(k.playerId) || {}) : {};
+      resolved.push({
+        entry: {
+          overall: overall,
+          mine: targetSlot === s.slot,
+          isKeeper: true,
+          isPendingKeeper: true
+        },
+        player: {
+          id: k.playerId != null ? k.playerId : null,
+          name: k.customName || p.name || ('Keeper #' + (k.playerId || overall)),
+          pos: k.customPos || p.pos || 'WR',
+          team: k.customTeam || p.team || '',
+          bye: k.customBye != null ? k.customBye : (p.bye || null),
+          isKeeper: true,
+          isUnlisted: Boolean(k.customName)
+        }
+      });
+    }
+
+    resolved.sort((a, b) => (a.entry.overall || 0) - (b.entry.overall || 0));
+    return {
+      resolved: resolved,
+      draftedCount: teamPicks.length,
+      keeperCount: (global.state.keepers || []).filter(k => k && k.slot === targetSlot).length
+    };
+  }
+
+  function renderMyRoster() {
+    const s = global.state.settings;
+    const targetSlot = s.slot;
+    const myTeamName = getTeamName(targetSlot);
+    const { resolved: resolvedPicks, draftedCount, keeperCount } = getRosterPicksForSlot(targetSlot);
+
+    if ($('myrosterheader')) {
+      const kText = keeperCount > 0 ? (' · ' + keeperCount + ' kept') : '';
+      $('myrosterheader').innerHTML = '⭐ ' + myTeamName + ' <span class="meta" style="font-size:12px; margin-left:auto; font-weight:normal">Slot ' + targetSlot + ' · ' + draftedCount + ' drafted' + kText + '</span>';
+    }
 
     const res = renderRosterSection(resolvedPicks, s.rosterSlots, s.teams);
     if ($('myroster')) $('myroster').innerHTML = res.rosterHtml;
@@ -309,12 +357,10 @@
         const isClock = (i === onClockTeam.slot);
         const isMe = (i === s.slot);
         const isSelected = (global.viewingRosterSlot === i);
-        const count = global.state.log.filter(e => {
-          const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
-          return tInfo.slot === i;
-        }).length;
+        const { draftedCount, keeperCount } = getRosterPicksForSlot(i);
+        const kStr = keeperCount > 0 ? (' · ' + keeperCount + ' kept') : '';
         selectHtml += '<option value="' + i + '"' + (isSelected ? ' selected' : '') + '>'
-          + (isClock ? '🕒 ' : (isMe ? '⭐ ' : '')) + getTeamName(i) + ' (Slot ' + i + ' · ' + count + ' picks)' + (isMe ? ' [You]' : '')
+          + (isClock ? '🕒 ' : (isMe ? '⭐ ' : '')) + getTeamName(i) + ' (Slot ' + i + ' · ' + draftedCount + ' picks' + kStr + ')' + (isMe ? ' [You]' : '')
           + '</option>';
       }
       $('rosterTeamSelect').innerHTML = selectHtml;
@@ -323,24 +369,17 @@
       $('onclockquickbtn').style.display = (global.viewingRosterSlot != null && global.viewingRosterSlot !== onClockTeam.slot) ? 'inline-block' : 'none';
     }
 
+    const { resolved: resolvedPicks, draftedCount, keeperCount } = getRosterPicksForSlot(targetSlot);
+    const kLabel = keeperCount > 0 ? (' <span class="meta" style="font-size:11px">(' + keeperCount + ' kept)</span>') : '';
+
     // Label
     if ($('clockteamlabel')) {
       if (isFollowingClock) {
-        $('clockteamlabel').innerHTML = '🕒 <b style="color:var(--accent)">On The Clock:</b> <span style="color:var(--text); font-weight:600">' + onClockTeam.name + '</span>' + (onClockTeam.isMe ? ' <span style="color:var(--good); font-weight:700">(Your Turn!)</span>' : ' (Slot ' + onClockTeam.slot + ')');
+        $('clockteamlabel').innerHTML = '🕒 <b style="color:var(--accent)">On The Clock:</b> <span style="color:var(--text); font-weight:600">' + onClockTeam.name + '</span>' + (onClockTeam.isMe ? ' <span style="color:var(--good); font-weight:700">(Your Turn!)</span>' : ' (Slot ' + onClockTeam.slot + ')') + kLabel;
       } else {
-        $('clockteamlabel').innerHTML = '👥 <b style="color:var(--dim)">Inspecting:</b> <span style="color:var(--text); font-weight:600">' + getTeamName(targetSlot) + '</span> (Slot ' + targetSlot + ') · <a href="javascript:void(0)" onclick="selectRosterSlot(null)" style="color:var(--accent); text-decoration:underline">Back to On-Clock</a>';
+        $('clockteamlabel').innerHTML = '👥 <b style="color:var(--dim)">Inspecting:</b> <span style="color:var(--text); font-weight:600">' + getTeamName(targetSlot) + '</span> (Slot ' + targetSlot + ' · ' + draftedCount + ' picks' + (keeperCount > 0 ? ' · ' + keeperCount + ' kept' : '') + ') · <a href="javascript:void(0)" onclick="selectRosterSlot(null)" style="color:var(--accent); text-decoration:underline">Back to On-Clock</a>';
       }
     }
-
-    // Filter all picks belonging to target slot
-    const teamPicks = global.state.log.filter(e => {
-      const tInfo = teamForOverall(e.overall, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
-      return tInfo.slot === targetSlot;
-    });
-    const resolvedPicks = teamPicks.map(e => ({
-      entry: e,
-      player: resolvePickPlayer(e, byId)
-    }));
 
     const res = renderRosterSection(resolvedPicks, s.rosterSlots, s.teams);
     if ($('roster')) $('roster').innerHTML = res.rosterHtml;
@@ -1364,6 +1403,7 @@
   global.moveSetupTeam = moveSetupTeam;
   global.resetSetupDefaults = resetSetupDefaults;
   global.saveLeagueSetup = saveLeagueSetup;
+  global.getRosterPicksForSlot = getRosterPicksForSlot;
   global.openKeepersModal = openKeepersModal;
   global.renderKeepersModalView = renderKeepersModalView;
   global.startEditKeeper = startEditKeeper;
