@@ -82,7 +82,7 @@
 
     on('undobtn', 'click', undo);
     on('resetbtn', 'click', resetDraft);
-    on('boardbtn', 'click', openDraftBoardModal);
+    on('boardbtn', 'click', () => openDraftBoardModal());
     on('unknownbtn', 'click', openUnlistedPickModal);
     on('jumpbtn', 'click', () => {
       const v = +$('jumppick').value;

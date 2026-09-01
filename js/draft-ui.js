@@ -587,7 +587,7 @@
     const totalPicks = s.teams * s.rounds;
     const isComplete = pick > totalPicks;
 
-    if (initialTab) {
+    if (typeof initialTab === 'string' && ['grid', 'strategy', 'summary'].includes(initialTab)) {
       boardActiveTab = initialTab;
     } else if (isComplete) {
       boardActiveTab = 'summary';
@@ -610,9 +610,13 @@
   }
 
   function setBoardActiveTab(tab) {
-    boardActiveTab = tab;
+    if (typeof tab === 'string' && ['grid', 'strategy', 'summary'].includes(tab)) {
+      boardActiveTab = tab;
+    } else {
+      boardActiveTab = 'grid';
+    }
     renderDraftBoardModalView();
-    if (tab === 'grid') {
+    if (boardActiveTab === 'grid') {
       setTimeout(() => {
         scrollBoardToCurrentPick(false);
       }, 60);
@@ -885,7 +889,7 @@
             const p = pickCell.player;
             const posUpper = (p.pos || '').toUpperCase();
             const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper)
-              ? posClass.toLowerCase()
+              ? posUpper.toLowerCase()
               : (['DST', 'DEF', 'D/ST'].includes(posUpper) ? 'dst' : 'other');
 
             const teamByeStr = (p.team && p.team !== '—' ? p.team : '') + (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
