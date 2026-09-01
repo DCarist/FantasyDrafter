@@ -1175,6 +1175,35 @@ function isKeeperPick(overall, keepers, teams, rounds, mode, tradedPicks) {
   return map[overall] || null;
 }
 
+// Calculates upcoming picks for a slot, identifying which are keepers and determining the next active manual draft pick
+function getNextDraftPicks(slot, fromPick, teams, rounds, mode, tradedPicks, keepers) {
+  const tCount = Math.max(2, Math.min(32, parseInt(teams, 10) || 12));
+  const rCount = Math.max(1, Math.min(50, parseInt(rounds, 10) || 20));
+  const curPick = Math.max(1, parseInt(fromPick, 10) || 1);
+  const trades = (tradedPicks && typeof tradedPicks === 'object') ? tradedPicks : {};
+  const keeperList = Array.isArray(keepers) ? keepers : [];
+
+  const allTeamPicks = (typeof picksForSlot === 'function')
+    ? picksForSlot(slot, tCount, rCount, mode || 'snake', trades)
+    : [];
+
+  const upcoming = allTeamPicks.filter(p => p >= curPick);
+  const keeperMap = getKeeperPicksMap(keeperList, tCount, rCount, mode || 'snake', trades);
+
+  const draftPicks = upcoming.filter(p => !keeperMap[p]);
+  const nextDraftPick = draftPicks.length > 0 ? draftPicks[0] : null;
+  const distance = nextDraftPick != null ? (nextDraftPick - curPick) : null;
+  const isSoon = distance != null && distance > 0 && distance <= 3;
+
+  return {
+    upcoming: upcoming,
+    draftPicks: draftPicks,
+    nextDraftPick: nextDraftPick,
+    distanceToNextDraftPick: distance,
+    isSoon: isSoon
+  };
+}
+
 // Remaps keeper slot assignments when two draft slots are swapped (e.g. during draft order reordering)
 function remapKeepersOnSlotSwap(keepers, slotA, slotB) {
   if (!Array.isArray(keepers)) return [];
@@ -1336,6 +1365,7 @@ if (typeof module !== 'undefined' && module.exports) {
     validateKeeperAssignment: validateKeeperAssignment,
     getKeeperPicksMap: getKeeperPicksMap,
     isKeeperPick: isKeeperPick,
+    getNextDraftPicks: getNextDraftPicks,
     remapKeepersOnSlotSwap: remapKeepersOnSlotSwap,
     DRAFT_SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
     serializeDraftState: serializeDraftState,

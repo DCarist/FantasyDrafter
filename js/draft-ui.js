@@ -35,10 +35,30 @@
     } else {
       const who = teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
       const isMe = who.isMe;
-      clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + (isMe ? ' (YOU ARE ON THE CLOCK)' : ' (Slot ' + who.slot + ')');
+
+      const currentKeeper = (typeof isKeeperPick === 'function')
+        ? isKeeperPick(pick, global.state.keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
+        : null;
+
+      const nextData = (typeof getNextDraftPicks === 'function')
+        ? getNextDraftPicks(s.slot, pick, s.teams, s.rounds, s.mode, global.state.tradedPicks, global.state.keepers)
+        : {
+          upcoming: picksForSlot(s.slot, s.teams, s.rounds, s.mode, global.state.tradedPicks).filter(p => p >= pick),
+          draftPicks: [],
+          nextDraftPick: null,
+          distanceToNextDraftPick: null,
+          isSoon: false
+        };
 
       // Auditory and visual cues for user's turn
-      if (isMe) {
+      if (currentKeeper) {
+        const kp = (currentKeeper.playerId != null) ? (byId(currentKeeper.playerId) || {}) : {};
+        const kName = currentKeeper.customName || kp.name || ('Player #' + currentKeeper.playerId);
+        clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + ' (🔒 Keeper: ' + kName + ')';
+        clock.className = 'clock';
+        lastOnClockPickNotified = null;
+      } else if (isMe) {
+        clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + ' (YOU ARE ON THE CLOCK)';
         clock.className = 'clock mine' + (s.visualPulse ? ' pulse-anim' : '');
         if (lastOnClockPickNotified !== pick) {
           lastOnClockPickNotified = pick;
@@ -46,19 +66,34 @@
         }
       } else {
         lastOnClockPickNotified = null;
-        const myPicks = picksForSlot(s.slot, s.teams, s.rounds, s.mode, global.state.tradedPicks).filter(p => p >= pick);
-        if (myPicks.length && myPicks[0] - pick <= 3) {
+        clock.textContent = 'Pick ' + fmtPick(pick, s.teams) + ' (#' + pick + ') — ' + who.name + ' (Slot ' + who.slot + ')';
+        if (nextData.isSoon) {
           clock.className = 'clock soon';
         } else {
           clock.className = 'clock';
         }
       }
 
-      const myPicks = picksForSlot(s.slot, s.teams, s.rounds, s.mode, global.state.tradedPicks).filter(p => p >= pick);
       if ($('nextpicks')) {
-        $('nextpicks').innerHTML = myPicks.length
-          ? 'Your next picks: ' + myPicks.slice(0, 5).map((p, i) => i === 0 ? '<b>#' + p + ' (in ' + (p - pick) + ')</b>' : '#' + p).join(', ')
-          : 'No picks left';
+        if (!nextData.upcoming || nextData.upcoming.length === 0) {
+          $('nextpicks').innerHTML = 'No picks left';
+        } else {
+          const items = nextData.upcoming.slice(0, 5).map(p => {
+            const k = (typeof isKeeperPick === 'function')
+              ? isKeeperPick(p, global.state.keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
+              : null;
+            if (k) {
+              const kp = (k.playerId != null) ? (byId(k.playerId) || {}) : {};
+              const kName = k.customName || kp.name || 'Keeper';
+              return '<span title="Keeper: ' + kName.replace(/"/g, '&quot;') + '">#' + p + ' <span class="meta" style="color:var(--warn); font-size:11.5px">(🔒 Keeper)</span></span>';
+            }
+            if (p === nextData.nextDraftPick) {
+              return '<b>#' + p + ' (in ' + (p - pick) + ')</b>';
+            }
+            return '#' + p;
+          });
+          $('nextpicks').innerHTML = 'Your next picks: ' + items.join(', ');
+        }
       }
       if ($('unknownbtn')) $('unknownbtn').textContent = 'Unlisted pick for ' + who.name + ' ➜';
     }

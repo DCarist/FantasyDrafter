@@ -259,6 +259,36 @@ assert(teStarter && teStarter.player && teStarter.player.name === 'Brock Bowers'
 const qbHtml = L.formatRosterSlotHtml(qbStarter, true, 12);
 assert(qbHtml.includes('🔒') && qbHtml.includes('9.09'), 'Renders keeper lock badge and formatted pick in starter slot');
 
+// --- 12. Next Draft Picks & Countdown with Pending Keepers ---
+// In 12-team snake, Slot 9 picks in rounds 8, 9, 10, 11:
+// Round 8: #88. Round 9: #89 (or #105 depending on direction/traded picks).
+// Let's test with a keeper at pick #89:
+const keeperAt89 = [
+  { id: 'k_josh', slot: 9, round: 8, customName: 'Josh Allen' } // maps to pick #88
+];
+// Or specifically test getKeeperPicksMap mapping and getNextDraftPicks:
+// In 12-team snake:
+// Slot 9 picks:
+// R1: 9, R2: 16, R3: 33, R4: 40, R5: 57, R6: 64, R7: 81, R8: 88, R9: 105, R10: 112
+// Suppose Slot 9 traded or has keeper assigned at round 8 (pick 88):
+const keepersForDoug = [
+  { id: 'k_rd8', slot: 9, round: 8, customName: 'Josh Allen' }
+];
+
+// At Pick 85: upcoming picks for Slot 9 are [88, 105, 112...].
+// Pick 88 is a keeper. Next active selection is pick 105.
+const nextDataAt85 = L.getNextDraftPicks(9, 85, 12, 20, 'snake', {}, keepersForDoug);
+eq(nextDataAt85.upcoming[0], 88, 'Next scheduled overall pick is #88');
+eq(nextDataAt85.nextDraftPick, 105, 'Correctly skips pending keeper #88 and gets next draft pick #105');
+eq(nextDataAt85.distanceToNextDraftPick, 20, 'Distance is calculated to next active selection (105 - 85 = 20)');
+assert(!nextDataAt85.isSoon, 'isSoon is false despite keeper pick #88 being in 3 turns');
+
+// At Pick 103 (within 2 of next draft pick 105):
+const nextDataAt103 = L.getNextDraftPicks(9, 103, 12, 20, 'snake', {}, keepersForDoug);
+eq(nextDataAt103.nextDraftPick, 105, 'Next draft pick remains 105');
+eq(nextDataAt103.distanceToNextDraftPick, 2, 'Distance is 2');
+assert(nextDataAt103.isSoon, 'isSoon becomes true when actual draft selection is within 3 turns');
+
 const success = finishSuite('Keepers & Pre-Drafted Players');
 if (!success) {
   process.exit(1);
