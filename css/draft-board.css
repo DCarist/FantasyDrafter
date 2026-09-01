@@ -1802,7 +1802,72 @@ td.clickname:hover .pname {
   border: 1px solid var(--good);
 }
 
-/* Targets Grid */
+/* Positional Best Available Grid */
+.pos-targets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.pos-target-col {
+  background: #141b27;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.pos-target-col.urgent {
+  border-color: rgba(255, 180, 84, 0.4);
+  box-shadow: 0 0 12px rgba(255, 180, 84, 0.08);
+}
+
+.pos-target-header {
+  background: #182232;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.pos-target-list {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.target-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+}
+
+.target-row:hover {
+  background: #1d273a;
+  border-color: var(--accent);
+  transform: translateX(2px);
+}
+
+.target-rank-num {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--dim);
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* Targets Grid Fallback */
 .targets-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));

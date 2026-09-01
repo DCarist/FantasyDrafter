@@ -1049,31 +1049,77 @@
           + '</div>';
       }).join('');
 
-      // Target Suggestions
+      // Positional Targets: Top 5 BPA per Position
       let targetsHtml = '';
-      if (strat.recommendedTargets.length > 0) {
-        const tCards = strat.recommendedTargets.map(t => {
-          const posClass = t.pos.toLowerCase();
-          const adpTag = t.adp ? ('ADP ' + t.adp) : '';
-          const surplusTag = (t.valSurplus > 0) ? ('<span style="color:var(--good); font-weight:700">+' + t.valSurplus + ' vs ADP</span>') : '';
-          return '<div class="target-card" onclick="showPlayer(' + t.id + ')">'
-            + '<div>'
+      if (strat.targetsByPosition) {
+        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+        const posTitles = {
+          QB: 'Quarterbacks',
+          RB: 'Running Backs',
+          WR: 'Wide Receivers',
+          TE: 'Tight Ends',
+          K: 'Kickers',
+          DST: 'Defenses'
+        };
+
+        const currentRound = Math.ceil(pick / s.teams);
+        const isLateRounds = (currentRound >= s.rounds - 2);
+        const visiblePositions = posOrder.filter(pos => {
+          if (pos === 'K' || pos === 'DST') {
+            return isLateRounds || (strat.userNeeds.some(n => n.pos === pos && (n.urgency === 'CRITICAL' || n.urgency === 'NEEDED')));
+          }
+          return true;
+        });
+
+        const posColumnsHtml = visiblePositions.map(pos => {
+          const pList = strat.targetsByPosition[pos] || [];
+          const needInfo = strat.userNeeds.find(n => n.pos === pos) || { urgency: 'FILLED', label: 'Filled' };
+          const isCritical = (needInfo.urgency === 'CRITICAL' || needInfo.urgency === 'NEEDED');
+          const posClass = (pos === 'DST') ? 'DST' : pos;
+          const colClass = isCritical ? 'pos-target-col urgent' : 'pos-target-col';
+
+          let rowsHtml = '';
+          if (pList.length === 0) {
+            rowsHtml = '<div style="font-size:11px; color:var(--dim); padding:10px 0; text-align:center">No available players</div>';
+          } else {
+            rowsHtml = pList.map((p, idx) => {
+              const surplusTag = (p.valSurplus > 0)
+                ? ('<span style="color:var(--good); font-size:10px; font-weight:700">+' + p.valSurplus + ' vs ADP</span>')
+                : (p.adp ? ('<span style="color:var(--dim); font-size:10px">ADP ' + p.adp + '</span>') : '');
+
+              return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
+                + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'
+                + '<span class="target-rank-num">#' + (idx + 1) + '</span>'
+                + '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis">'
+                + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">' + p.name + '</div>'
+                + '<div style="font-size:10px; color:var(--dim)">' + (p.team || '—') + (p.bye ? ' · Wk ' + p.bye : '') + '</div>'
+                + '</div>'
+                + '</div>'
+                + '<div style="text-align:right; flex-shrink:0">'
+                + '<div style="font-size:12px; font-weight:800; color:var(--accent)">' + p.score + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">pts</span></div>'
+                + '<div>' + surplusTag + '</div>'
+                + '</div>'
+                + '</div>';
+            }).join('');
+          }
+
+          let statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
+
+          return '<div class="' + colClass + '">'
+            + '<div class="pos-target-header">'
             + '<div style="display:flex; align-items:center; gap:5px">'
-            + '<span class="pos ' + (t.pos === 'DST' ? 'DST' : t.pos) + '" style="font-size:9.5px">' + t.pos + '</span>'
-            + '<strong style="color:var(--text); font-size:12px">' + t.name + '</strong>'
+            + '<span class="pos ' + posClass + '" style="font-size:10px; padding:1px 5px">' + pos + '</span>'
+            + '<span style="font-size:12px; font-weight:700; color:var(--text)">' + posTitles[pos] + '</span>'
             + '</div>'
-            + '<div style="font-size:10.5px; color:var(--dim); margin-top:2px">' + (t.team || '—') + (t.bye ? ' · Wk ' + t.bye : '') + ' · ' + adpTag + '</div>'
+            + '<span class="' + statusPillCls + '">' + needInfo.label + '</span>'
             + '</div>'
-            + '<div style="text-align:right">'
-            + '<div style="font-size:13px; font-weight:800; color:var(--accent)">' + t.score + ' <span style="font-size:10px; font-weight:normal; color:var(--dim)">pts</span></div>'
-            + '<div style="font-size:10px">' + surplusTag + '</div>'
-            + '</div>'
+            + '<div class="pos-target-list">' + rowsHtml + '</div>'
             + '</div>';
         }).join('');
 
         targetsHtml = '<div>'
-          + '<div class="strategy-section-title">🎯 Recommended Value Targets for Your Roster</div>'
-          + '<div class="targets-grid">' + tCards + '</div>'
+          + '<div class="strategy-section-title">🎯 Best Available Players by Position (Top 5 per Position)</div>'
+          + '<div class="pos-targets-grid">' + posColumnsHtml + '</div>'
           + '</div>';
       }
 

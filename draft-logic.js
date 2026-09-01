@@ -1621,17 +1621,52 @@ function analyzeLiveDraftStrategy(options) {
     }
   }
 
-  // 6. Value recommendations matching top needs
+  // 6. Best Available Players by Position (Top 5 per Position)
   const criticalPositions = userNeeds
     .filter(n => n.urgency === 'CRITICAL' || n.urgency === 'NEEDED')
     .map(n => n.pos);
   const targetPositions = criticalPositions.length > 0 ? criticalPositions : ['WR', 'RB', 'QB', 'TE'];
 
+  const targetsByPosition = {};
+  const positionsToAnalyze = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+  const isDst = p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase());
+
+  for (const pos of positionsToAnalyze) {
+    const candidates = availablePlayers.filter(p => {
+      const posUpper = (p.pos || '').toUpperCase();
+      if (pos === 'DST') return isDst(p);
+      return posUpper === pos;
+    });
+
+    candidates.sort((a, b) => {
+      const scoreA = a.score ?? computeFormatScore(a, scoringSettings) ?? (100 - (a.rank || 200));
+      const scoreB = b.score ?? computeFormatScore(b, scoringSettings) ?? (100 - (b.rank || 200));
+      return scoreB - scoreA;
+    });
+
+    targetsByPosition[pos] = candidates.slice(0, 5).map(cand => {
+      const cScore = cand.score ?? computeFormatScore(cand, scoringSettings) ?? (100 - (cand.rank || 200));
+      const valSurplus = (cand.adp != null && nextUserPick != null) ? Math.round(nextUserPick - cand.adp) : 0;
+      return {
+        id: cand.id,
+        name: cand.name,
+        pos: cand.pos,
+        team: cand.team,
+        bye: cand.bye,
+        adp: cand.adp,
+        score: Math.round(cScore * 10) / 10,
+        valSurplus: valSurplus,
+        isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase())
+      };
+    });
+  }
+
+  // Also maintain top overall recommended targets for backward compatibility
   const recommendedTargets = [];
   if (availablePlayers.length > 0) {
     const candidates = availablePlayers.filter(p => {
       const posUpper = (p.pos || '').toUpperCase();
-      return targetPositions.some(tp => (tp === 'DST' ? ['DST', 'DEF', 'D/ST'].includes(posUpper) : posUpper === tp));
+      return targetPositions.some(tp => (tp === 'DST' ? isDst(p) : posUpper === tp));
     });
 
     candidates.sort((a, b) => {
@@ -1669,6 +1704,7 @@ function analyzeLiveDraftStrategy(options) {
     opponentThreats: opponentThreats,
     runDangers: runDangers,
     recommendedTargets: recommendedTargets,
+    targetsByPosition: targetsByPosition,
     totalPicks: totalPicks
   };
 }

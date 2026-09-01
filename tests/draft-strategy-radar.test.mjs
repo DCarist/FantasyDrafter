@@ -71,6 +71,14 @@ assert(qbNeed != null, 'QB need tracked');
 eq(qbNeed.urgency, 'CRITICAL', '0/1 QB is CRITICAL need');
 eq(qbNeed.filled, 0, '0 QBs filled');
 
+// Check targets by position (Top 5 BPA per position)
+assert(stratRes.targetsByPosition != null, 'targetsByPosition is defined');
+assert(Array.isArray(stratRes.targetsByPosition.QB), 'QB targets is an array');
+eq(stratRes.targetsByPosition.QB[0].name, 'Lamar Jackson', 'Top QB target is Lamar Jackson');
+eq(stratRes.targetsByPosition.WR[0].name, 'Justin Jefferson', 'Top WR target is Justin Jefferson');
+eq(stratRes.targetsByPosition.RB[0].name, 'Jahmyr Gibbs', 'Top RB target is Jahmyr Gibbs');
+eq(stratRes.targetsByPosition.TE[0].name, 'George Kittle', 'Top TE target is George Kittle');
+
 // Scenario 2: User is on the clock (Pick 4)
 const onClockRes = L.analyzeLiveDraftStrategy({
   teams: 4,
