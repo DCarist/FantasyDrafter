@@ -215,6 +215,28 @@ const remappedPickMap = L.getKeeperPicksMap(remapped, 12, 20, 'snake', {});
 assert(remappedPickMap[88] != null && remappedPickMap[88].customName === 'Brock Bowers', 'Doug Rd 8 keeper mapped to Slot 9 pick #88');
 assert(remappedPickMap[105] != null && remappedPickMap[105].customName === 'Josh Allen', 'Doug Rd 9 keeper mapped to Slot 9 pick #105');
 
+// --- 10. Editing Existing Keepers Validation ---
+const existingForEdit = [
+  { id: 'k_edit_1', slot: 6, round: 5, playerId: 46 }, // JT (Slot 6, Rd 5)
+  { id: 'k_edit_2', slot: 6, round: 6, playerId: 55 }  // JJ (Slot 6, Rd 6)
+];
+
+// Editing k_edit_2 to change round from 6 to 7 (Slot 6 already has 2 keepers max, but editing itself shouldn't fail max check)
+const resEditRound = L.validateKeeperAssignment(
+  { id: 'k_edit_2', slot: 6, round: 7, playerId: 55 },
+  existingForEdit,
+  2, 12, 20, 'snake', {}
+);
+assert(resEditRound.valid, 'Allows editing keeper round without violating maxKeepers limit on own team');
+
+// Editing k_edit_2 to change slot to 7 (Brody)
+const resEditTeam = L.validateKeeperAssignment(
+  { id: 'k_edit_2', slot: 7, round: 6, playerId: 55 },
+  existingForEdit,
+  2, 12, 20, 'snake', {}
+);
+assert(resEditTeam.valid, 'Allows editing keeper team slot without duplicate collision against itself');
+
 const success = finishSuite('Keepers & Pre-Drafted Players');
 if (!success) {
   process.exit(1);

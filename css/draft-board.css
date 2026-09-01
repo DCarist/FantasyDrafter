@@ -614,6 +614,12 @@ td.clickname:hover .pname {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
+.modal.modal-wide,
+.modal.keepers-modal-box {
+  width: min(880px, 96vw);
+  max-width: 880px;
+}
+
 .modal h3 {
   font-size: 18px;
   display: flex;
@@ -1006,7 +1012,7 @@ td.clickname:hover .pname {
 
 .keeper-table th {
   text-align: left;
-  padding: 6px 8px;
+  padding: 8px 10px;
   background: var(--panel2);
   color: var(--dim);
   font-size: 11px;
@@ -1015,13 +1021,18 @@ td.clickname:hover .pname {
 }
 
 .keeper-table td {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   vertical-align: middle;
 }
 
 .keeper-table tr.is-me {
   background: rgba(61, 220, 132, 0.04);
+}
+
+.keeper-table tr.is-editing {
+  background: rgba(88, 166, 255, 0.12) !important;
+  outline: 1px solid var(--accent);
 }
 
 .keeper-search-container {

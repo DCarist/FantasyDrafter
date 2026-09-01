@@ -263,7 +263,13 @@
       customBye: candidate.customBye != null ? parseInt(candidate.customBye, 10) : null
     };
 
-    state.keepers.push(newKeeper);
+    const existingIndex = candidate.id ? state.keepers.findIndex(k => k && k.id === candidate.id) : -1;
+    if (existingIndex >= 0) {
+      state.keepers[existingIndex] = newKeeper;
+    } else {
+      state.keepers.push(newKeeper);
+    }
+
     if (newKeeper.playerId != null) {
       state.watchlist = cleanWatchlist(state.watchlist, [newKeeper.playerId]);
       if (typeof cleanQueue === 'function') {

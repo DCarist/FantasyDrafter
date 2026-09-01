@@ -466,6 +466,7 @@
   function closeModal() {
     const overlay = $('overlay');
     if (overlay) overlay.classList.remove('show');
+    if ($('modalbox')) $('modalbox').className = 'modal';
   }
 
   function showPlayer(id) {
@@ -913,11 +914,12 @@
   }
 
   // ---------- Keepers Management Modal ----------
+  let editingKeeperId = null;
   let selectedKeeperPlayer = null;
   let keeperIsCustom = false;
   let keeperCustomPos = 'WR';
 
-  function buildKeeperRoundOptions(slot, teams, rounds, mode, tradedPicks, keepers) {
+  function buildKeeperRoundOptions(slot, teams, rounds, mode, tradedPicks, keepers, editingId) {
     let options = '';
     const tCount = Math.max(2, Math.min(32, parseInt(teams, 10) || 12));
     const rCount = Math.max(1, Math.min(50, parseInt(rounds, 10) || 20));
@@ -927,7 +929,7 @@
 
     for (let r = 1; r <= rCount; r++) {
       const owned = allPicks.filter(o => Math.ceil(o / tCount) === r).sort((a, b) => a - b);
-      const assigned = (keepers || []).filter(k => k && k.slot === slot && k.round === r).length;
+      const assigned = (keepers || []).filter(k => k && k.slot === slot && k.round === r && k.id !== editingId).length;
       if (owned.length === 0) {
         options += '<option value="' + r + '" disabled>Round ' + r + ' (0 picks owned - traded away)</option>';
       } else if (owned.length === 1) {
@@ -953,23 +955,61 @@
       }
       global.save();
     }
+    editingKeeperId = null;
     selectedKeeperPlayer = null;
     keeperIsCustom = false;
     keeperCustomPos = 'WR';
     renderKeepersModalView();
   }
 
-  function renderKeepersModalView() {
+  function startEditKeeper(keeperId) {
+    const k = (global.state.keepers || []).find(item => item && item.id === keeperId);
+    if (!k) return;
+    editingKeeperId = keeperId;
+    if (k.playerId != null) {
+      keeperIsCustom = false;
+      selectedKeeperPlayer = byId(k.playerId) || { id: k.playerId, name: 'Player #' + k.playerId, pos: 'WR', team: '' };
+    } else {
+      keeperIsCustom = true;
+      keeperCustomPos = k.customPos || 'WR';
+      selectedKeeperPlayer = null;
+    }
+    renderKeepersModalView(k.slot);
+  }
+
+  function cancelEditKeeper() {
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
+    keeperCustomPos = 'WR';
+    renderKeepersModalView();
+  }
+
+  function renderKeepersModalView(explicitSlot) {
     const s = global.state.settings;
     const keepers = global.state.keepers || [];
     const maxK = (s.maxKeepers !== undefined && s.maxKeepers !== null) ? s.maxKeepers : 2;
 
-    const initialSlot = parseInt($('keeper_team_select') ? $('keeper_team_select').value : (s.slot || 1), 10) || 1;
+    const editingKeeper = editingKeeperId ? keepers.find(item => item && item.id === editingKeeperId) : null;
+    if (editingKeeperId && !editingKeeper) {
+      editingKeeperId = null;
+    }
+
+    let initialSlot = 1;
+    if (explicitSlot) {
+      initialSlot = explicitSlot;
+    } else if (editingKeeper) {
+      initialSlot = editingKeeper.slot;
+    } else if ($('keeper_team_select')) {
+      initialSlot = parseInt($('keeper_team_select').value, 10) || (s.slot || 1);
+    } else {
+      initialSlot = s.slot || 1;
+    }
 
     let teamOptions = '';
     for (let i = 1; i <= s.teams; i++) {
       const tName = getTeamName(i);
-      const tKeepers = keepers.filter(k => k && k.slot === i).length;
+      const tKeepers = keepers.filter(k => k && k.slot === i && k.id !== editingKeeperId).length;
       const isMe = (i === s.slot);
       const isSelected = (i === initialSlot);
       teamOptions += '<option value="' + i + '"' + (isSelected ? ' selected' : '') + '>'
@@ -977,7 +1017,7 @@
         + '</option>';
     }
 
-    const roundOptions = buildKeeperRoundOptions(initialSlot, s.teams, s.rounds, s.mode, global.state.tradedPicks, keepers);
+    const roundOptions = buildKeeperRoundOptions(initialSlot, s.teams, s.rounds, s.mode, global.state.tradedPicks, keepers, editingKeeperId);
 
     const keeperPicksMap = (typeof getKeeperPicksMap === 'function')
       ? getKeeperPicksMap(keepers, s.teams, s.rounds, s.mode, global.state.tradedPicks)
@@ -1002,16 +1042,20 @@
         const team = k.customTeam || p.team || '—';
         const posClass = ['QB', 'RB', 'WR', 'TE'].includes(pos) ? pos : (['DST', 'DEF', 'D/ST'].includes(pos) ? 'DST' : (pos === 'K' ? 'K' : 'other'));
         const isMe = (k.slot === s.slot);
+        const isEditing = (k.id === editingKeeperId);
         const overall = pickForKeeperId[k.id];
         const pickStr = overall ? ('#' + overall + ' (' + fmtPick(overall, s.teams) + ')') : ('Rd ' + k.round);
 
-        rowsHtml += '<tr class="' + (isMe ? 'is-me' : '') + '">'
+        rowsHtml += '<tr class="' + (isMe ? 'is-me ' : '') + (isEditing ? 'is-editing' : '') + '">'
           + '<td><b style="color:' + (isMe ? 'var(--good)' : 'var(--text)') + '">' + getTeamName(k.slot) + '</b> <span class="meta">(Slot ' + k.slot + ')</span></td>'
           + '<td><b>Round ' + k.round + '</b></td>'
           + '<td><span class="meta">' + pickStr + '</span></td>'
           + '<td><span class="pos ' + posClass + '" style="margin-right:4px">' + pos + '</span> <b>' + name + '</b>' + (k.customName ? ' <span class="meta">(custom)</span>' : '') + '</td>'
           + '<td><span class="meta">' + team + '</span></td>'
-          + '<td style="text-align:right"><button type="button" class="small" style="color:var(--bad); font-weight:600; cursor:pointer" onclick="handleRemoveKeeper(\'' + k.id + '\')">🗑️ Remove</button></td>'
+          + '<td style="text-align:right"><div style="display:inline-flex; gap:6px; justify-content:flex-end">'
+          + '<button type="button" class="small" style="color:var(--accent); font-weight:600; cursor:pointer" onclick="startEditKeeper(\'' + k.id + '\')">✏️ Edit</button>'
+          + '<button type="button" class="small" style="color:var(--bad); font-weight:600; cursor:pointer" onclick="handleRemoveKeeper(\'' + k.id + '\')">🗑️ Remove</button>'
+          + '</div></td>'
           + '</tr>';
       }
     }
@@ -1032,15 +1076,39 @@
         + '</div>';
     }
 
+    const modalBox = $('modalbox');
+    if (modalBox) {
+      modalBox.className = 'modal modal-wide keepers-modal-box';
+    }
+
+    let formHeaderHtml = '<h4 style="margin:0 0 10px 0; color:var(--accent); font-size:13px; text-transform:none">➕ Add New Keeper</h4>';
+    let formActionBtnHtml = '<button type="button" class="act primary" onclick="submitKeeperForm()" style="font-weight:700">Add Keeper</button>';
+    if (editingKeeper) {
+      const editingName = editingKeeper.customName || (byId(editingKeeper.playerId) ? byId(editingKeeper.playerId).name : ('Player #' + editingKeeper.playerId));
+      formHeaderHtml = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">'
+        + '<h4 style="margin:0; color:var(--accent); font-size:13px; text-transform:none">✏️ Edit Keeper: <span style="color:var(--text)">' + editingName + '</span> (' + getTeamName(editingKeeper.slot) + ')</h4>'
+        + '<button type="button" class="small" style="color:var(--dim); font-size:11.5px; cursor:pointer" onclick="cancelEditKeeper()">Cancel Edit</button>'
+        + '</div>';
+      formActionBtnHtml = '<div style="display:inline-flex; gap:8px">'
+        + '<button type="button" class="act" onclick="cancelEditKeeper()">Cancel</button>'
+        + '<button type="button" class="act primary" onclick="submitKeeperForm()" style="font-weight:700">💾 Update Keeper</button>'
+        + '</div>';
+    }
+
+    const customNameVal = (editingKeeper && editingKeeper.customName) ? editingKeeper.customName : '';
+    const customTeamVal = (editingKeeper && editingKeeper.customTeam) ? editingKeeper.customTeam : '';
+    const customByeVal = (editingKeeper && editingKeeper.customBye != null) ? editingKeeper.customBye : '';
+    const searchVal = (!keeperIsCustom && selectedKeeperPlayer) ? selectedKeeperPlayer.name : '';
+
     $('modalbox').innerHTML =
       '<h3>🔒 Keepers Management'
       + '<button class="close" onclick="saveAndCloseKeepersModal()">×</button></h3>'
-      + '<div style="display:flex; justify-content:space-between; align-items:center; margin:10px 0; padding:8px 12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; flex-wrap:gap; gap:10px">'
+      + '<div style="display:flex; justify-content:space-between; align-items:center; margin:10px 0; padding:8px 12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; flex-wrap:wrap; gap:10px">'
       + '<div><b style="color:var(--text)">Total Keepers Configured:</b> <span style="color:var(--accent); font-weight:700">' + keepers.length + '</span></div>'
       + '<div style="display:flex; align-items:center; gap:6px"><label style="font-size:12.5px; color:var(--dim)">Max Keepers per Team:</label> <input type="number" id="keeper_modal_max" min="0" max="10" style="width:54px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:2px 6px" value="' + maxK + '" onchange="handleKeeperMaxChange(this.value)"></div>'
       + '</div>'
       + '<div style="background:#141923; border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:12px">'
-      + '<h4 style="margin:0 0 10px 0; color:var(--accent); font-size:13px; text-transform:none">➕ Add New Keeper</h4>'
+      + formHeaderHtml
       + '<div class="setup-grid" style="grid-template-columns: 1fr 1fr; gap:10px">'
       + '<div class="setup-field"><label>Team</label><select id="keeper_team_select" onchange="handleKeeperTeamChange()">' + teamOptions + '</select></div>'
       + '<div class="setup-field"><label>Draft Round Cost</label><select id="keeper_round_select">' + roundOptions + '</select></div>'
@@ -1051,22 +1119,22 @@
       + '<label style="font-size:12px; color:var(--dim); cursor:pointer"><input type="checkbox" id="keeper_custom_check" onchange="toggleKeeperCustom(this.checked)"' + (keeperIsCustom ? ' checked' : '') + '> Unlisted / Custom Player</label>'
       + '</div>'
       + '<div id="keeper_pool_search_wrap" style="' + (keeperIsCustom ? 'display:none;' : 'display:block;') + '" class="keeper-search-container">'
-      + '<input type="text" id="keeper_search_input" placeholder="Search NFL player by name, team, position..." autocomplete="off" oninput="handleKeeperSearchInput(this.value)">'
+      + '<input type="text" id="keeper_search_input" placeholder="Search NFL player by name, team, position..." autocomplete="off" value="' + searchVal.replace(/"/g, '&quot;') + '" oninput="handleKeeperSearchInput(this.value)">'
       + '<div id="keeper_autocomplete" class="keeper-autocomplete-list" style="display:none"></div>'
       + '<div id="keeper_selected_pill">' + selectedPillHtml + '</div>'
       + '</div>'
       + '<div id="keeper_custom_wrap" style="' + (keeperIsCustom ? 'display:block;' : 'display:none;') + '">'
       + '<div class="tabs" style="flex-wrap:wrap; gap:4px; margin-bottom:8px" id="keeper_custom_pos_tabs">' + customPosButtons + '</div>'
       + '<div class="setup-grid" style="grid-template-columns: 2fr 1fr 1fr; gap:8px">'
-      + '<div class="setup-field"><label>Player Name</label><input type="text" id="keeper_custom_name" placeholder="e.g. Travis Hunter"></div>'
-      + '<div class="setup-field"><label>NFL Team</label><input type="text" id="keeper_custom_team" placeholder="e.g. JAX" maxlength="4"></div>'
-      + '<div class="setup-field"><label>Bye Week</label><input type="number" id="keeper_custom_bye" min="1" max="18" placeholder="e.g. 9"></div>'
+      + '<div class="setup-field"><label>Player Name</label><input type="text" id="keeper_custom_name" placeholder="e.g. Travis Hunter" value="' + customNameVal.replace(/"/g, '&quot;') + '"></div>'
+      + '<div class="setup-field"><label>NFL Team</label><input type="text" id="keeper_custom_team" placeholder="e.g. JAX" maxlength="4" value="' + customTeamVal.replace(/"/g, '&quot;') + '"></div>'
+      + '<div class="setup-field"><label>Bye Week</label><input type="number" id="keeper_custom_bye" min="1" max="18" placeholder="e.g. 9" value="' + customByeVal + '"></div>'
       + '</div>'
       + '</div>'
       + '</div>'
       + '<div id="keeper_error_box" style="display:none; margin-top:10px; color:var(--bad); font-size:12px; background:rgba(255,100,112,0.12); padding:6px 10px; border-radius:6px; border:1px solid rgba(255,100,112,0.4)"></div>'
       + '<div style="margin-top:12px; display:flex; justify-content:flex-end">'
-      + '<button type="button" class="act primary" onclick="submitKeeperForm()" style="font-weight:700">Add Keeper</button>'
+      + formActionBtnHtml
       + '</div>'
       + '</div>'
       + '<h4 style="margin:16px 0 6px 0">📋 Current Keepers (' + keepers.length + ')</h4>'
@@ -1079,6 +1147,10 @@
       + '<button type="button" class="act primary" onclick="saveAndCloseKeepersModal()">Save & Close</button>'
       + '</div>';
 
+    if (editingKeeper && editingKeeper.round && $('keeper_round_select')) {
+      $('keeper_round_select').value = editingKeeper.round;
+    }
+
     $('overlay').classList.add('show');
   }
 
@@ -1086,7 +1158,7 @@
     const slot = parseInt($('keeper_team_select').value, 10) || 1;
     const s = global.state.settings;
     const keepers = global.state.keepers || [];
-    $('keeper_round_select').innerHTML = buildKeeperRoundOptions(slot, s.teams, s.rounds, s.mode, global.state.tradedPicks, keepers);
+    $('keeper_round_select').innerHTML = buildKeeperRoundOptions(slot, s.teams, s.rounds, s.mode, global.state.tradedPicks, keepers, editingKeeperId);
   }
 
   function toggleKeeperCustom(checked) {
@@ -1113,7 +1185,7 @@
       return;
     }
 
-    const takenIds = new Set((global.state.keepers || []).map(k => k.playerId).filter(id => id != null));
+    const takenIds = new Set((global.state.keepers || []).filter(k => k && k.id !== editingKeeperId).map(k => k.playerId).filter(id => id != null));
     const players = (global.PLAYERS || []).filter(p => {
       if (takenIds.has(p.id)) return false;
       if (normalizeName(p.name).includes(q)) return true;
@@ -1188,6 +1260,7 @@
       const team = ($('keeper_custom_team').value || '').trim().toUpperCase();
       const bye = ($('keeper_custom_bye').value) ? parseInt($('keeper_custom_bye').value, 10) : null;
       candidate = {
+        id: editingKeeperId || undefined,
         slot: slot,
         round: round,
         playerId: null,
@@ -1205,6 +1278,7 @@
         return;
       }
       candidate = {
+        id: editingKeeperId || undefined,
         slot: slot,
         round: round,
         playerId: selectedKeeperPlayer.id
@@ -1220,11 +1294,18 @@
       return;
     }
 
+    editingKeeperId = null;
     selectedKeeperPlayer = null;
+    keeperIsCustom = false;
     renderKeepersModalView();
   }
 
   function handleRemoveKeeper(id) {
+    if (editingKeeperId === id) {
+      editingKeeperId = null;
+      selectedKeeperPlayer = null;
+      keeperIsCustom = false;
+    }
     global.removeKeeper(id);
     renderKeepersModalView();
   }
@@ -1235,6 +1316,9 @@
   }
 
   function saveKeepersAndBackToSetup() {
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
     if ($('keeper_modal_max')) {
       global.updateMaxKeepers($('keeper_modal_max').value);
     }
@@ -1243,6 +1327,9 @@
   }
 
   function saveAndCloseKeepersModal() {
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
     if ($('keeper_modal_max')) {
       global.updateMaxKeepers($('keeper_modal_max').value);
     }
@@ -1279,6 +1366,8 @@
   global.saveLeagueSetup = saveLeagueSetup;
   global.openKeepersModal = openKeepersModal;
   global.renderKeepersModalView = renderKeepersModalView;
+  global.startEditKeeper = startEditKeeper;
+  global.cancelEditKeeper = cancelEditKeeper;
   global.handleKeeperTeamChange = handleKeeperTeamChange;
   global.toggleKeeperCustom = toggleKeeperCustom;
   global.selectKeeperCustomPos = selectKeeperCustomPos;
