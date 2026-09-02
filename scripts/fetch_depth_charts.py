@@ -164,7 +164,11 @@ def main():
     args = parser.parse_args()
 
     # Load existing players data
-    source_file = args.out_json if (args.out_json and os.path.exists(args.out_json)) else args.out_js
+    source_file = (
+        args.out_json
+        if (args.out_json and os.path.exists(args.out_json))
+        else args.out_js
+    )
     if not os.path.exists(source_file):
         print(f"Error: {source_file} not found.")
         sys.exit(1)

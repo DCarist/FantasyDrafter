@@ -162,6 +162,12 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global last_espn_ping, latest_snapshot, latest_league_info, last_reset_timestamp
+        if self.path == "/api/data/refresh" or self.path.startswith(
+            "/api/data/refresh"
+        ):
+            self.handle_data_refresh()
+            return
+
         if self.path.startswith("/api/sync/reset"):
             with sync_lock:
                 last_reset_timestamp = int(time.time() * 1000)
@@ -653,25 +659,16 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 with sync_lock:
                     if self.wfile in sse_clients:
                         sse_clients.remove(self.wfile)
-        if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
+            return
+
+        if self.path == "/api/data/refresh" or self.path.startswith(
+            "/api/data/refresh"
+        ):
             self.handle_data_refresh()
             return
 
         # Serve regular static files
         super().do_GET()
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-
-    def do_POST(self):
-        if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
-            self.handle_data_refresh()
-            return
-        self.send_error(404, "Not Found")
 
     def handle_data_refresh(self):
         safe_print("\n🔄 On-demand data refresh triggered from application UI...")
@@ -683,10 +680,14 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 safe_print("✅ On-demand data refresh completed successfully!\n")
                 payload = {
                     "ok": True,
-                    "message": "Player consensus rankings, depth charts, and injury reports updated successfully!"
+                    "message": "Player consensus rankings, depth charts, and injury reports updated successfully!",
                 }
             else:
-                err_msg = res.stderr or res.stdout or f"Updater exited with code {res.returncode}"
+                err_msg = (
+                    res.stderr
+                    or res.stdout
+                    or f"Updater exited with code {res.returncode}"
+                )
                 safe_print(f"⚠️  Data refresh failed ({err_msg})\n")
                 payload = {"ok": False, "message": f"Updater failed: {err_msg[:200]}"}
         except Exception as e:

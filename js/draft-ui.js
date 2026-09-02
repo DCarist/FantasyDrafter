@@ -1996,7 +1996,14 @@
 
     try {
       const res = await fetch('/api/data/refresh', { method: 'POST' });
-      const data = await res.json();
+      const cType = res.headers.get('content-type') || '';
+      let data = {};
+      if (cType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text || ('Server returned status ' + res.status));
+      }
       if (res.ok && data.ok) {
         if (statusEl) {
           statusEl.style.color = 'var(--good)';
