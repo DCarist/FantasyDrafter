@@ -9,13 +9,18 @@ const L = require('../draft-logic.js');
 resetFailures();
 printSuiteHeader('NFL Injury Reports & UI Integration');
 
-// --- 1. Python Scripts Restructuring & Shims ---
+// --- 1. Python Scripts Restructuring into scripts/ (No Root Shims) ---
 assert(existsSync('scripts/fetch_injuries.py'), 'scripts/fetch_injuries.py exists');
 assert(existsSync('scripts/fetch_depth_charts.py'), 'scripts/fetch_depth_charts.py exists');
 assert(existsSync('scripts/update_rankings.py'), 'scripts/update_rankings.py exists');
-assert(existsSync('update-rankings.py'), 'Root update-rankings.py shim exists');
-assert(existsSync('fetch-depth-charts.py'), 'Root fetch-depth-charts.py shim exists');
-assert(existsSync('fetch-injuries.py'), 'Root fetch-injuries.py shim exists');
+assert(existsSync('scripts/merge_data.py'), 'scripts/merge_data.py exists');
+assert(existsSync('scripts/patch_extras.py'), 'scripts/patch_extras.py exists');
+assert(existsSync('server.py'), 'server.py is the sole Python file in root');
+assert(!existsSync('update-rankings.py'), 'Root update-rankings.py shim is eliminated');
+assert(!existsSync('fetch-depth-charts.py'), 'Root fetch-depth-charts.py shim is eliminated');
+assert(!existsSync('fetch-injuries.py'), 'Root fetch-injuries.py shim is eliminated');
+assert(!existsSync('merge-data.py'), 'Root merge-data.py is eliminated');
+assert(!existsSync('patch-extras.py'), 'Root patch-extras.py is eliminated');
 
 
 // --- 2. Dataset Schema & Injury Metadata ---
@@ -166,3 +171,4 @@ const success = finishSuite('NFL Injury Reports & UI Integration');
 if (!success) {
   process.exit(1);
 }
+

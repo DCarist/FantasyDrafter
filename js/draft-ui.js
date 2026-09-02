@@ -1791,9 +1791,12 @@
       + '<div class="setup-teams-wrap"><table class="team-table"><tbody id="setup_teams_body">'
       + renderSetupTable(s.teams)
       + '</tbody></table></div>'
-      + '<div style="margin-top:10px; padding:8px 10px; background:#141923; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--dim)">'
-      + '📊 <b style="color:var(--text)">Rankings Status:</b> ' + (window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' active NFL players loaded (Snapshot date: <b style="color:var(--accent)">' + (window.DRAFT_DATA.generated || 'live') + '</b>).<br>'
-      + 'To refresh with latest consensus rankings before drafting, run <code style="color:var(--text); background:var(--panel2); padding:1px 4px; border-radius:3px">python update-rankings.py</code>.'
+      + '<div style="margin-top:10px; padding:10px; background:#141923; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--dim)">'
+      + '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">'
+      + '<div>📊 <b style="color:var(--text)">Rankings & Injury Status:</b> ' + (window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' players loaded (Data date: <b style="color:var(--accent)">' + (window.DRAFT_DATA.generated || 'live') + '</b>).</div>'
+      + '<button type="button" class="act primary" id="refresh_data_btn" onclick="triggerDataRefresh(this)" style="font-size:12px; padding:4px 10px">🔄 Refresh Data Now</button>'
+      + '</div>'
+      + '<div id="refresh_data_status" style="margin-top:6px; font-size:11.5px; color:var(--dim)">Run latest consensus rankings, 32-team depth charts, and injury reports refresh on-demand.</div>'
       + '</div>'
       + '<div class="modal-actions">'
       + '<button type="button" class="act" onclick="resetSetupDefaults()">Reset Default Names</button>'
@@ -1979,6 +1982,45 @@
     if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
     render();
   }
+
+  async function triggerDataRefresh(btn) {
+    const statusEl = $('refresh_data_status');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Refreshing...';
+    }
+    if (statusEl) {
+      statusEl.style.color = 'var(--accent)';
+      statusEl.textContent = '⏳ Fetching latest consensus rankings, 32-team depth charts, and NFL injury reports (~10-15s)...';
+    }
+
+    try {
+      const res = await fetch('/api/data/refresh', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (statusEl) {
+          statusEl.style.color = 'var(--good)';
+          statusEl.textContent = '✅ ' + (data.message || 'Data updated successfully!') + ' Reloading app...';
+        }
+        if (btn) btn.textContent = '✅ Done!';
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
+      } else {
+        throw new Error(data.message || 'Server returned status ' + res.status);
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.color = 'var(--warn)';
+        statusEl.textContent = '⚠️ Live server refresh failed (' + err.message + '). Alternatively run "python scripts/update_rankings.py" in terminal.';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '🔄 Retry Refresh';
+      }
+    }
+  }
+  global.triggerDataRefresh = triggerDataRefresh;
 
   // ---------- Keepers Management Modal ----------
   let editingKeeperId = null;

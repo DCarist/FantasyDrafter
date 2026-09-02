@@ -47,11 +47,10 @@ Fantasy Drafter is a fast, responsive fantasy football draft board designed for 
 
 ### 📊 Master Consensus Player Rankings & Data Pipeline
 - Aggregates consensus draft rankings, positional projections, bye weeks, and average draft position (ADP).
-- Includes automated data fetchers:
-  - `update-rankings.py`: Multi-source data pipeline aggregator.
-  - `fetch_fantasypros.py`: FantasyPros consensus cheat sheet extractor.
-  - `fetch_sleeper.py`: Sleeper trending ADP and player metadata extractor.
-  - `fetch_adp.py`: Consensus average draft position aggregator.
+- Includes automated data fetchers in `scripts/`:
+  - `scripts/update_rankings.py`: Multi-source data pipeline aggregator.
+  - `scripts/fetch_depth_charts.py`: ESPN 32-team depth charts extractor.
+  - `scripts/fetch_injuries.py`: ESPN NFL injury report extractor.
 
 ---
 
@@ -138,7 +137,10 @@ FantasyDrafter/
 │   └── watchlist.test.mjs
 │
 ├── test-runner.mjs                 # Test runner discovering all test suites
-├── update-rankings.py              # Automated data pipeline updater
+├── scripts/                        # Automated data pipelines and fetchers
+│   ├── update_rankings.py          # Master consensus rankings updater
+│   ├── fetch_depth_charts.py       # 32-team ESPN depth charts fetcher
+│   └── fetch_injuries.py           # ESPN NFL injury reports fetcher
 ├── start.bat                       # Windows Batch 1-click launcher
 ├── start.ps1                       # Windows PowerShell 1-click launcher
 └── package.json                    # Project configuration and npm scripts
@@ -148,7 +150,7 @@ FantasyDrafter/
 
 ## 🧪 Testing
 
-Fantasy Drafter includes a comprehensive suite of **19 automated test suites** covering draft matrix calculations, 3RR order, live synchronization, pick trading, keepers, roster slots, live strategy radar, and post-draft league assessment.
+Fantasy Drafter includes a comprehensive suite of **21 automated test suites** covering draft matrix calculations, 3RR order, live synchronization, pick trading, keepers, roster slots, depth charts, injury tracking, and post-draft league assessment.
 
 Run the full test suite with:
 ```bash
@@ -159,14 +161,12 @@ npm test
 
 ## 🔄 Updating Rankings Data
 
-To fetch the latest consensus rankings and ADP before your draft:
-```bash
-npm run update
-# or
-python update-rankings.py
-```
+To fetch the latest consensus rankings, 32-team depth charts, and injury reports before your draft:
+- **In-App:** Open **League Setup** and click **🔄 Refresh Data Now**.
+- **Via npm:** `npm run update`
+- **Via Python:** `python scripts/update_rankings.py`
 
-This updates `players-data.js` with fresh player values, bye weeks, and team assignments while preserving custom adjustments.
+This updates `players-data.js` and `players-data.json` with fresh player values, depth charts, and injury reports while preserving custom adjustments.
 
 ---
 

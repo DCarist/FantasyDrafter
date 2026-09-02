@@ -653,10 +653,53 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 with sync_lock:
                     if self.wfile in sse_clients:
                         sse_clients.remove(self.wfile)
+        if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
+            self.handle_data_refresh()
             return
 
         # Serve regular static files
         super().do_GET()
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
+            self.handle_data_refresh()
+            return
+        self.send_error(404, "Not Found")
+
+    def handle_data_refresh(self):
+        safe_print("\n🔄 On-demand data refresh triggered from application UI...")
+        update_script = os.path.join(DIRECTORY, "scripts", "update_rankings.py")
+        cmd = [sys.executable, update_script]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
+                safe_print("✅ On-demand data refresh completed successfully!\n")
+                payload = {
+                    "ok": True,
+                    "message": "Player consensus rankings, depth charts, and injury reports updated successfully!"
+                }
+            else:
+                err_msg = res.stderr or res.stdout or f"Updater exited with code {res.returncode}"
+                safe_print(f"⚠️  Data refresh failed ({err_msg})\n")
+                payload = {"ok": False, "message": f"Updater failed: {err_msg[:200]}"}
+        except Exception as e:
+            safe_print(f"⚠️  Data refresh exception ({e})\n")
+            payload = {"ok": False, "message": str(e)}
+
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(200 if payload["ok"] else 500)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
 
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -724,7 +767,8 @@ def ensure_player_data_fresh(max_days=2, force=False, skip=False):
         )
 
         try:
-            cmd = [sys.executable, "update-rankings.py"]
+            update_script = os.path.join(DIRECTORY, "scripts", "update_rankings.py")
+            cmd = [sys.executable, update_script]
             res = subprocess.run(cmd)
             if res.returncode == 0:
                 safe_print("✅ Player rankings successfully updated!\n")

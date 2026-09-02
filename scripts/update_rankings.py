@@ -265,19 +265,25 @@ def fetch_url(url):
     return fetch_source(url)
 
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_OUT_JS = os.path.join(PROJECT_ROOT, "players-data.js")
+DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "players-data.json")
+
+
 def update_rankings(
     ecr_source=None,
     values_source=None,
     sheet_source=None,
-    out_js="players-data.js",
-    out_json="players-data.json",
+    out_js=DEFAULT_OUT_JS,
+    out_json=DEFAULT_OUT_JSON,
     dry_run=False,
 ):
     print("=== Fantasy Drafter Live Rankings Updater ===")
 
+    # 0. Resolve sources
     ecr_url = (
         ecr_source
-        or "https://raw.githubusercontent.com/dynastyprocess/data/master/files/db_fpecr_latest.csv"
+        or "https://raw.githubusercontent.com/dynastyprocess/data/master/files/values-players.csv"
     )
     values_url = (
         values_source
@@ -294,7 +300,7 @@ def update_rankings(
     existing_byes = {}
     existing_depth_charts = {}
     try:
-        source_js = out_js if os.path.exists(out_js) else "players-data.js"
+        source_js = out_js if (out_js and os.path.exists(out_js)) else DEFAULT_OUT_JS
         if os.path.exists(source_js):
             with open(source_js, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -729,6 +735,7 @@ def update_rankings(
     depth_charts = existing_depth_charts
     try:
         from fetch_depth_charts import fetch_all_depth_charts, build_player_lookup
+
         print("Refreshing 32-team depth charts from ESPN...")
         depth_charts = fetch_all_depth_charts(out, verbose=False)
         print(f"Successfully synced depth charts for {len(depth_charts)} teams.")
@@ -739,6 +746,7 @@ def update_rankings(
         if depth_charts:
             try:
                 from fetch_depth_charts import build_player_lookup
+
                 lookup_exact, lookup_name = build_player_lookup(out)
                 for team_abbr, tdata in depth_charts.items():
                     for group_key in ["qb", "rb", "te", "pk"]:
@@ -781,6 +789,7 @@ def update_rankings(
     # 8c. Refresh official NFL injury report from ESPN
     try:
         from fetch_injuries import sync_injuries_into_data
+
         print("Refreshing official NFL injury report from ESPN...")
         sync_injuries_into_data(payload, verbose=False)
         print("Successfully synced injury data.")
@@ -854,11 +863,11 @@ def main():
         help="URL or local file path for Google Sheet CSV",
     )
     parser.add_argument(
-        "--out-js", default="players-data.js", help="Output path for players-data.js"
+        "--out-js", default=DEFAULT_OUT_JS, help="Output path for players-data.js"
     )
     parser.add_argument(
         "--out-json",
-        default="players-data.json",
+        default=DEFAULT_OUT_JSON,
         help="Output path for players-data.json",
     )
     parser.add_argument(

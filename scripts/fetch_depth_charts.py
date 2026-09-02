@@ -148,18 +148,23 @@ def fetch_all_depth_charts(players, verbose=True):
     return depth_charts
 
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_OUT_JS = os.path.join(PROJECT_ROOT, "players-data.js")
+DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "players-data.json")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch NFL Depth Charts from ESPN")
     parser.add_argument(
-        "--out-js", default="players-data.js", help="Path to players-data.js"
+        "--out-js", default=DEFAULT_OUT_JS, help="Path to players-data.js"
     )
     parser.add_argument(
-        "--out-json", default="players-data.json", help="Path to players-data.json"
+        "--out-json", default=DEFAULT_OUT_JSON, help="Path to players-data.json"
     )
     args = parser.parse_args()
 
     # Load existing players data
-    source_file = args.out_json if os.path.exists(args.out_json) else args.out_js
+    source_file = args.out_json if (args.out_json and os.path.exists(args.out_json)) else args.out_js
     if not os.path.exists(source_file):
         print(f"Error: {source_file} not found.")
         sys.exit(1)
