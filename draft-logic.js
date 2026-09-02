@@ -307,6 +307,210 @@ function rankToScore(rank, depth) {
   return 100 * Math.pow(1 - frac, 1.5);
 }
 
+// 1D Natural Breaks (Fisher-Jenks Algorithm)
+// Partitions a sorted array of numeric values into `numClasses` clusters that
+// minimize the sum of squared deviations from cluster means (SSD).
+function computeJenksBreaks(data, numClasses) {
+  if (!Array.isArray(data) || data.length === 0) return [];
+  const sorted = data.slice().filter(v => typeof v === 'number' && !isNaN(v)).sort((a, b) => a - b);
+  const n = sorted.length;
+  if (n === 0) return [];
+  const kClasses = Math.max(1, Math.min(numClasses || 1, n));
+  if (kClasses <= 1) return [sorted[n - 1]];
+  if (n <= kClasses) return sorted;
+
+  const sum = new Float64Array(n + 1);
+  const sumSq = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    sum[i + 1] = sum[i] + sorted[i];
+    sumSq[i + 1] = sumSq[i] + sorted[i] * sorted[i];
+  }
+
+  function ssd(j, i) {
+    const count = i - j;
+    if (count <= 0) return 0;
+    const s = sum[i] - sum[j];
+    const ss = sumSq[i] - sumSq[j];
+    const v = ss - (s * s) / count;
+    return v < 0 ? 0 : v;
+  }
+
+  const dp = Array.from({ length: kClasses + 1 }, () => new Float64Array(n + 1).fill(Infinity));
+  const back = Array.from({ length: kClasses + 1 }, () => new Int32Array(n + 1));
+
+  for (let i = 1; i <= n; i++) {
+    dp[1][i] = ssd(0, i);
+  }
+
+  for (let k = 2; k <= kClasses; k++) {
+    for (let i = k; i <= n; i++) {
+      for (let j = k - 1; j < i; j++) {
+        const val = dp[k - 1][j] + ssd(j, i);
+        if (val < dp[k][i]) {
+          dp[k][i] = val;
+          back[k][i] = j;
+        }
+      }
+    }
+  }
+
+  const breaks = [];
+  let cur = n;
+  for (let k = kClasses; k >= 2; k--) {
+    const idx = back[k][cur];
+    breaks.unshift(sorted[idx - 1]);
+    cur = idx;
+  }
+  breaks.push(sorted[n - 1]);
+  return breaks;
+}
+
+// Maps a 0-100 score to a 1-based Tier (1 = highest score cluster) based on Jenks breaks.
+function scoreToTierFromBreaks(score, breaks) {
+  if (!breaks || breaks.length <= 1 || score == null) return 1;
+  let tier = 1;
+  for (let i = breaks.length - 2; i >= 0; i--) {
+    if (score <= breaks[i]) {
+      tier++;
+    } else {
+      break;
+    }
+  }
+  return tier;
+}
+
+// Assigns stable pre-computed Positional Tiers (`posTier`) and Overall Board Tiers (`overallTier`)
+// to player records. Tiers remain invariant when players are drafted or hidden.
+function assignTiers(players, options) {
+  if (!Array.isArray(players) || players.length === 0) return players || [];
+  const opt = options || {};
+  const isRedraft = (opt.leagueType === 'redraft');
+  const is1QB = (opt.qbFormat === '1qb' || opt.qbFormat === '1QB');
+  const scoring = String(opt.scoring || 'half').toLowerCase();
+
+  let borisKey = 'boris_half';
+  if (scoring === 'ppr' || scoring === '1.0' || scoring === '1') borisKey = 'boris_ppr';
+  else if (scoring === 'std' || scoring === 'standard' || scoring === '0') borisKey = 'boris_std';
+
+  const posTierCounts = {
+    QB: 5,
+    RB: 6,
+    WR: 6,
+    TE: 5,
+    K: 3,
+    DST: 3
+  };
+
+  // 1. Assign Positional Tiers (`posTier`) using 1D Natural Breaks (Jenks)
+  const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+  for (const pos of positions) {
+    const posPlayers = players.filter(p => {
+      const pPos = (p.pos || '').toUpperCase();
+      if (pos === 'DST') return ['DST', 'DEF', 'D/ST'].includes(pPos);
+      return pPos === pos;
+    }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+
+    if (posPlayers.length === 0) continue;
+
+    const targetK = posTierCounts[pos] || 5;
+    const activeScores = posPlayers.filter(p => (p.score ?? 0) >= 5).map(p => p.score);
+    const maxK = Math.max(1, Math.floor(activeScores.length / 2));
+    const k = Math.min(targetK, maxK);
+    const breaks = computeJenksBreaks(activeScores, k);
+
+    for (const p of posPlayers) {
+      if (p.score == null || p.score < 5) {
+        p.posTier = breaks.length > 0 ? breaks.length + 1 : (targetK + 1);
+      } else {
+        p.posTier = scoreToTierFromBreaks(p.score, breaks);
+      }
+    }
+  }
+
+  // 2. Assign Overall Board Tiers (`overallTier`) for ALL view (~12-14 round-equivalent value tiers)
+  const allScored = players.filter(p => p.score != null && p.score >= 5).sort((a, b) => b.score - a.score).slice(0, 250);
+  const targetOverallK = opt.numOverallTiers || 12;
+  const maxOverallK = Math.max(1, Math.floor(allScored.length / 3));
+  const overallK = Math.min(targetOverallK, maxOverallK);
+  const overallBreaks = computeJenksBreaks(allScored.map(p => p.score), overallK);
+
+  for (const p of players) {
+    if (p.score == null || p.score < 5) {
+      p.overallTier = overallBreaks.length > 0 ? overallBreaks.length + 1 : (overallK + 1);
+    } else {
+      p.overallTier = scoreToTierFromBreaks(p.score, overallBreaks);
+    }
+  }
+
+  return players;
+}
+
+// Calculates remaining available player counts and tier scarcity alerts per tier.
+function getTierScarcity(players, takenSet, posFilter) {
+  const isTaken = (id) => {
+    if (!takenSet) return false;
+    if (typeof takenSet.has === 'function') return takenSet.has(id);
+    if (Array.isArray(takenSet)) return takenSet.includes(id);
+    return Boolean(takenSet[id]);
+  };
+
+  const isAll = (!posFilter || posFilter === 'ALL');
+  const filtered = (players || []).filter(p => {
+    if (!p) return false;
+    if (isAll) return true;
+    const pPos = (p.pos || '').toUpperCase();
+    if (posFilter === 'DST') return ['DST', 'DEF', 'D/ST'].includes(pPos);
+    return pPos === posFilter;
+  });
+
+  const tierMap = new Map();
+  for (const p of filtered) {
+    const t = isAll ? (p.overallTier || 1) : (p.posTier || 1);
+    if (!tierMap.has(t)) {
+      tierMap.set(t, { tier: t, total: 0, taken: 0, remaining: 0 });
+    }
+    const entry = tierMap.get(t);
+    entry.total++;
+    if (isTaken(p.id)) {
+      entry.taken++;
+    } else {
+      entry.remaining++;
+    }
+  }
+
+  const tiers = Array.from(tierMap.values()).sort((a, b) => a.tier - b.tier);
+  const playerAlerts = new Map();
+
+  for (const tInfo of tiers) {
+    // Flag critical tier cliffs: top tiers (T1-T4) where players have been drafted and 1-2 remain
+    tInfo.isScarcity = (tInfo.taken > 0 && tInfo.remaining > 0 && tInfo.remaining <= 2 && tInfo.tier <= 4);
+    if (tInfo.isScarcity) {
+      const isLast = (tInfo.remaining === 1);
+      const label = isLast ? ('⚡ Last in T' + tInfo.tier) : ('⚠️ 2 left in T' + tInfo.tier);
+      tInfo.scarcityLabel = label;
+
+      // Find available players in this tier to attach row alerts
+      for (const p of filtered) {
+        const pt = isAll ? (p.overallTier || 1) : (p.posTier || 1);
+        if (pt === tInfo.tier && !isTaken(p.id)) {
+          playerAlerts.set(p.id, {
+            tier: tInfo.tier,
+            remaining: tInfo.remaining,
+            label: label,
+            isLast: isLast
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    isAll: isAll,
+    tiers: tiers,
+    playerAlerts: playerAlerts
+  };
+}
+
 // Generate default team list for a given league size.
 function defaultTeams(count, mySlot, myName) {
   const list = [];
@@ -2054,5 +2258,15 @@ if (typeof module !== 'undefined' && module.exports) {
     generateDraftBoardGrid: generateDraftBoardGrid,
     analyzeLiveDraftStrategy: analyzeLiveDraftStrategy,
     generateDraftSummaryAnalysis: generateDraftSummaryAnalysis,
+    computeJenksBreaks: computeJenksBreaks,
+    assignTiers: assignTiers,
+    getTierScarcity: getTierScarcity,
   };
 }
+
+if (typeof window !== 'undefined') {
+  window.computeJenksBreaks = computeJenksBreaks;
+  window.assignTiers = assignTiers;
+  window.getTierScarcity = getTierScarcity;
+}
+

@@ -103,7 +103,7 @@
   function scored() {
     const s = global.state.settings;
     const blend = s.blend / 100;
-    return global.PLAYERS.map(p => {
+    const list = global.PLAYERS.map(p => {
       const dynRank = getDynastyRank(p, s.qbFormat);
       const redRank = getRedraftRank(p, s.qbFormat, s.scoring);
       const prospectRank = getProspectRank(p, s.qbFormat, s.scoring);
@@ -121,7 +121,61 @@
         score: score
       }, p);
     });
+
+    if (typeof assignTiers === 'function') {
+      assignTiers(list, {
+        leagueType: s.leagueType,
+        qbFormat: s.qbFormat,
+        scoring: s.scoring,
+        blend: blend
+      });
+    }
+
+    return list;
   }
+
+  function renderTierPills(allScored, taken) {
+    const container = $('tierpills');
+    if (!container) return;
+    const posFilter = global.ui.posFilter;
+    if (posFilter === 'ROOKIE' || posFilter === 'WATCHLIST') {
+      container.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+    container.style.display = 'flex';
+
+    const scarcityInfo = (typeof getTierScarcity === 'function')
+      ? getTierScarcity(allScored, taken, posFilter)
+      : { tiers: [] };
+
+    const activeTierFilter = global.ui.tierFilter;
+    const totalAvail = scarcityInfo.tiers.reduce((acc, t) => acc + t.remaining, 0);
+
+    let pillsHtml = '<button type="button" class="tierpill' + (activeTierFilter == null ? ' active' : '') + '" onclick="setTierFilter(null)">All <span class="pill-count">(' + totalAvail + ')</span></button>';
+
+    for (const t of scarcityInfo.tiers) {
+      if (t.total === 0) continue;
+      const isSelected = (activeTierFilter === t.tier);
+      const scarcityClass = t.isScarcity ? ' scarcity' : '';
+      const warnIcon = t.isScarcity ? (t.remaining === 1 ? ' ⚡' : ' ⚠️') : '';
+      pillsHtml += '<button type="button" class="tierpill' + (isSelected ? ' active' : '') + scarcityClass + '" onclick="setTierFilter(' + t.tier + ')" title="' + (t.isScarcity ? t.scarcityLabel : ('Tier ' + t.tier + ': ' + t.remaining + ' of ' + t.total + ' available')) + '">'
+        + 'T' + t.tier + ' <span class="pill-count">(' + t.remaining + warnIcon + ')</span>'
+        + '</button>';
+    }
+
+    container.innerHTML = pillsHtml;
+  }
+
+  function setTierFilter(tier) {
+    if (global.ui.tierFilter === tier) {
+      global.ui.tierFilter = null;
+    } else {
+      global.ui.tierFilter = tier;
+    }
+    renderPool();
+  }
+  global.setTierFilter = setTierFilter;
 
   function renderPool() {
     const s = global.state.settings;
@@ -129,13 +183,25 @@
     const pickOf = new Map();
     for (const e of global.state.log) if (e.playerId != null) pickOf.set(e.playerId, e);
     const q = normalizeName(global.ui.search || '');
-    let rows = scored();
+    const allScored = scored();
+    const scarcityData = (typeof getTierScarcity === 'function')
+      ? getTierScarcity(allScored, taken, global.ui.posFilter)
+      : { playerAlerts: new Map() };
+
+    renderTierPills(allScored, taken);
+
+    let rows = allScored;
     if (global.ui.hideTaken) rows = rows.filter(p => !taken.has(p.id));
     if (global.ui.hideOutIR) rows = rows.filter(p => !(p.injury && (p.injury.code === 'O' || p.injury.code === 'IR')));
     if (global.ui.posFilter === 'WATCHLIST') rows = rows.filter(p => isWatched(global.state.watchlist, p.id));
     else if (global.ui.posFilter === 'ROOKIE') rows = rows.filter(p => p.rookie);
     else if (global.ui.posFilter === 'DST') rows = rows.filter(p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase()));
     else if (global.ui.posFilter !== 'ALL') rows = rows.filter(p => (p.pos || '').toUpperCase() === global.ui.posFilter);
+
+    if (global.ui.tierFilter != null) {
+      const isAll = (global.ui.posFilter === 'ALL');
+      rows = rows.filter(p => (isAll ? p.overallTier : p.posTier) === global.ui.tierFilter);
+    }
 
     if (q) {
       const qDst = resolveDstCanonical(q);
@@ -168,18 +234,29 @@
     const onClock = teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
     const isOurPick = onClock.isMe;
     const myRoster = getMyRosterPlayers(global.state.log, byId, s.slot, s.teams, s.mode);
-    const showTiers = global.ui.sort === 'score' && !q && global.ui.posFilter !== 'ROOKIE' && global.ui.posFilter !== 'WATCHLIST';
-    let html = '', prevScore = null, tier = 1;
+    const showTiers = global.ui.sort === 'score' && !q && global.ui.posFilter !== 'ROOKIE' && global.ui.posFilter !== 'WATCHLIST' && global.ui.tierFilter == null;
+    let html = '', prevTier = null;
 
     rows.slice(0, 250).forEach((p, idx) => {
       const isTaken = taken.has(p.id);
+      const isAllView = (global.ui.posFilter === 'ALL');
+      const curTier = isAllView ? (p.overallTier || 1) : (p.posTier || 1);
+
       let tierRow = '';
-      if (showTiers && prevScore != null && p.score != null && prevScore - p.score > 4) {
-        tier++;
-        tierRow = ' tierbreak';
+      let tierBadgeHtml = '';
+      if (showTiers) {
+        if (idx === 0) {
+          tierBadgeHtml = ' <span class="tierlabel">T' + curTier + '</span>';
+          prevTier = curTier;
+        } else if (prevTier != null && curTier !== prevTier) {
+          tierRow = ' tierbreak';
+          tierBadgeHtml = ' <span class="tierlabel">T' + curTier + '</span>';
+          prevTier = curTier;
+        }
       }
-      if (p.score != null) prevScore = p.score;
+
       const posClass = ['QB', 'RB', 'WR', 'TE'].includes(p.pos) ? p.pos : (['DST', 'DEF', 'D/ST'].includes(p.pos) ? 'DST' : (p.pos === 'K' ? 'K' : 'other'));
+      const posTierStr = p.posTier ? ' <span class="pos-tier">T' + p.posTier + '</span>' : '';
       const value = !isTaken && p.adp && p.adp - pick >= 8 ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>' : '';
       const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
       const rookie = p.rookie ? '<span class="rookietag" title="Rookie Draft Rank' + rookieRankStr + '">R' + rookieRankStr + '</span>' : '';
@@ -188,6 +265,14 @@
       const starBtn = !isTaken
         ? '<button type="button" class="watchbtn' + (watched ? ' active' : '') + '" title="' + (watched ? 'Remove from Watchlist' : 'Add to Watchlist') + '" onclick="toggleWatch(' + p.id + ', event)">' + (watched ? '★' : '☆') + '</button>'
         : '';
+
+      let scarcityTag = '';
+      if (!isTaken && scarcityData && scarcityData.playerAlerts) {
+        const scAlert = scarcityData.playerAlerts.get(p.id);
+        if (scAlert) {
+          scarcityTag = ' <span class="scarcity-tag' + (scAlert.isLast ? ' last-in-tier' : '') + '" title="' + scAlert.label + '">' + scAlert.label + '</span>';
+        }
+      }
 
       let injTag = '';
       if (p.injury && p.injury.code) {
@@ -241,9 +326,9 @@
       }
 
       html += '<tr class="' + tierRow + (isTaken ? ' takenrow' : '') + '">'
-        + '<td class="rk">' + (idx + 1) + (tierRow ? ' <span class="tierlabel">T' + tier + '</span>' : '') + '</td>'
-        + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + '</td>'
-        + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
+        + '<td class="rk">' + (idx + 1) + tierBadgeHtml + '</td>'
+        + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + scarcityTag + '</td>'
+        + '<td><span class="pos ' + posClass + '">' + p.pos + posTierStr + '</span></td>'
         + '<td class="meta">' + (p.team || '—') + '</td>'
         + byeCell
         + '<td class="num rk">' + (p.activeDyn ?? '—') + '</td>'
@@ -475,6 +560,7 @@
 
   function setFilter(t) {
     global.ui.posFilter = t;
+    global.ui.tierFilter = null;
     renderTabs();
     renderPool();
   }
@@ -993,13 +1079,31 @@
 
       if (!strat) return;
 
+      const modalScarcity = (typeof getTierScarcity === 'function')
+        ? getTierScarcity(availablePlayers, taken, null)
+        : null;
+
       // Banner
       let bannerHtml = '';
       if (strat.isOnClock) {
+        let cliffAlertHtml = '';
+        if (modalScarcity && strat.recommendedTargets && strat.recommendedTargets.length > 0) {
+          const topScarcityTarget = strat.recommendedTargets.find(t => {
+            const alert = modalScarcity.playerAlerts.get(t.id);
+            return alert && alert.isLast;
+          }) || strat.recommendedTargets.find(t => modalScarcity.playerAlerts.has(t.id));
+
+          if (topScarcityTarget) {
+            const a = modalScarcity.playerAlerts.get(topScarcityTarget.id);
+            cliffAlertHtml = '<div style="font-size:12px; color:#fbbf24; margin-top:4px; display:flex; align-items:center; gap:4px">⚠️ <strong>Tier Cliff Alert:</strong> ' + topScarcityTarget.name + ' is ' + (a.isLast ? 'the last available' : 'one of only ' + a.remaining + ' remaining') + ' Tier ' + a.tier + ' ' + topScarcityTarget.pos + '!</div>';
+          }
+        }
+
         bannerHtml = '<div class="strategy-banner on-clock">'
           + '<div>'
           + '<h4 style="margin:0; font-size:16px; color:var(--good); display:flex; align-items:center; gap:6px">⚡ YOU ARE ON THE CLOCK! (Pick #' + pick + ')</h4>'
           + '<div style="font-size:12px; color:#cbd5e1; margin-top:2px">It is your turn to pick. Check your top recommended targets below or view the player pool.</div>'
+          + cliffAlertHtml
           + '</div>'
           + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-weight:700">Make Pick ➔</button>'
           + '</div>';
@@ -1129,7 +1233,9 @@
                 ? ('<span style="color:var(--good); font-size:10px; font-weight:700">+' + p.valSurplus + ' vs ADP</span>')
                 : (p.adp ? ('<span style="color:var(--dim); font-size:10px">ADP ' + p.adp + '</span>') : '');
 
-              const rookieTag = p.rookie ? '<span class="rookietag" style="font-size:8.5px; padding:0 3px">R</span>' : '';
+              const pAlert = modalScarcity ? modalScarcity.playerAlerts.get(p.id) : null;
+              const scarcityTag = pAlert ? ' <span class="scarcity-tag' + (pAlert.isLast ? ' last-in-tier' : '') + '" style="font-size:8.5px; padding:0 4px">' + (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) + '</span>' : '';
+              const tierBadge = p.posTier ? ' <span class="pos-tier" style="font-size:9.5px; color:var(--accent); font-weight:700">T' + p.posTier + '</span>' : '';
 
               return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
                 + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'
@@ -1138,6 +1244,8 @@
                 + '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis">'
                 + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:4px">'
                 + '<span>' + p.name + '</span>'
+                + tierBadge
+                + scarcityTag
                 + rookieTag
                 + '</div>'
                 + '<div style="font-size:10px; color:var(--dim); display:flex; align-items:center; gap:4px; margin-top:1px">'
