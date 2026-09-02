@@ -384,13 +384,6 @@ function scoreToTierFromBreaks(score, breaks) {
 function assignTiers(players, options) {
   if (!Array.isArray(players) || players.length === 0) return players || [];
   const opt = options || {};
-  const isRedraft = (opt.leagueType === 'redraft');
-  const is1QB = (opt.qbFormat === '1qb' || opt.qbFormat === '1QB');
-  const scoring = String(opt.scoring || 'half').toLowerCase();
-
-  let borisKey = 'boris_half';
-  if (scoring === 'ppr' || scoring === '1.0' || scoring === '1') borisKey = 'boris_ppr';
-  else if (scoring === 'std' || scoring === 'standard' || scoring === '0') borisKey = 'boris_std';
 
   const posTierCounts = {
     QB: 5,
