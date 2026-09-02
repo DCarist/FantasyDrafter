@@ -1321,6 +1321,637 @@ function deserializeDraftState(input, currentPlayers) {
   };
 }
 
+// Generates the 2D grid matrix for the interactive Draft Board (rows = rounds, cols = slots 1..T)
+function generateDraftBoardGrid(options) {
+  const opt = options || {};
+  const teams = Math.max(2, Math.min(32, parseInt(opt.teams, 10) || 12));
+  const rounds = Math.max(1, Math.min(50, parseInt(opt.rounds, 10) || 20));
+  const mode = opt.mode || '3rr';
+  const log = Array.isArray(opt.log) ? opt.log : [];
+  const keepers = Array.isArray(opt.keepers) ? opt.keepers : [];
+  const tradedPicks = (opt.tradedPicks && typeof opt.tradedPicks === 'object') ? opt.tradedPicks : {};
+  const teamNames = opt.teamNames || null;
+  const mySlot = parseInt(opt.mySlot, 10) || 1;
+  const currentPickNum = (opt.currentPickNum != null) ? parseInt(opt.currentPickNum, 10) : (log.length + 1);
+  const playersLookup = opt.playersLookup || opt.byId || null;
+
+  // Build lookup maps for fast access
+  const pickMap = new Map();
+  for (const entry of log) {
+    if (entry && entry.overall != null) {
+      pickMap.set(entry.overall, entry);
+    }
+  }
+
+  const keeperMap = (typeof getKeeperPicksMap === 'function')
+    ? getKeeperPicksMap(keepers, teams, rounds, mode, tradedPicks)
+    : {};
+
+  const gridRounds = [];
+
+  for (let r = 1; r <= rounds; r++) {
+    const isFwd = roundIsForward(r, mode);
+    const rowPicks = [];
+
+    for (let s = 1; s <= teams; s++) {
+      const overall = overallPick(r, s, teams, mode);
+      const teamInfo = teamForOverall(overall, teams, mode, teamNames, mySlot, tradedPicks);
+      const entry = pickMap.get(overall);
+      const keeperPick = keeperMap[overall];
+      const isDrafted = Boolean(entry);
+      const isOnClock = (overall === currentPickNum);
+
+      let playerObj = null;
+      let isKeeper = false;
+      let isPendingKeeper = false;
+
+      if (entry) {
+        playerObj = resolvePickPlayer(entry, playersLookup);
+        isKeeper = Boolean(entry.isKeeper || (playerObj && playerObj.isKeeper) || keeperPick);
+      } else if (keeperPick) {
+        const p = (keeperPick.playerId != null && playersLookup)
+          ? ((typeof playersLookup === 'function') ? playersLookup(keeperPick.playerId) : playersLookup[keeperPick.playerId])
+          : null;
+        playerObj = {
+          id: keeperPick.playerId != null ? keeperPick.playerId : null,
+          name: keeperPick.customName || (p ? p.name : ('Keeper #' + (keeperPick.playerId || overall))),
+          pos: (keeperPick.customPos || (p ? p.pos : 'WR') || 'WR').toUpperCase(),
+          team: keeperPick.customTeam || (p ? p.team : '—') || '—',
+          bye: keeperPick.customBye != null ? keeperPick.customBye : (p ? p.bye : null),
+          isKeeper: true,
+          isPendingKeeper: true,
+          isUnlisted: Boolean(keeperPick.customName)
+        };
+        isKeeper = true;
+        isPendingKeeper = true;
+      }
+
+      rowPicks.push({
+        round: r,
+        slot: s,
+        overall: overall,
+        originalSlot: teamInfo.originalSlot != null ? teamInfo.originalSlot : s,
+        effectiveSlot: teamInfo.slot,
+        originalTeamName: (Array.isArray(teamNames) ? teamNames[s - 1] : null) || ('Team ' + s),
+        effectiveTeamName: teamInfo.name,
+        isTraded: Boolean(teamInfo.isTraded),
+        isMe: Boolean(teamInfo.isMe),
+        isOnClock: isOnClock,
+        isDrafted: isDrafted,
+        isKeeper: isKeeper,
+        isPendingKeeper: isPendingKeeper,
+        player: playerObj,
+        entry: entry || null,
+        keeper: keeperPick || null
+      });
+    }
+
+    gridRounds.push({
+      round: r,
+      isForward: isFwd,
+      picks: rowPicks
+    });
+  }
+
+  return {
+    teams: teams,
+    rounds: rounds,
+    mode: mode,
+    currentPick: currentPickNum,
+    grid: gridRounds
+  };
+}
+
+/**
+ * Analyzes live draft strategy with a focus on the user's team needs,
+ * upcoming pick distance, opponent threat predictions between turns, and target suggestions.
+ */
+function analyzeLiveDraftStrategy(options) {
+  const opt = options || {};
+  const teams = Math.max(2, parseInt(opt.teams, 10) || 12);
+  const rounds = Math.max(1, parseInt(opt.rounds, 10) || 20);
+  const mode = opt.mode === '3rr' ? '3rr' : 'snake';
+  const log = Array.isArray(opt.log) ? opt.log : [];
+  const keepers = Array.isArray(opt.keepers) ? opt.keepers : [];
+  const tradedPicks = (opt.tradedPicks && typeof opt.tradedPicks === 'object') ? opt.tradedPicks : {};
+  const teamNames = opt.teamNames || null;
+  const mySlot = Math.max(1, Math.min(teams, parseInt(opt.mySlot, 10) || 1));
+  const currentPickNum = Math.max(1, parseInt(opt.currentPickNum, 10) || (log.length + 1));
+  const playersLookup = opt.playersLookup || null;
+  const rosterSlots = Object.assign({}, DEFAULT_ROSTER_SLOTS, opt.rosterSlots);
+  const scoringSettings = opt.scoringSettings || {};
+  const availablePlayers = Array.isArray(opt.availablePlayers) ? opt.availablePlayers : [];
+
+  const totalPicks = teams * rounds;
+  const isComplete = currentPickNum > totalPicks || log.length >= totalPicks;
+
+  // 1. Group drafted players by effective slot
+  const teamDraftedMap = {};
+  for (let s = 1; s <= teams; s++) {
+    teamDraftedMap[s] = [];
+  }
+
+  for (let i = 0; i < log.length; i++) {
+    const entry = log[i];
+    const overall = entry.overall || (i + 1);
+    const teamInfo = teamForOverall(overall, teams, mode, teamNames, mySlot, tradedPicks);
+    const player = resolvePickPlayer(entry, playersLookup);
+    if (player && teamDraftedMap[teamInfo.slot]) {
+      const pCopy = Object.assign({}, player);
+      pCopy.pickOverall = overall;
+      pCopy.score = pCopy.score ?? computeFormatScore(pCopy, scoringSettings) ?? rankToScore(pCopy.adp || pCopy.rank, 250) ?? 50;
+      teamDraftedMap[teamInfo.slot].push(pCopy);
+    }
+  }
+
+  // Include pre-assigned keepers as drafted context for each team
+  for (const k of keepers) {
+    if (!k || k.slot == null || k.round == null) continue;
+    const overall = overallPick(k.round, k.slot, teams, mode);
+    if (overall >= currentPickNum && teamDraftedMap[k.slot]) {
+      const p = (k.playerId != null && playersLookup)
+        ? ((typeof playersLookup === 'function') ? playersLookup(k.playerId) : playersLookup[k.playerId])
+        : null;
+      const kPlayer = {
+        id: k.playerId != null ? k.playerId : null,
+        name: k.customName || (p ? p.name : ('Keeper #' + (k.playerId || overall))),
+        pos: (k.customPos || (p ? p.pos : 'WR') || 'WR').toUpperCase(),
+        team: k.customTeam || (p ? p.team : '—') || '—',
+        bye: k.customBye != null ? k.customBye : (p ? p.bye : null),
+        isKeeper: true,
+        pickOverall: overall
+      };
+      kPlayer.score = computeFormatScore(kPlayer, scoringSettings) ?? kPlayer.score ?? rankToScore(kPlayer.adp || kPlayer.rank, 250) ?? 50;
+      teamDraftedMap[k.slot].push(kPlayer);
+    }
+  }
+
+  // 2. Find user's upcoming picks
+  const allUserPicks = picksForSlot(mySlot, teams, rounds, mode, tradedPicks).sort((a, b) => a - b);
+  const remainingUserPicks = allUserPicks.filter(p => p >= currentPickNum);
+  const nextUserPick = remainingUserPicks[0] || null;
+  const picksUntilUserTurn = nextUserPick != null ? Math.max(0, nextUserPick - currentPickNum) : 0;
+  const isOnClock = (currentPickNum === nextUserPick);
+
+  const currentRound = Math.ceil(currentPickNum / teams);
+  const isLateRounds = (currentRound >= rounds - 2);
+
+  // 3. User Roster Allocation & Needs
+  const myPlayers = teamDraftedMap[mySlot] || [];
+  const myAllocation = assignRosterSlots(myPlayers, rosterSlots);
+
+  const starterReqs = {
+    QB: (rosterSlots.qb || 0) + (rosterSlots.superflex ? 1 : 0),
+    RB: (rosterSlots.rb || 0) + (rosterSlots.flex ? 1 : 0),
+    WR: (rosterSlots.wr || 0) + (rosterSlots.flex ? 1 : 0),
+    TE: (rosterSlots.te || 0) + (rosterSlots.flex ? 1 : 0),
+    K: (rosterSlots.k || 0),
+    DST: (rosterSlots.dst || 0)
+  };
+
+  const myCounts = myAllocation.counts || { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
+  const baseStarterReqs = {
+    QB: rosterSlots.qb || 0,
+    RB: rosterSlots.rb || 0,
+    WR: rosterSlots.wr || 0,
+    TE: rosterSlots.te || 0,
+    K: rosterSlots.k || 0,
+    DST: rosterSlots.dst || 0
+  };
+
+  const userNeeds = [];
+  const positionsList = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+  for (const pos of positionsList) {
+    const filled = myCounts[pos] || 0;
+    const baseReq = baseStarterReqs[pos] || 0;
+    const maxReq = starterReqs[pos] || 0;
+    let urgency = 'FILLED';
+    let label = 'Filled';
+
+    const isKOrDst = (pos === 'K' || pos === 'DST');
+
+    if (filled === 0 && baseReq > 0) {
+      if (isKOrDst && !isLateRounds) {
+        urgency = 'OPTIONAL';
+        label = 'Late Rounds';
+      } else {
+        urgency = 'CRITICAL';
+        label = 'Need Starter';
+      }
+    } else if (filled < baseReq) {
+      if (isKOrDst && !isLateRounds) {
+        urgency = 'OPTIONAL';
+        label = 'Late Rounds';
+      } else {
+        urgency = 'NEEDED';
+        label = `Need ${baseReq - filled} Starter${(baseReq - filled) > 1 ? 's' : ''}`;
+      }
+    } else if (filled < maxReq) {
+      urgency = 'OPTIONAL';
+      label = 'Depth / Flex';
+    }
+
+    userNeeds.push({
+      pos: pos,
+      filled: filled,
+      baseReq: baseReq,
+      maxReq: maxReq,
+      urgency: urgency,
+      label: label
+    });
+  }
+
+  // 4. Opponent Threat Timeline between currentPickNum and nextUserPick
+  const opponentThreats = [];
+  const uniqueTeamsNeedingPos = {
+    QB: new Set(),
+    RB: new Set(),
+    WR: new Set(),
+    TE: new Set()
+  };
+
+  if (nextUserPick != null && nextUserPick > currentPickNum) {
+    for (let pNum = currentPickNum; pNum < nextUserPick; pNum++) {
+      const oppTeamInfo = teamForOverall(pNum, teams, mode, teamNames, mySlot, tradedPicks);
+      const oppDrafted = teamDraftedMap[oppTeamInfo.slot] || [];
+      const oppAllocation = assignRosterSlots(oppDrafted, rosterSlots);
+      const oppCounts = oppAllocation.counts || { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
+
+      // Identify this opponent's open starter holes (suppress K/DST unless late rounds)
+      const oppHoles = [];
+      for (const pos of ['QB', 'RB', 'WR', 'TE', 'K', 'DST']) {
+        const isKOrDst = (pos === 'K' || pos === 'DST');
+        if (isKOrDst && !isLateRounds) continue;
+
+        const oppFilled = oppCounts[pos] || 0;
+        const oppBaseReq = baseStarterReqs[pos] || 0;
+        if (oppFilled < oppBaseReq) {
+          const isCritical = (oppFilled === 0 && oppBaseReq > 0);
+          oppHoles.push({ pos: pos, needed: oppBaseReq - oppFilled, isCritical: isCritical });
+          if (['QB', 'RB', 'WR', 'TE'].includes(pos)) {
+            uniqueTeamsNeedingPos[pos].add(oppTeamInfo.slot);
+          }
+        }
+      }
+
+      oppHoles.sort((a, b) => (b.isCritical ? 1 : 0) - (a.isCritical ? 1 : 0));
+
+      opponentThreats.push({
+        overall: pNum,
+        pickFmt: fmtPick(pNum, teams),
+        slot: oppTeamInfo.slot,
+        teamName: oppTeamInfo.name,
+        urgentNeeds: oppHoles.slice(0, 3),
+        totalDrafted: oppDrafted.length
+      });
+    }
+  }
+
+  // 5. Aggregate Run Danger Alerts (based on unique teams ahead needing that starter)
+  const runDangers = [];
+  for (const pos of ['QB', 'RB', 'WR', 'TE']) {
+    const count = uniqueTeamsNeedingPos[pos].size;
+    if (count >= 2) {
+      runDangers.push({
+        pos: pos,
+        threatCount: count,
+        level: count >= 3 ? 'HIGH' : 'MED',
+        message: `${count} team${count === 1 ? '' : 's'} ahead need ${pos} starters`
+      });
+    }
+  }
+
+  // 6. Best Available Players by Position (Top 5 per Position)
+  const criticalPositions = userNeeds
+    .filter(n => n.urgency === 'CRITICAL' || n.urgency === 'NEEDED')
+    .map(n => n.pos);
+  const targetPositions = criticalPositions.length > 0 ? criticalPositions : ['WR', 'RB', 'QB', 'TE'];
+
+  const targetsByPosition = {};
+  const positionsToAnalyze = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+  const isDst = p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase());
+
+  for (const pos of positionsToAnalyze) {
+    const candidates = availablePlayers.filter(p => {
+      const posUpper = (p.pos || '').toUpperCase();
+      if (pos === 'DST') return isDst(p);
+      return posUpper === pos;
+    });
+
+    candidates.sort((a, b) => {
+      const scoreA = a.score ?? computeFormatScore(a, scoringSettings) ?? (100 - (a.rank || 200));
+      const scoreB = b.score ?? computeFormatScore(b, scoringSettings) ?? (100 - (b.rank || 200));
+      return scoreB - scoreA;
+    });
+
+    targetsByPosition[pos] = candidates.slice(0, 5).map(cand => {
+      const cScore = cand.score ?? computeFormatScore(cand, scoringSettings) ?? (100 - (cand.rank || 200));
+      const valSurplus = (cand.adp != null && nextUserPick != null) ? Math.round(nextUserPick - cand.adp) : 0;
+      const byeClash = (typeof getByeClashStatus === 'function')
+        ? getByeClashStatus(cand, myPlayers)
+        : { type: 'none', samePos: [], otherPos: [] };
+      const isWatched = Array.isArray(opt.watchlist) ? opt.watchlist.includes(cand.id) : false;
+
+      return {
+        id: cand.id,
+        name: cand.name,
+        pos: cand.pos,
+        team: cand.team,
+        bye: cand.bye,
+        adp: cand.adp,
+        rookie: cand.rookie,
+        score: Math.round(cScore * 10) / 10,
+        valSurplus: valSurplus,
+        isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase()),
+        isWatched: isWatched,
+        byeClash: byeClash
+      };
+    });
+  }
+
+  // Also maintain top overall recommended targets for backward compatibility
+  const recommendedTargets = [];
+  if (availablePlayers.length > 0) {
+    const candidates = availablePlayers.filter(p => {
+      const posUpper = (p.pos || '').toUpperCase();
+      return targetPositions.some(tp => (tp === 'DST' ? isDst(p) : posUpper === tp));
+    });
+
+    candidates.sort((a, b) => {
+      const scoreA = a.score ?? computeFormatScore(a, scoringSettings) ?? (100 - (a.rank || 200));
+      const scoreB = b.score ?? computeFormatScore(b, scoringSettings) ?? (100 - (b.rank || 200));
+      return scoreB - scoreA;
+    });
+
+    for (let i = 0; i < Math.min(5, candidates.length); i++) {
+      const cand = candidates[i];
+      const cScore = cand.score ?? computeFormatScore(cand, scoringSettings) ?? (100 - (cand.rank || 200));
+      const valSurplus = (cand.adp != null && nextUserPick != null) ? Math.round(nextUserPick - cand.adp) : 0;
+      const byeClash = (typeof getByeClashStatus === 'function')
+        ? getByeClashStatus(cand, myPlayers)
+        : { type: 'none', samePos: [], otherPos: [] };
+      const isWatched = Array.isArray(opt.watchlist) ? opt.watchlist.includes(cand.id) : false;
+
+      recommendedTargets.push({
+        id: cand.id,
+        name: cand.name,
+        pos: cand.pos,
+        team: cand.team,
+        bye: cand.bye,
+        adp: cand.adp,
+        rookie: cand.rookie,
+        score: Math.round(cScore * 10) / 10,
+        valSurplus: valSurplus,
+        isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase()),
+        isWatched: isWatched,
+        byeClash: byeClash
+      });
+    }
+  }
+
+  return {
+    isComplete: isComplete,
+    currentPick: currentPickNum,
+    mySlot: mySlot,
+    nextUserPick: nextUserPick,
+    picksUntilUserTurn: picksUntilUserTurn,
+    isOnClock: isOnClock,
+    userNeeds: userNeeds,
+    opponentThreats: opponentThreats,
+    runDangers: runDangers,
+    recommendedTargets: recommendedTargets,
+    targetsByPosition: targetsByPosition,
+    totalPicks: totalPicks
+  };
+}
+
+/**
+ * Calculates comprehensive post-draft / live league valuation and rankings:
+ * - Positional value captured (QB, RB, WR, TE, K, DST)
+ * - Starters vs bench score splits
+ * - Letter grades (A+ to D)
+ * - ADP draft value surplus (best steals & biggest reaches)
+ * - Global draft superlatives
+ */
+function generateDraftSummaryAnalysis(options) {
+  const opt = options || {};
+  const teams = Math.max(2, parseInt(opt.teams, 10) || 12);
+  const rounds = Math.max(1, parseInt(opt.rounds, 10) || 20);
+  const mode = opt.mode === '3rr' ? '3rr' : 'snake';
+  const log = Array.isArray(opt.log) ? opt.log : [];
+  const keepers = Array.isArray(opt.keepers) ? opt.keepers : [];
+  const tradedPicks = (opt.tradedPicks && typeof opt.tradedPicks === 'object') ? opt.tradedPicks : {};
+  const teamNames = opt.teamNames || null;
+  const mySlot = Math.max(1, Math.min(teams, parseInt(opt.mySlot, 10) || 1));
+  const playersLookup = opt.playersLookup || null;
+  const rosterSlots = Object.assign({}, DEFAULT_ROSTER_SLOTS, opt.rosterSlots);
+  const scoringSettings = opt.scoringSettings || {};
+
+  const totalPicks = teams * rounds;
+  const isComplete = log.length >= totalPicks;
+
+  // 1. Group drafted players by effective slot
+  const teamDraftedMap = {};
+  for (let s = 1; s <= teams; s++) {
+    teamDraftedMap[s] = [];
+  }
+
+  const allDraftedPicks = [];
+
+  for (let i = 0; i < log.length; i++) {
+    const entry = log[i];
+    const overall = entry.overall || (i + 1);
+    const teamInfo = teamForOverall(overall, teams, mode, teamNames, mySlot, tradedPicks);
+    const player = resolvePickPlayer(entry, playersLookup);
+    if (player && teamDraftedMap[teamInfo.slot]) {
+      const pCopy = Object.assign({}, player);
+      pCopy.pickOverall = overall;
+      pCopy.effectiveSlot = teamInfo.slot;
+      pCopy.effectiveTeamName = teamInfo.name;
+      pCopy.score = pCopy.score ?? computeFormatScore(pCopy, scoringSettings) ?? rankToScore(pCopy.adp || pCopy.rank, 250) ?? 50;
+      pCopy.adpSurplus = (pCopy.adp != null) ? (pCopy.adp - overall) : 0;
+      teamDraftedMap[teamInfo.slot].push(pCopy);
+      allDraftedPicks.push(pCopy);
+    }
+  }
+
+  // Include pre-assigned keepers as drafted players
+  for (const k of keepers) {
+    if (!k || k.slot == null || k.round == null) continue;
+    const overall = overallPick(k.round, k.slot, teams, mode);
+    if (!log.some(e => (e.overall === overall))) {
+      const p = (k.playerId != null && playersLookup)
+        ? ((typeof playersLookup === 'function') ? playersLookup(k.playerId) : playersLookup[k.playerId])
+        : null;
+      const kPlayer = {
+        id: k.playerId != null ? k.playerId : null,
+        name: k.customName || (p ? p.name : ('Keeper #' + (k.playerId || overall))),
+        pos: (k.customPos || (p ? p.pos : 'WR') || 'WR').toUpperCase(),
+        team: k.customTeam || (p ? p.team : '—') || '—',
+        bye: k.customBye != null ? k.customBye : (p ? p.bye : null),
+        adp: p ? p.adp : null,
+        isKeeper: true,
+        pickOverall: overall,
+        effectiveSlot: k.slot,
+        effectiveTeamName: (Array.isArray(teamNames) ? teamNames[k.slot - 1] : null) || ('Team ' + k.slot)
+      };
+      kPlayer.score = computeFormatScore(kPlayer, scoringSettings) ?? kPlayer.score ?? rankToScore(kPlayer.adp || kPlayer.rank, 250) ?? 50;
+      kPlayer.adpSurplus = (kPlayer.adp != null) ? (kPlayer.adp - overall) : 0;
+      if (teamDraftedMap[k.slot]) {
+        teamDraftedMap[k.slot].push(kPlayer);
+        allDraftedPicks.push(kPlayer);
+      }
+    }
+  }
+
+  // 2. Evaluate each team
+  const teamSummaries = [];
+  for (let s = 1; s <= teams; s++) {
+    const tPlayers = teamDraftedMap[s] || [];
+    const tName = (Array.isArray(teamNames) ? teamNames[s - 1] : null) || (s === mySlot ? 'My Team' : ('Team ' + s));
+    const allocation = assignRosterSlots(tPlayers, rosterSlots);
+
+    let startersScore = 0;
+    for (const slot of allocation.starters) {
+      if (slot.player) {
+        startersScore += (slot.player.score || 0);
+      }
+    }
+
+    let benchScore = 0;
+    for (const slot of allocation.bench) {
+      if (slot.player) {
+        benchScore += (slot.player.score || 0);
+      }
+    }
+
+    const posScores = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
+    const isDst = p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase());
+
+    for (const p of tPlayers) {
+      const pos = (p.pos || '').toUpperCase();
+      const pScore = p.score || 0;
+      if (isDst(p)) posScores.DST += pScore;
+      else if (posScores[pos] != null) posScores[pos] += pScore;
+    }
+
+    const totalScore = startersScore + (benchScore * 0.45);
+
+    let netAdpSurplus = 0;
+    let bestSteal = null;
+    let biggestReach = null;
+
+    for (const p of tPlayers) {
+      if (p.adp != null) {
+        const surplus = p.adpSurplus || (p.adp - p.pickOverall);
+        netAdpSurplus += surplus;
+        if (!bestSteal || surplus > bestSteal.surplus) {
+          bestSteal = { player: p, surplus: surplus };
+        }
+        if (!biggestReach || surplus < biggestReach.surplus) {
+          biggestReach = { player: p, surplus: surplus };
+        }
+      }
+    }
+
+    teamSummaries.push({
+      slot: s,
+      teamName: tName,
+      isMe: (s === mySlot),
+      totalScore: Math.round(totalScore * 10) / 10,
+      startersScore: Math.round(startersScore * 10) / 10,
+      benchScore: Math.round(benchScore * 10) / 10,
+      qbScore: Math.round(posScores.QB * 10) / 10,
+      rbScore: Math.round(posScores.RB * 10) / 10,
+      wrScore: Math.round(posScores.WR * 10) / 10,
+      teScore: Math.round(posScores.TE * 10) / 10,
+      kScore: Math.round(posScores.K * 10) / 10,
+      dstScore: Math.round(posScores.DST * 10) / 10,
+      kDstScore: Math.round((posScores.K + posScores.DST) * 10) / 10,
+      netAdpSurplus: Math.round(netAdpSurplus * 10) / 10,
+      bestSteal: bestSteal,
+      biggestReach: biggestReach,
+      counts: allocation.counts,
+      starters: allocation.starters,
+      bench: allocation.bench,
+      totalPlayers: tPlayers.length
+    });
+  }
+
+  // 3. Compute league rankings for total score and position rooms
+  const assignRank = (arr, key, rankProp) => {
+    arr.slice().sort((a, b) => b[key] - a[key]).forEach((item, index) => {
+      item[rankProp] = index + 1;
+    });
+  };
+
+  assignRank(teamSummaries, 'totalScore', 'rank');
+  assignRank(teamSummaries, 'qbScore', 'qbRank');
+  assignRank(teamSummaries, 'rbScore', 'rbRank');
+  assignRank(teamSummaries, 'wrScore', 'wrRank');
+  assignRank(teamSummaries, 'teScore', 'teRank');
+  assignRank(teamSummaries, 'kDstScore', 'dstRank');
+
+  const getGrade = (rank, total) => {
+    const pct = rank / total;
+    if (pct <= 0.12) return 'A+';
+    if (pct <= 0.25) return 'A';
+    if (pct <= 0.38) return 'A-';
+    if (pct <= 0.50) return 'B+';
+    if (pct <= 0.65) return 'B';
+    if (pct <= 0.78) return 'B-';
+    if (pct <= 0.88) return 'C+';
+    if (pct <= 0.95) return 'C';
+    return 'D';
+  };
+
+  for (const t of teamSummaries) {
+    t.grade = getGrade(t.rank, teams);
+  }
+
+  // 4. Global Superlatives
+  let globalSteal = null;
+  let globalReach = null;
+
+  for (const p of allDraftedPicks) {
+    if (p.adp != null) {
+      const surplus = p.adpSurplus || (p.adp - p.pickOverall);
+      if (!globalSteal || surplus > globalSteal.surplus) {
+        globalSteal = { player: p, surplus: surplus };
+      }
+      if (!globalReach || surplus < globalReach.surplus) {
+        globalReach = { player: p, surplus: surplus };
+      }
+    }
+  }
+
+  const sortedByTotal = teamSummaries.slice().sort((a, b) => a.rank - b.rank);
+  const bestQbTeam = teamSummaries.slice().sort((a, b) => a.qbRank - b.qbRank)[0] || null;
+  const bestRbTeam = teamSummaries.slice().sort((a, b) => a.rbRank - b.rbRank)[0] || null;
+  const bestWrTeam = teamSummaries.slice().sort((a, b) => a.wrRank - b.wrRank)[0] || null;
+  const bestTeTeam = teamSummaries.slice().sort((a, b) => a.teRank - b.teRank)[0] || null;
+
+  const myTeamSummary = teamSummaries.find(t => t.isMe) || teamSummaries[0] || null;
+
+  return {
+    isComplete: isComplete,
+    teamsCount: teams,
+    totalPicks: totalPicks,
+    draftedPicksCount: log.length,
+    teams: sortedByTotal,
+    myTeam: myTeamSummary,
+    superlatives: {
+      champion: sortedByTotal[0] || null,
+      bestSteal: globalSteal,
+      biggestReach: globalReach,
+      bestQb: bestQbTeam,
+      bestRb: bestRbTeam,
+      bestWr: bestWrTeam,
+      bestTe: bestTeTeam
+    }
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     roundIsForward: roundIsForward,
@@ -1370,5 +2001,8 @@ if (typeof module !== 'undefined' && module.exports) {
     DRAFT_SCHEMA_VERSION: DRAFT_SCHEMA_VERSION,
     serializeDraftState: serializeDraftState,
     deserializeDraftState: deserializeDraftState,
+    generateDraftBoardGrid: generateDraftBoardGrid,
+    analyzeLiveDraftStrategy: analyzeLiveDraftStrategy,
+    generateDraftSummaryAnalysis: generateDraftSummaryAnalysis,
   };
 }

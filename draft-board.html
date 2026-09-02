@@ -18,6 +18,8 @@
       <span id="clock" class="clock">—</span>
       <span id="nextpicks" class="nextpicks"></span>
       <span style="margin-left:auto"></span>
+      <button class="act" id="boardbtn" onclick="openDraftBoardModal()"
+        style="border-color:var(--accent); color:var(--text); font-weight:700">📊 Draft Board</button>
       <button class="act" id="syncbtn" onclick="openSyncModal()"
         style="border-color:var(--accent); color:var(--text); font-weight:600">⚡ Live Sync <span id="syncbadge"
           class="sync-badge off">OFF</span></button>
@@ -136,6 +138,10 @@
 
   <div id="overlay">
     <div class="modal" id="modalbox"></div>
+  </div>
+
+  <div id="playerOverlay">
+    <div class="modal" id="playerModalbox"></div>
   </div>
 
   <!-- Scripts -->

@@ -82,6 +82,7 @@
 
     on('undobtn', 'click', undo);
     on('resetbtn', 'click', resetDraft);
+    on('boardbtn', 'click', () => openDraftBoardModal());
     on('unknownbtn', 'click', openUnlistedPickModal);
     on('jumpbtn', 'click', () => {
       const v = +$('jumppick').value;
@@ -94,10 +95,22 @@
     on('overlay', 'click', e => {
       if (e.target.id === 'overlay') closeModal();
     });
+    on('playerOverlay', 'click', e => {
+      if (e.target.id === 'playerOverlay') {
+        if (typeof closePlayerModal === 'function') closePlayerModal();
+        else closeModal();
+      }
+    });
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
-        closeModal();
+        const playerOverlay = $('playerOverlay');
+        if (playerOverlay && playerOverlay.classList.contains('show')) {
+          if (typeof closePlayerModal === 'function') closePlayerModal();
+          else closeModal();
+        } else {
+          closeModal();
+        }
       }
       // Quick search focus on "/" if not in input
       if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
@@ -109,6 +122,17 @@
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && document.activeElement.tagName !== 'INPUT') {
         e.preventDefault();
         undo();
+      }
+      // Toggle Draft Board modal on 'b' or 'B' if not inside an input/textarea
+      if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+        e.preventDefault();
+        const modalBox = $('modalbox');
+        const overlay = $('overlay');
+        if (overlay && overlay.classList.contains('show') && modalBox && modalBox.classList.contains('modal-board')) {
+          closeModal();
+        } else {
+          openDraftBoardModal();
+        }
       }
     });
   }
