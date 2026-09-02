@@ -567,16 +567,23 @@
     returnToBoardOnClose = false;
     const overlay = $('overlay');
     if (overlay) overlay.classList.remove('show');
+    const playerOverlay = $('playerOverlay');
+    if (playerOverlay) playerOverlay.classList.remove('show');
     if ($('modalbox')) $('modalbox').className = 'modal';
   }
 
-  function handleClosePlayerModal() {
-    if (returnToBoardOnClose) {
-      returnToBoardOnClose = false;
-      openDraftBoardModal();
+  function closePlayerModal() {
+    returnToBoardOnClose = false;
+    const playerOverlay = $('playerOverlay');
+    if (playerOverlay) {
+      playerOverlay.classList.remove('show');
     } else {
       closeModal();
     }
+  }
+
+  function handleClosePlayerModal() {
+    closePlayerModal();
   }
 
   function openDraftBoardModal(initialTab) {
@@ -1385,22 +1392,22 @@
       ? '<button type="button" class="act' + (watched ? ' primary' : '') + '" onclick="toggleWatch(' + p.id + '); showPlayer(' + p.id + ');" style="margin-left:auto; font-size:12px">' + (watched ? '★ In Watchlist' : '☆ Add to Watchlist') + '</button>'
       : '';
 
-    const backBoardBtn = returnToBoardOnClose
-      ? '<button type="button" class="act" onclick="handleClosePlayerModal()" style="font-size:11.5px; padding:3px 8px; margin-left:auto; margin-right:6px">⬅️ Back to Board</button>'
-      : '';
+    const pBox = $('playerModalbox') || $('modalbox');
+    const pOverlay = $('playerOverlay') || $('overlay');
 
-    if ($('modalbox')) $('modalbox').className = 'modal';
+    if (pBox) {
+      pBox.className = 'modal player-modal';
+      pBox.innerHTML =
+        '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
+        + (p.rookie ? '<span class="rookietag">R</span>' : '')
+        + ' <span class="meta">' + (p.team || '') + '</span>' + status
+        + watchModalBtn
+        + '<button class="close" onclick="closePlayerModal()">×</button></h3>'
+        + '<div class="statrow">' + stats + '</div>'
+        + byeAlert + blurb + schedHtml + links;
+    }
 
-    $('modalbox').innerHTML =
-      '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
-      + (p.rookie ? '<span class="rookietag">R</span>' : '')
-      + ' <span class="meta">' + (p.team || '') + '</span>' + status
-      + backBoardBtn
-      + watchModalBtn
-      + '<button class="close" onclick="handleClosePlayerModal()">×</button></h3>'
-      + '<div class="statrow">' + stats + '</div>'
-      + byeAlert + blurb + schedHtml + links;
-    $('overlay').classList.add('show');
+    if (pOverlay) pOverlay.classList.add('show');
   }
 
   function showUnlistedPlayer(overall) {
@@ -1417,26 +1424,26 @@
       + '<a target="_blank" href="https://www.espn.com/search/_/q/' + encodeURIComponent(p.name) + '">ESPN</a>'
       + '</div>';
 
-    const backBoardBtn = returnToBoardOnClose
-      ? '<button type="button" class="act" onclick="handleClosePlayerModal()" style="font-size:11.5px; padding:3px 8px; margin-left:auto; margin-right:6px">⬅️ Back to Board</button>'
-      : '';
+    const pBox = $('playerModalbox') || $('modalbox');
+    const pOverlay = $('playerOverlay') || $('overlay');
 
-    if ($('modalbox')) $('modalbox').className = 'modal';
+    if (pBox) {
+      pBox.className = 'modal player-modal';
+      pBox.innerHTML =
+        '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
+        + ' <span class="meta">(Custom / Unlisted Pick)</span>'
+        + '<button class="close" onclick="closePlayerModal()">×</button></h3>'
+        + '<div class="statrow">'
+        + '<span class="stat">Drafted By<b>' + tInfo.name + (isMine ? ' (You)' : '') + '</b></span>'
+        + '<span class="stat">Pick<b>#' + entry.overall + ' (' + fmtPick(entry.overall, global.state.settings.teams) + ')</b></span>'
+        + ((p.team && p.team !== '—') ? '<span class="stat">NFL Team<b>' + p.team + '</b></span>' : '')
+        + (p.bye ? '<span class="stat">Bye Week<b>Week ' + p.bye + '</b></span>' : '')
+        + '</div>'
+        + '<div class="blurbnote">This selection was recorded as an unlisted pick and is tracked on this team\'s roster and positional counts.</div>'
+        + links;
+    }
 
-    $('modalbox').innerHTML =
-      '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
-      + ' <span class="meta">(Custom / Unlisted Pick)</span>'
-      + backBoardBtn
-      + '<button class="close" onclick="handleClosePlayerModal()">×</button></h3>'
-      + '<div class="statrow">'
-      + '<span class="stat">Drafted By<b>' + tInfo.name + (isMine ? ' (You)' : '') + '</b></span>'
-      + '<span class="stat">Pick<b>#' + entry.overall + ' (' + fmtPick(entry.overall, global.state.settings.teams) + ')</b></span>'
-      + ((p.team && p.team !== '—') ? '<span class="stat">NFL Team<b>' + p.team + '</b></span>' : '')
-      + (p.bye ? '<span class="stat">Bye Week<b>Week ' + p.bye + '</b></span>' : '')
-      + '</div>'
-      + '<div class="blurbnote">This selection was recorded as an unlisted pick and is tracked on this team\'s roster and positional counts.</div>'
-      + links;
-    $('overlay').classList.add('show');
+    if (pOverlay) pOverlay.classList.add('show');
   }
 
   function openUnlistedPickModal() {
@@ -2201,6 +2208,7 @@
   global.renderBanner = renderBanner;
   global.render = render;
   global.closeModal = closeModal;
+  global.closePlayerModal = closePlayerModal;
   global.showPlayer = showPlayer;
   global.showUnlistedPlayer = showUnlistedPlayer;
   global.openUnlistedPickModal = openUnlistedPickModal;

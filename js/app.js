@@ -95,10 +95,22 @@
     on('overlay', 'click', e => {
       if (e.target.id === 'overlay') closeModal();
     });
+    on('playerOverlay', 'click', e => {
+      if (e.target.id === 'playerOverlay') {
+        if (typeof closePlayerModal === 'function') closePlayerModal();
+        else closeModal();
+      }
+    });
 
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
-        closeModal();
+        const playerOverlay = $('playerOverlay');
+        if (playerOverlay && playerOverlay.classList.contains('show')) {
+          if (typeof closePlayerModal === 'function') closePlayerModal();
+          else closeModal();
+        } else {
+          closeModal();
+        }
       }
       // Quick search focus on "/" if not in input
       if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {

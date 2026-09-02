@@ -634,6 +634,21 @@ td.clickname:hover .pname {
   display: flex;
 }
 
+#playerOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: none;
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+#playerOverlay.show {
+  display: flex;
+}
+
 .modal {
   background: var(--panel);
   border: 1px solid var(--border);
