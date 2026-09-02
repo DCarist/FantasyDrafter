@@ -226,6 +226,10 @@
     }
 
     // Dynamic table headers
+    if ($('th_rk')) {
+      $('th_rk').textContent = (global.ui.posFilter === 'WATCHLIST' && global.ui.sort === 'watch') ? 'Priority' : '#';
+      $('th_rk').title = (global.ui.posFilter === 'WATCHLIST') ? 'Drag rows to reorder watchlist priority' : '';
+    }
     if ($('th_dyn')) $('th_dyn').textContent = (s.qbFormat === '1qb') ? 'Dyn 1QB' : 'Dyn SF';
     if ($('th_red')) {
       const scTag = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'STD' : 'Half');
@@ -237,7 +241,11 @@
       dyn: p => p.activeDyn ?? 9999,
       red: p => p.activeRed ?? 9999,
       rookie: p => (p.rookie ? (p.prospectRank ?? p.activeDyn ?? 999) : 9999),
-      adp: p => p.adp ?? 9999
+      adp: p => p.adp ?? 9999,
+      watch: p => {
+        const wIdx = (global.state.watchlist || []).indexOf(p.id);
+        return wIdx >= 0 ? wIdx : 9999;
+      }
     }[global.ui.sort] || (p => -(p.score ?? -1));
 
     rows.sort((a, b) => key(a) - key(b));
@@ -336,8 +344,17 @@
         }
       }
 
-      html += '<tr class="' + tierRow + (isTaken ? ' takenrow' : '') + '">'
-        + '<td class="rk">' + (idx + 1) + tierBadgeHtml + '</td>'
+      const isWatchlistTab = (global.ui.posFilter === 'WATCHLIST');
+      const dragAttrs = isWatchlistTab
+        ? ' class="' + tierRow + (isTaken ? ' takenrow' : '') + ' watch-drag-row" draggable="true" title="Drag to reorder priority" ondragstart="onWatchDragStart(event, ' + p.id + ')" ondragover="onWatchDragOver(event)" ondragleave="onWatchDragLeave(event)" ondrop="onWatchDrop(event, ' + p.id + ')" ondragend="onWatchDragEnd(event)"'
+        : ' class="' + tierRow + (isTaken ? ' takenrow' : '') + '"';
+
+      const rankCell = isWatchlistTab
+        ? '<td class="rk watch-rk-cell"><span class="watch-drag-grip" title="Drag to reorder">⠿</span>' + (idx + 1) + tierBadgeHtml + '</td>'
+        : '<td class="rk">' + (idx + 1) + tierBadgeHtml + '</td>';
+
+      html += '<tr' + dragAttrs + '>'
+        + rankCell
         + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + scarcityTag + '</td>'
         + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
         + '<td>' + formatTierPill(p.posTier) + '</td>'
@@ -573,17 +590,84 @@
   function setFilter(t) {
     global.ui.posFilter = t;
     global.ui.tierFilter = null;
+    if (t === 'WATCHLIST' && $('sortsel')) {
+      global.ui.sort = 'watch';
+      $('sortsel').value = 'watch';
+    } else if (global.ui.sort === 'watch' && $('sortsel')) {
+      global.ui.sort = 'score';
+      $('sortsel').value = 'score';
+    }
     renderTabs();
     renderPool();
   }
+
+  let draggedWatchPlayerId = null;
+
+  function onWatchDragStart(e, id) {
+    draggedWatchPlayerId = id;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(id));
+    }
+    const row = e.currentTarget;
+    if (row) row.classList.add('dragging');
+  }
+
+  function onWatchDragOver(e) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    const row = e.currentTarget;
+    if (row && !row.classList.contains('drag-over')) {
+      row.classList.add('drag-over');
+    }
+  }
+
+  function onWatchDragLeave(e) {
+    const row = e.currentTarget;
+    if (row) row.classList.remove('drag-over');
+  }
+
+  function onWatchDrop(e, targetId) {
+    e.preventDefault();
+    const row = e.currentTarget;
+    if (row) row.classList.remove('drag-over');
+    if (draggedWatchPlayerId != null && draggedWatchPlayerId !== targetId) {
+      if (global.ui.sort !== 'watch' && $('sortsel')) {
+        global.ui.sort = 'watch';
+        $('sortsel').value = 'watch';
+      }
+      if (typeof reorderWatch === 'function') {
+        reorderWatch(draggedWatchPlayerId, targetId);
+      }
+    }
+    draggedWatchPlayerId = null;
+  }
+
+  function onWatchDragEnd(e) {
+    const row = e.currentTarget;
+    if (row) row.classList.remove('dragging');
+    const all = document.querySelectorAll('.watchlist-item, tr.watch-drag-row');
+    all.forEach(el => el.classList.remove('drag-over', 'dragging'));
+    draggedWatchPlayerId = null;
+  }
+
+  global.onWatchDragStart = onWatchDragStart;
+  global.onWatchDragOver = onWatchDragOver;
+  global.onWatchDragLeave = onWatchDragLeave;
+  global.onWatchDrop = onWatchDrop;
+  global.onWatchDragEnd = onWatchDragEnd;
 
   function renderWatchlistPanel() {
     if (!$('leftwatchlist')) return;
     const taken = takenMap();
     const allScored = scored();
+
+    const watchedOrder = new Map();
+    (global.state.watchlist || []).forEach((id, idx) => watchedOrder.set(id, idx));
+
     const scoredWatched = allScored
       .filter(p => isWatched(global.state.watchlist, p.id) && !taken.has(p.id))
-      .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+      .sort((a, b) => (watchedOrder.get(a.id) ?? 999) - (watchedOrder.get(b.id) ?? 999));
 
     if ($('mywatchlistcount')) {
       $('mywatchlistcount').textContent = scoredWatched.length ? scoredWatched.length + ' players' : 'Empty';
@@ -592,7 +676,7 @@
     const myRoster = getMyRosterPlayers(global.state.log, byId, global.state.settings.slot, global.state.settings.teams, global.state.settings.mode);
     const order = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
 
-    $('leftwatchlist').innerHTML = scoredWatched.map(p => {
+    $('leftwatchlist').innerHTML = scoredWatched.map((p, idx) => {
       const posClass = order.includes(p.pos) ? p.pos : 'other';
       const byeClash = getByeClashStatus(p, myRoster);
       let byeHtml = p.bye ? '<span class="bye">bye ' + p.bye + '</span>' : '<span class="bye">—</span>';
@@ -604,12 +688,13 @@
         byeHtml = '<span class="bye" style="color:var(--warn); font-weight:600" title="Bye coincides with ' + names + '">' + p.bye + '</span>';
       }
 
-      const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
+      const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta team-meta">' + p.team + '</span>' : '';
       const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
       const rookieBadge = p.rookie ? '<span class="rookietag">R' + rookieRankStr + '</span>' : '';
 
-      return '<div class="rosteritem" style="padding:4px 0">'
-        + '<button type="button" class="watchbtn active" title="Remove from Watchlist" onclick="toggleWatch(' + p.id + ', event)" style="font-size:13px">★</button>'
+      return '<div class="watchlist-item" draggable="true" title="Drag to reorder priority" ondragstart="onWatchDragStart(event, ' + p.id + ')" ondragover="onWatchDragOver(event)" ondragleave="onWatchDragLeave(event)" ondrop="onWatchDrop(event, ' + p.id + ')" ondragend="onWatchDragEnd(event)">'
+        + '<span class="watch-rank-num">#' + (idx + 1) + '</span>'
+        + '<button type="button" class="watchbtn active" title="Remove from Watchlist" onclick="toggleWatch(' + p.id + ', event)">★</button>'
         + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
         + '<span class="pname" onclick="showPlayer(' + p.id + ')" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">' + p.name + rookieBadge + '</span>'
         + teamBadge

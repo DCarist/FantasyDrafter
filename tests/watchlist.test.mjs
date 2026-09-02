@@ -60,6 +60,22 @@ eq(cleaned5, [1, 8, 15], 'cleanWatchlist supports Map as taken container');
 eq(L.cleanWatchlist(null, [1, 2]), [], 'cleanWatchlist on null returns empty array');
 eq(L.cleanWatchlist([1, 2], null), [1, 2], 'cleanWatchlist with null taken container preserves list');
 
+// --- 4. reorderWatchlist tests ---
+const initialWatch = [10, 20, 30, 40];
+const reordered1 = L.reorderWatchlist(initialWatch, 1, 2); // move 20 down to idx 2
+eq(reordered1, [10, 30, 20, 40], 'reorderWatchlist moves item forward');
+
+const reordered2 = L.reorderWatchlist(initialWatch, 3, 0); // move 40 to front
+eq(reordered2, [40, 10, 20, 30], 'reorderWatchlist moves item to front');
+
+const reordered3 = L.reorderWatchlist(initialWatch, 0, 3); // move 10 to end
+eq(reordered3, [20, 30, 40, 10], 'reorderWatchlist moves item to end');
+
+// Edge cases: out of bounds or invalid inputs
+eq(L.reorderWatchlist(initialWatch, -1, 2), initialWatch, 'reorderWatchlist negative fromIdx returns original list copy');
+eq(L.reorderWatchlist(initialWatch, 1, 10), initialWatch, 'reorderWatchlist out-of-bounds toIdx returns original list copy');
+eq(L.reorderWatchlist(null, 0, 1), [], 'reorderWatchlist on null returns empty array');
+
 const success = finishSuite('Draft Watchlist Management');
 if (!success) {
   process.exit(1);

@@ -675,6 +675,18 @@ function cleanWatchlist(watchlist, takenContainer) {
   return watchlist.filter(id => !hasTaken(id));
 }
 
+// Reorders an item in the watchlist from fromIdx to toIdx. Returns a new array.
+function reorderWatchlist(watchlist, fromIdx, toIdx) {
+  if (!Array.isArray(watchlist)) return [];
+  const list = watchlist.slice();
+  if (fromIdx < 0 || fromIdx >= list.length || toIdx < 0 || toIdx >= list.length) {
+    return list;
+  }
+  const [item] = list.splice(fromIdx, 1);
+  list.splice(toIdx, 0, item);
+  return list;
+}
+
 const DEFAULT_ROSTER_SLOTS = {
   qb: 1,
   rb: 2,
@@ -2222,6 +2234,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isWatched: isWatched,
     toggleWatchlist: toggleWatchlist,
     cleanWatchlist: cleanWatchlist,
+    reorderWatchlist: reorderWatchlist,
     DEFAULT_ROSTER_SLOTS: DEFAULT_ROSTER_SLOTS,
     formatLineupSummary: formatLineupSummary,
     assignRosterSlots: assignRosterSlots,
@@ -2268,5 +2281,6 @@ if (typeof window !== 'undefined') {
   window.computeJenksBreaks = computeJenksBreaks;
   window.assignTiers = assignTiers;
   window.getTierScarcity = getTierScarcity;
+  window.reorderWatchlist = reorderWatchlist;
 }
 

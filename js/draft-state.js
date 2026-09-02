@@ -321,12 +321,58 @@
   }
 
   function toggleWatch(id, e) {
-    if (e) e.stopPropagation();
+    if (e) {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+    }
     state.watchlist = toggleWatchlist(state.watchlist, id);
     save();
     if (typeof renderTabs === 'function') renderTabs();
     if (typeof renderPool === 'function') renderPool();
     if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
+  }
+
+  function moveWatch(id, delta, e) {
+    if (e) {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+    }
+    if (!Array.isArray(state.watchlist)) return;
+    const fromIdx = state.watchlist.indexOf(id);
+    if (fromIdx < 0) return;
+    const toIdx = fromIdx + delta;
+    if (toIdx < 0 || toIdx >= state.watchlist.length) return;
+    const reorderFn = (typeof reorderWatchlist === 'function') ? reorderWatchlist : (typeof window !== 'undefined' ? window.reorderWatchlist : null);
+    if (typeof reorderFn === 'function') {
+      state.watchlist = reorderFn(state.watchlist, fromIdx, toIdx);
+    } else {
+      const list = state.watchlist.slice();
+      const [item] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, item);
+      state.watchlist = list;
+    }
+    save();
+    if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
+    if (typeof renderPool === 'function') renderPool();
+  }
+
+  function reorderWatch(fromPlayerId, toPlayerId) {
+    if (!Array.isArray(state.watchlist)) return;
+    const fromIdx = state.watchlist.indexOf(fromPlayerId);
+    const toIdx = state.watchlist.indexOf(toPlayerId);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+    const reorderFn = (typeof reorderWatchlist === 'function') ? reorderWatchlist : (typeof window !== 'undefined' ? window.reorderWatchlist : null);
+    if (typeof reorderFn === 'function') {
+      state.watchlist = reorderFn(state.watchlist, fromIdx, toIdx);
+    } else {
+      const list = state.watchlist.slice();
+      const [item] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, item);
+      state.watchlist = list;
+    }
+    save();
+    if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
+    if (typeof renderPool === 'function') renderPool();
   }
 
   function draftUnlistedPlayer(pos, name, team, bye) {
@@ -451,6 +497,8 @@
   global.updateMaxKeepers = updateMaxKeepers;
   global.draftPlayer = draftPlayer;
   global.toggleWatch = toggleWatch;
+  global.moveWatch = moveWatch;
+  global.reorderWatch = reorderWatch;
   global.draftUnlistedPlayer = draftUnlistedPlayer;
   global.undo = undo;
   global.jumpTo = jumpTo;
