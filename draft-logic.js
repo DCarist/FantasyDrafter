@@ -616,9 +616,20 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
   const keeperBadge = isKeeper ? '<span class="keeper-badge" title="Keeper" style="font-size:11px; margin-right:2px">🔒</span>' : '';
   const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + fmtPick(p.entry.overall, teamsCount) + '</span>' : (isKeeper ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + '</span>' : '');
 
+  let injTag = '';
+  if (p.injury && p.injury.code) {
+    const c = p.injury.code;
+    const tip = (p.injury.status || 'Injured')
+      + (p.injury.type ? ': ' + p.injury.type : '')
+      + (p.injury.detail ? ' (' + p.injury.detail + ')' : '')
+      + (p.injury.returnDate ? ' - Est. Return: ' + p.injury.returnDate : '');
+    injTag = ' <span class="injtag inj-' + c.toLowerCase() + '" title="' + tip.replace(/"/g, '&quot;') + '">' + c + '</span>';
+  }
+
   return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + (isKeeper ? ' keeper-slot' : '') + '">'
     + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
     + '<span class="pname" onclick="' + clickHandler + '" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + p.name + unlistedBadge + '</span>'
+    + injTag
     + teamBadge
     + pkStr
     + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span>'

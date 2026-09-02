@@ -131,6 +131,7 @@
     const q = normalizeName(global.ui.search || '');
     let rows = scored();
     if (global.ui.hideTaken) rows = rows.filter(p => !taken.has(p.id));
+    if (global.ui.hideOutIR) rows = rows.filter(p => !(p.injury && (p.injury.code === 'O' || p.injury.code === 'IR')));
     if (global.ui.posFilter === 'WATCHLIST') rows = rows.filter(p => isWatched(global.state.watchlist, p.id));
     else if (global.ui.posFilter === 'ROOKIE') rows = rows.filter(p => p.rookie);
     else if (global.ui.posFilter === 'DST') rows = rows.filter(p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase()));
@@ -188,6 +189,16 @@
         ? '<button type="button" class="watchbtn' + (watched ? ' active' : '') + '" title="' + (watched ? 'Remove from Watchlist' : 'Add to Watchlist') + '" onclick="toggleWatch(' + p.id + ', event)">' + (watched ? '★' : '☆') + '</button>'
         : '';
 
+      let injTag = '';
+      if (p.injury && p.injury.code) {
+        const c = p.injury.code;
+        const tip = (p.injury.status || 'Injured')
+          + (p.injury.type ? ': ' + p.injury.type : '')
+          + (p.injury.detail ? ' (' + p.injury.detail + ')' : '')
+          + (p.injury.returnDate ? ' - Est. Return: ' + p.injury.returnDate : '');
+        injTag = ' <span class="injtag inj-' + c.toLowerCase() + '" title="' + tip.replace(/"/g, '&quot;') + '">' + c + '</span>';
+      }
+
       let actionCell = '';
       if (isTaken) {
         const pickEntry = pickOf.get(p.id);
@@ -231,7 +242,7 @@
 
       html += '<tr class="' + tierRow + (isTaken ? ' takenrow' : '') + '">'
         + '<td class="rk">' + (idx + 1) + (tierRow ? ' <span class="tierlabel">T' + tier + '</span>' : '') + '</td>'
-        + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + rookie + age + value + '</td>'
+        + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + '</td>'
         + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
         + '<td class="meta">' + (p.team || '—') + '</td>'
         + byeCell
@@ -1344,6 +1355,50 @@
     $('overlay').classList.add('show');
   }
 
+  let injuryAccordionExpanded = false;
+
+  function toggleInjuryAccordion() {
+    injuryAccordionExpanded = !injuryAccordionExpanded;
+    const body = $('inj_accordion_body');
+    const arrow = $('inj_accordion_arrow');
+    if (body) body.classList.toggle('show', injuryAccordionExpanded);
+    if (arrow) arrow.textContent = injuryAccordionExpanded ? '▲' : '▼';
+  }
+  global.toggleInjuryAccordion = toggleInjuryAccordion;
+
+  function renderInjurySection(p) {
+    const refreshDate = (window.DRAFT_DATA && (window.DRAFT_DATA.injuriesUpdated || window.DRAFT_DATA.generated)) || 'latest update';
+    if (!p.injury || !p.injury.code) {
+      return '<div class="injury-accordion inactive">'
+        + '<div class="injury-header-inactive">'
+        + '<span class="injury-inactive-icon">🩺</span>'
+        + '<span class="injury-inactive-text">No injury reported as of ' + refreshDate + '</span>'
+        + '</div>'
+        + '</div>';
+    }
+
+    const inj = p.injury;
+    const c = (inj.code || 'Q').toLowerCase();
+    const returnText = inj.returnDate ? '<span class="inj-returndate">Est. Return: <b>' + inj.returnDate + '</b></span>' : '';
+    const partText = inj.type ? (inj.type + (inj.detail ? ' (' + inj.detail + ')' : '')) : (inj.detail || 'Undisclosed');
+    const comments = inj.longComment || inj.shortComment || 'No additional notes reported.';
+
+    return '<div class="injury-accordion active inj-theme-' + c + '">'
+      + '<div class="injury-header" onclick="toggleInjuryAccordion()">'
+      + '<div class="injury-header-left">'
+      + '<span class="injtag inj-' + c + '">' + inj.code + '</span>'
+      + '<span class="inj-title"><b>' + inj.status + ':</b> ' + partText + '</span>'
+      + returnText
+      + '</div>'
+      + '<span id="inj_accordion_arrow" class="dc-arrow">' + (injuryAccordionExpanded ? '▲' : '▼') + '</span>'
+      + '</div>'
+      + '<div id="inj_accordion_body" class="injury-body' + (injuryAccordionExpanded ? ' show' : '') + '">'
+      + '<div class="injury-comment">' + comments + '</div>'
+      + '<div class="injury-footer">Report Date: ' + (inj.date ? inj.date.split('T')[0] : refreshDate) + ' · Source: ESPN NFL Injury Report</div>'
+      + '</div>'
+      + '</div>';
+  }
+
   let depthChartExpanded = false;
 
   function toggleDepthChart() {
@@ -1402,10 +1457,22 @@
         tag = '<span class="dc-tag ava">AVAIL</span>';
       }
 
+      const inj = ath.injury || (pid != null && byId(pid) ? byId(pid).injury : null);
+      let injTag = '';
+      if (inj && inj.code) {
+        const c = inj.code;
+        const tip = (inj.status || 'Injured')
+          + (inj.type ? ': ' + inj.type : '')
+          + (inj.detail ? ' (' + inj.detail + ')' : '')
+          + (inj.returnDate ? ' - Est. Return: ' + inj.returnDate : '');
+        injTag = '<span class="dc-inj inj-' + c.toLowerCase() + '" title="' + tip.replace(/"/g, '&quot;') + '">' + c + '</span>';
+      }
+
       const clickAttr = clickable ? ' onclick="showPlayer(' + pid + ')" title="Click to view ' + ath.name.replace(/"/g, '&quot;') + '"' : '';
       return '<div class="' + classes + '"' + clickAttr + '>'
         + '<span class="dc-rank">' + ath.rank + '</span>'
         + '<span class="dc-name">' + ath.name + '</span>'
+        + injTag
         + tag
         + '</div>';
     };
@@ -1516,6 +1583,13 @@
       ? '<button type="button" class="act' + (watched ? ' primary' : '') + '" onclick="toggleWatch(' + p.id + '); showPlayer(' + p.id + ');" style="margin-left:auto; font-size:12px">' + (watched ? '★ In Watchlist' : '☆ Add to Watchlist') + '</button>'
       : '';
 
+    let headerInjBadge = '';
+    if (p.injury && p.injury.code) {
+      const c = p.injury.code.toLowerCase();
+      headerInjBadge = ' <span class="injtag-lg inj-' + c + '">' + p.injury.code + (p.injury.type ? ' · ' + p.injury.type : '') + '</span>';
+    }
+    const injuryHtml = renderInjurySection(p);
+
     const pBox = $('playerModalbox') || $('modalbox');
     const pOverlay = $('playerOverlay') || $('overlay');
 
@@ -1524,11 +1598,13 @@
       pBox.innerHTML =
         '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
         + (p.rookie ? '<span class="rookietag">R</span>' : '')
-        + ' <span class="meta">' + (p.team || '') + '</span>' + status
+        + ' <span class="meta">' + (p.team || '') + '</span>'
+        + headerInjBadge
+        + status
         + watchModalBtn
         + '<button class="close" onclick="closePlayerModal()">×</button></h3>'
         + '<div class="statrow">' + stats + '</div>'
-        + byeAlert + blurb + depthChartHtml + schedHtml + links;
+        + byeAlert + injuryHtml + blurb + depthChartHtml + schedHtml + links;
     }
 
     if (pOverlay) pOverlay.classList.add('show');

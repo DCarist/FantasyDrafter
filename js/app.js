@@ -95,6 +95,11 @@
       renderPool();
     });
 
+    on('hideoutir', 'change', () => {
+      global.ui.hideOutIR = $('hideoutir').checked;
+      renderPool();
+    });
+
     on('undobtn', 'click', undo);
     on('resetbtn', 'click', resetDraft);
     on('boardbtn', 'click', () => openDraftBoardModal());

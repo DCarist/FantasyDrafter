@@ -30,7 +30,7 @@
   };
 
   let state = load();
-  let ui = { posFilter: 'ALL', search: '', sort: 'score', hideTaken: false };
+  let ui = { posFilter: 'ALL', search: '', sort: 'score', hideTaken: false, hideOutIR: false };
   let viewingRosterSlot = null; // null = follow on-the-clock slot
 
   function normalizeState(s) {

@@ -203,3 +203,4 @@ const success = finishSuite('League Type Filtering & ESPN Depth Charts');
 if (!success) {
   process.exit(1);
 }
+
