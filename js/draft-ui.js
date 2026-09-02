@@ -1344,6 +1344,101 @@
     $('overlay').classList.add('show');
   }
 
+  let depthChartExpanded = false;
+
+  function toggleDepthChart() {
+    depthChartExpanded = !depthChartExpanded;
+    const body = $('dc_accordion_body');
+    const arrow = $('dc_accordion_arrow');
+    if (body) body.classList.toggle('show', depthChartExpanded);
+    if (arrow) arrow.textContent = depthChartExpanded ? '▲' : '▼';
+  }
+  global.toggleDepthChart = toggleDepthChart;
+
+  function renderDepthChart(p, taken) {
+    if (!p.team || p.team === 'FA') {
+      return '<div class="dc-accordion">'
+        + '<div class="dc-header" onclick="toggleDepthChart()">'
+        + '<h4>📊 Depth Chart (Free Agent)</h4>'
+        + '<span id="dc_accordion_arrow" class="dc-arrow">' + (depthChartExpanded ? '▲' : '▼') + '</span>'
+        + '</div>'
+        + '<div id="dc_accordion_body" class="dc-body' + (depthChartExpanded ? ' show' : '') + '">'
+        + '<div class="meta" style="font-size:12px">No NFL depth chart available for Free Agents.</div>'
+        + '</div></div>';
+    }
+
+    const teamDc = (window.DRAFT_DATA && window.DRAFT_DATA.depthCharts) ? window.DRAFT_DATA.depthCharts[p.team] : null;
+    if (!teamDc) {
+      return '<div class="dc-accordion">'
+        + '<div class="dc-header" onclick="toggleDepthChart()">'
+        + '<h4>📊 Depth Chart (' + p.team + ' Offense)</h4>'
+        + '<span id="dc_accordion_arrow" class="dc-arrow">' + (depthChartExpanded ? '▲' : '▼') + '</span>'
+        + '</div>'
+        + '<div id="dc_accordion_body" class="dc-body' + (depthChartExpanded ? ' show' : '') + '">'
+        + '<div class="meta" style="font-size:12px">Depth chart data not available for ' + p.team + '.</div>'
+        + '</div></div>';
+    }
+
+    const normName = (name) => String(name || '').toLowerCase().replace(/[.'’,-]/g, '').replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '').replace(/\s+/g, ' ').trim();
+
+    const renderAthletePill = (ath) => {
+      const pid = ath.playerId;
+      const isCurrent = (pid != null && pid === p.id) || (normName(ath.name) === normName(p.name));
+      const isTaken = (pid != null && taken.has(pid));
+      const clickable = (pid != null);
+
+      let classes = 'dc-player';
+      if (clickable) classes += ' clickable';
+      if (isCurrent) classes += ' active-player';
+      if (isTaken) classes += ' taken';
+      else if (pid != null) classes += ' available';
+
+      let tag = '';
+      if (isCurrent) {
+        tag = '<span class="dc-tag active">ACTIVE</span>';
+      } else if (isTaken) {
+        tag = '<span class="dc-tag taken">TAKEN</span>';
+      } else if (pid != null) {
+        tag = '<span class="dc-tag ava">AVAIL</span>';
+      }
+
+      const clickAttr = clickable ? ' onclick="showPlayer(' + pid + ')" title="Click to view ' + ath.name.replace(/"/g, '&quot;') + '"' : '';
+      return '<div class="' + classes + '"' + clickAttr + '>'
+        + '<span class="dc-rank">' + ath.rank + '</span>'
+        + '<span class="dc-name">' + ath.name + '</span>'
+        + tag
+        + '</div>';
+    };
+
+    const renderRow = (label, badgeClass, athletes) => {
+      if (!athletes || !athletes.length) return '';
+      return '<div class="dc-pos-row">'
+        + '<span class="dc-pos-badge ' + badgeClass + '">' + label + '</span>'
+        + '<div class="dc-athletes-list">' + athletes.map(renderAthletePill).join('') + '</div>'
+        + '</div>';
+    };
+
+    let rowsHtml = '';
+    rowsHtml += renderRow('QB', 'qb', teamDc.qb);
+    rowsHtml += renderRow('RB', 'rb', teamDc.rb);
+    if (teamDc.wr) {
+      if (teamDc.wr.wr1 && teamDc.wr.wr1.length) rowsHtml += renderRow('WR1', 'wr', teamDc.wr.wr1);
+      if (teamDc.wr.wr2 && teamDc.wr.wr2.length) rowsHtml += renderRow('WR2', 'wr', teamDc.wr.wr2);
+      if (teamDc.wr.wr3 && teamDc.wr.wr3.length) rowsHtml += renderRow('WR3', 'wr', teamDc.wr.wr3);
+    }
+    rowsHtml += renderRow('TE', 'te', teamDc.te);
+    rowsHtml += renderRow('K', 'k', teamDc.pk);
+
+    return '<div class="dc-accordion">'
+      + '<div class="dc-header" onclick="toggleDepthChart()">'
+      + '<h4>📊 Depth Chart (' + p.team + ' Offense)</h4>'
+      + '<span id="dc_accordion_arrow" class="dc-arrow">' + (depthChartExpanded ? '▲' : '▼') + '</span>'
+      + '</div>'
+      + '<div id="dc_accordion_body" class="dc-body' + (depthChartExpanded ? ' show' : '') + '">'
+      + rowsHtml
+      + '</div></div>';
+  }
+
   function showPlayer(id) {
     const p = byId(id);
     if (!p) return;
@@ -1381,23 +1476,18 @@
       }
     }
 
-    const stats = [
-      ['Active Mode (' + (s.qbFormat === '1qb' ? '1QB' : 'SF') + ' ' + s.scoring.toUpperCase() + ')', activeScore != null ? activeScore.toFixed(1) + ' pts' : null],
-      ['Dynasty ' + (s.qbFormat === '1qb' ? '1QB' : 'SF'), activeDyn],
-      ['Redraft (' + s.scoring.toUpperCase() + ')', activeRed],
-      ['Dyn SF', p.dynSF], ['Dyn 1QB', p.dyn1QB],
-      ['1QB PPR', p.red_1qb_ppr], ['1QB Half', p.red_1qb_half], ['1QB Std', p.red_1qb_std],
-      ['SF PPR', p.red_sf_ppr], ['SF Half', p.red_sf_half], ['SF Std', p.red_sf_std],
-      ['Rookie Draft Rank', p.rookieRank ? '#' + p.rookieRank : (p.rookie ? 'Rookie' : null)],
-      ['ADP', p.adp ? p.adp.toFixed(0) : null], ['Age', p.age ? p.age + 'y' : null], ['Bye', p.bye ? 'Wk ' + p.bye : null],
-      ['ESPN', p.espn_ppr || p.espn_std], ['Yahoo', p.yahoo], ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std]
-    ].filter(x => x[1] != null)
+    const rawStats = (typeof formatPlayerStats === 'function')
+      ? formatPlayerStats(p, s, activeScore)
+      : [];
+
+    const stats = rawStats
       .map(x => '<span class="stat">' + x[0] + '<b>' + x[1] + '</b></span>').join('');
 
     const snapDate = window.DRAFT_DATA.extrasGenerated || window.DRAFT_DATA.generated || '';
     const blurb = p.blurb
       ? '<div class="blurb">' + p.blurb + '</div><div class="blurbnote">News snapshot from ' + snapDate + ' — use the links below for anything newer.</div>'
       : '<div class="blurbnote">No baked-in news for this player — use the live links below.</div>';
+    const depthChartHtml = renderDepthChart(p, taken);
     const sched = (window.DRAFT_DATA.schedules || {})[p.team];
     const schedHtml = sched
       ? '<h4>2026 Schedule</h4><div class="schedgrid">' + sched.map((opp, i) =>
@@ -1438,7 +1528,7 @@
         + watchModalBtn
         + '<button class="close" onclick="closePlayerModal()">×</button></h3>'
         + '<div class="statrow">' + stats + '</div>'
-        + byeAlert + blurb + schedHtml + links;
+        + byeAlert + blurb + depthChartHtml + schedHtml + links;
     }
 
     if (pOverlay) pOverlay.classList.add('show');
@@ -1592,6 +1682,7 @@
       + '<div class="setup-field"><label>Total Teams</label><input type="number" id="setup_team_count" min="2" max="32" value="' + s.teams + '"></div>'
       + '<div class="setup-field"><label>Total Draft Rounds</label><input type="number" id="setup_rounds_count" min="1" max="50" value="' + s.rounds + '"></div>'
       + '<div class="setup-field"><label>Draft Order</label><select id="setup_mode_select"><option value="3rr"' + (s.mode === '3rr' ? ' selected' : '') + '>3rd-Round Reversal (3RR)</option><option value="snake"' + (s.mode === 'snake' ? ' selected' : '') + '>Normal Snake</option></select></div>'
+      + '<div class="setup-field"><label>League Type</label><select id="setup_leaguetype_select"><option value="dynasty"' + (s.leagueType === 'dynasty' ? ' selected' : '') + '>Dynasty</option><option value="redraft"' + (s.leagueType === 'redraft' ? ' selected' : '') + '>Redraft</option></select></div>'
       + '<div class="setup-field"><label>Scoring Format</label><select id="setup_scoring_select"><option value="half"' + (s.scoring === 'half' ? ' selected' : '') + '>Half-PPR (0.5)</option><option value="ppr"' + (s.scoring === 'ppr' ? ' selected' : '') + '>Full PPR (1.0)</option><option value="std"' + (s.scoring === 'std' ? ' selected' : '') + '>Standard (0 PPR)</option></select></div>'
       + '<div class="setup-field"><label>QB Format</label><select id="setup_qb_select"><option value="sf"' + (s.qbFormat === 'sf' ? ' selected' : '') + '>Superflex (2QB/SF)</option><option value="1qb"' + (s.qbFormat === '1qb' ? ' selected' : '') + '>1 QB (Single QB)</option></select></div>'
       + '<div class="setup-field"><label>Max Keepers per Team</label><input type="number" id="setup_max_keepers" min="0" max="10" value="' + maxKeepersVal + '"></div>'
@@ -1767,9 +1858,20 @@
   function saveLeagueSetup() {
     syncSetupInputsFromDom();
     const s = global.state.settings;
+    const prevLeagueType = s.leagueType;
     s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
     s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     s.mode = $('setup_mode_select').value;
+    if ($('setup_leaguetype_select')) {
+      s.leagueType = $('setup_leaguetype_select').value;
+      if (s.leagueType !== prevLeagueType) {
+        if (s.leagueType === 'redraft') {
+          s.blend = 0;
+        } else if (s.leagueType === 'dynasty' && s.blend === 0) {
+          s.blend = 60;
+        }
+      }
+    }
     s.scoring = $('setup_scoring_select').value;
     s.qbFormat = $('setup_qb_select').value;
     s.slot = setupMySlot;

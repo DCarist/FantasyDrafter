@@ -778,6 +778,167 @@ td.clickname:hover .pname {
   text-decoration: underline;
 }
 
+/* Depth Chart Accordion in Player Details */
+.dc-accordion {
+  margin-top: 12px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.dc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  user-select: none;
+  transition: background 0.15s ease;
+}
+
+.dc-header:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.dc-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dc-arrow {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.dc-body {
+  display: none;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dc-body.show {
+  display: flex;
+}
+
+.dc-pos-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dc-pos-badge {
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 38px;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #141822;
+  border: 1px solid var(--border);
+  color: var(--dim);
+}
+
+.dc-pos-badge.qb { color: var(--qb); border-color: rgba(224, 90, 109, 0.4); }
+.dc-pos-badge.rb { color: var(--rb); border-color: rgba(61, 220, 132, 0.4); }
+.dc-pos-badge.wr { color: var(--wr); border-color: rgba(88, 166, 255, 0.4); }
+.dc-pos-badge.te { color: var(--te); border-color: rgba(255, 180, 84, 0.4); }
+.dc-pos-badge.k  { color: var(--k); border-color: rgba(192, 132, 252, 0.4); }
+
+.dc-athletes-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.dc-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--text);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.dc-player.clickable {
+  cursor: pointer;
+}
+
+.dc-player.clickable:hover {
+  border-color: var(--accent);
+  background: rgba(79, 143, 247, 0.12);
+}
+
+.dc-rank {
+  font-size: 10.5px;
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.dc-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dc-tag.ava {
+  background: rgba(61, 220, 132, 0.15);
+  color: var(--good);
+  border: 1px solid rgba(61, 220, 132, 0.35);
+}
+
+.dc-tag.taken {
+  background: rgba(255, 100, 112, 0.12);
+  color: var(--dim);
+  border: 1px solid rgba(255, 100, 112, 0.25);
+}
+
+.dc-player.taken {
+  opacity: 0.65;
+  background: rgba(20, 24, 34, 0.7);
+}
+
+.dc-player.taken .dc-name {
+  text-decoration: line-through;
+  color: var(--dim);
+}
+
+.dc-player.active-player {
+  opacity: 1 !important;
+  border: 1.5px solid var(--accent);
+  background: rgba(79, 143, 247, 0.2);
+  box-shadow: 0 0 10px rgba(79, 143, 247, 0.35);
+  font-weight: 700;
+}
+
+.dc-player.active-player .dc-name {
+  text-decoration: none !important;
+  color: #fff;
+}
+
+.dc-tag.active {
+  background: var(--accent);
+  color: #fff;
+}
+
 /* League setup & teams table */
 .setup-grid {
   display: grid;

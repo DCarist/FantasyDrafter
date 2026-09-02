@@ -10,6 +10,7 @@
     mode: '3rr',
     scoring: 'half',
     qbFormat: 'sf',
+    leagueType: 'dynasty',
     teprem: false,
     blend: 60,
     maxKeepers: 2,
@@ -41,6 +42,7 @@
 
     if (!['ppr', 'half', 'std'].includes(s.settings.scoring)) s.settings.scoring = 'half';
     if (!['sf', '1qb'].includes(s.settings.qbFormat)) s.settings.qbFormat = 'sf';
+    if (!['dynasty', 'redraft'].includes(s.settings.leagueType)) s.settings.leagueType = 'dynasty';
 
     s.settings.maxKeepers = (s.settings.maxKeepers !== undefined && s.settings.maxKeepers !== null)
       ? Math.max(0, Math.min(10, parseInt(s.settings.maxKeepers, 10) || 0))

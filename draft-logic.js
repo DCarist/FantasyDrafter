@@ -245,6 +245,44 @@ function getProspectRank(player, qbFormat, scoringFormat) {
   return getDynastyRank(player, qbFormat);
 }
 
+// Formats player ranking pills based on active leagueType and format settings
+function formatPlayerStats(p, settings, activeScore) {
+  if (!p) return [];
+  const s = settings || {};
+  const isRedraft = (s.leagueType === 'redraft');
+  const qbTag = (s.qbFormat === '1qb' ? '1QB' : 'SF');
+  const scTag = (s.scoring || 'half').toUpperCase();
+  const activeDyn = getDynastyRank(p, s.qbFormat);
+  const activeRed = getRedraftRank(p, s.qbFormat, s.scoring);
+
+  let rawStats = [];
+  if (isRedraft) {
+    rawStats = [
+      ['Active Mode (' + qbTag + ' ' + scTag + ')', activeScore != null ? Number(activeScore).toFixed(1) + ' pts' : null],
+      ['Redraft (' + qbTag + ' ' + scTag + ')', activeRed],
+      ['ADP', p.adp ? Number(p.adp).toFixed(0) : null],
+      ['Age', p.age ? p.age + 'y' : null],
+      ['ESPN', p.espn_ppr || p.espn_std],
+      ['Yahoo', p.yahoo],
+      ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std]
+    ];
+  } else {
+    // Dynasty
+    rawStats = [
+      ['Active Mode (' + qbTag + ' ' + scTag + ')', activeScore != null ? Number(activeScore).toFixed(1) + ' pts' : null],
+      ['Dynasty ' + qbTag, activeDyn],
+      ['Rookie Draft Rank', p.rookieRank ? '#' + p.rookieRank : (p.rookie ? 'Rookie' : null)],
+      ['Age', p.age ? p.age + 'y' : null],
+      ['ADP', p.adp ? Number(p.adp).toFixed(0) : null],
+      ['ESPN', p.espn_ppr || p.espn_std],
+      ['Yahoo', p.yahoo],
+      ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std]
+    ];
+  }
+
+  return rawStats.filter(x => x[1] != null);
+}
+
 // Composite draft score, 0-100 scale.
 // dynastyScore / redraftScore are each already 0-100 (100 = best available anywhere).
 // blend: 0 = pure win-now (redraft), 1 = pure dynasty. TE premium gives TEs a bump.
@@ -1979,6 +2017,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getRedraftRank: getRedraftRank,
     computeFormatScore: computeFormatScore,
     getProspectRank: getProspectRank,
+    formatPlayerStats: formatPlayerStats,
     NFL_DEFENSES: NFL_DEFENSES,
     resolveDstCanonical: resolveDstCanonical,
     parseSleeperDraft: parseSleeperDraft,

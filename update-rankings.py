@@ -288,10 +288,11 @@ def update_rankings(
         or "http://docs.google.com/spreadsheets/d/1dLvZB3w4KewKPF_Gx5vTDY47Ua-oYVicmOdYwf_RKnQ/gviz/tq?tqx=out:csv&sheet=MainPaste"
     )
 
-    # 1. Load existing players-data.js to retain existing schedules and blurbs
+    # 1. Load existing players-data.js to retain existing schedules, blurbs, and depth charts
     existing_schedules = {}
     existing_blurbs = {}
     existing_byes = {}
+    existing_depth_charts = {}
     try:
         source_js = out_js if os.path.exists(out_js) else "players-data.js"
         if os.path.exists(source_js):
@@ -301,12 +302,13 @@ def update_rankings(
                 old_data = json.loads(json_str)
                 existing_schedules = old_data.get("schedules", {})
                 existing_byes = old_data.get("byes", {})
+                existing_depth_charts = old_data.get("depthCharts", {})
                 for p in old_data.get("players", []):
                     k = norm_name(p.get("name", ""))
                     if p.get("blurb"):
                         existing_blurbs[k] = p["blurb"]
             print(
-                f"Loaded {len(existing_schedules)} existing schedules and {len(existing_blurbs)} existing blurbs."
+                f"Loaded {len(existing_schedules)} existing schedules, {len(existing_depth_charts)} depth charts, and {len(existing_blurbs)} existing blurbs."
             )
     except Exception as e:
         print(f"Note: Could not load existing players-data ({e}), starting fresh.")
@@ -723,11 +725,39 @@ def update_rankings(
         )
     )
 
+    # 8b. Refresh 32-team depth charts from ESPN or re-link existing
+    depth_charts = existing_depth_charts
+    try:
+        import importlib
+        fdc = importlib.import_module("fetch-depth-charts")
+        print("Refreshing 32-team depth charts from ESPN...")
+        depth_charts = fdc.fetch_all_depth_charts(out, verbose=False)
+        print(f"Successfully synced depth charts for {len(depth_charts)} teams.")
+    except Exception as e:
+        print(f"Note: Live depth chart refresh skipped ({e}), re-linking existing depth charts...")
+        if depth_charts:
+            try:
+                import importlib
+                fdc = importlib.import_module("fetch-depth-charts")
+                lookup_exact, lookup_name = fdc.build_player_lookup(out)
+                for team_abbr, tdata in depth_charts.items():
+                    for group_key in ['qb', 'rb', 'te', 'pk']:
+                        for ath in tdata.get(group_key, []):
+                            nn = norm_name(ath.get('name', ''))
+                            ath['playerId'] = lookup_exact.get((nn, team_abbr)) or lookup_name.get(nn)
+                    for role_key, wr_list in tdata.get('wr', {}).items():
+                        for ath in wr_list:
+                            nn = norm_name(ath.get('name', ''))
+                            ath['playerId'] = lookup_exact.get((nn, team_abbr)) or lookup_name.get(nn)
+            except Exception as le:
+                print(f"Note: Depth chart re-link skipped: {le}")
+
     payload = {
         "generated": date.today().isoformat(),
         "players": out,
         "byes": byes,
         "schedules": existing_schedules,
+        "depthCharts": depth_charts,
         "sources": {
             "dynastySF": [
                 "https://www.fantasypros.com/nfl/rankings/dynasty-superflex.php"
