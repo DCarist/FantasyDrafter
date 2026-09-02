@@ -1647,6 +1647,11 @@ function analyzeLiveDraftStrategy(options) {
     targetsByPosition[pos] = candidates.slice(0, 5).map(cand => {
       const cScore = cand.score ?? computeFormatScore(cand, scoringSettings) ?? (100 - (cand.rank || 200));
       const valSurplus = (cand.adp != null && nextUserPick != null) ? Math.round(nextUserPick - cand.adp) : 0;
+      const byeClash = (typeof getByeClashStatus === 'function')
+        ? getByeClashStatus(cand, myPlayers)
+        : { type: 'none', samePos: [], otherPos: [] };
+      const isWatched = Array.isArray(opt.watchlist) ? opt.watchlist.includes(cand.id) : false;
+
       return {
         id: cand.id,
         name: cand.name,
@@ -1654,9 +1659,12 @@ function analyzeLiveDraftStrategy(options) {
         team: cand.team,
         bye: cand.bye,
         adp: cand.adp,
+        rookie: cand.rookie,
         score: Math.round(cScore * 10) / 10,
         valSurplus: valSurplus,
-        isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase())
+        isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase()),
+        isWatched: isWatched,
+        byeClash: byeClash
       };
     });
   }
@@ -1679,6 +1687,11 @@ function analyzeLiveDraftStrategy(options) {
       const cand = candidates[i];
       const cScore = cand.score ?? computeFormatScore(cand, scoringSettings) ?? (100 - (cand.rank || 200));
       const valSurplus = (cand.adp != null && nextUserPick != null) ? Math.round(nextUserPick - cand.adp) : 0;
+      const byeClash = (typeof getByeClashStatus === 'function')
+        ? getByeClashStatus(cand, myPlayers)
+        : { type: 'none', samePos: [], otherPos: [] };
+      const isWatched = Array.isArray(opt.watchlist) ? opt.watchlist.includes(cand.id) : false;
+
       recommendedTargets.push({
         id: cand.id,
         name: cand.name,
@@ -1686,9 +1699,12 @@ function analyzeLiveDraftStrategy(options) {
         team: cand.team,
         bye: cand.bye,
         adp: cand.adp,
+        rookie: cand.rookie,
         score: Math.round(cScore * 10) / 10,
         valSurplus: valSurplus,
-        isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase())
+        isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase()),
+        isWatched: isWatched,
+        byeClash: byeClash
       });
     }
   }

@@ -79,29 +79,41 @@ eq(stratRes.targetsByPosition.WR[0].name, 'Justin Jefferson', 'Top WR target is 
 eq(stratRes.targetsByPosition.RB[0].name, 'Jahmyr Gibbs', 'Top RB target is Jahmyr Gibbs');
 eq(stratRes.targetsByPosition.TE[0].name, 'George Kittle', 'Top TE target is George Kittle');
 
-// Scenario 2: User is on the clock (Pick 4)
+// Scenario 2: User is on the clock (Pick 4) with watchlist and bye checks
 const onClockRes = L.analyzeLiveDraftStrategy({
   teams: 4,
   rounds: 3,
   mode: 'snake',
   log: [
-    { overall: 1, playerId: 101 }, // Alpha picked Josh Allen (QB)
-    { overall: 2, playerId: 103 }, // Bravo picked Bijan Robinson (RB)
-    { overall: 3, playerId: 102 }  // Charlie picked Ja'Marr Chase (WR)
+    { overall: 1, playerId: 101 }, // Alpha picked Josh Allen (QB, Bye 12)
+    { overall: 2, playerId: 103 }, // Bravo picked Bijan Robinson (RB, Bye 12)
+    { overall: 3, playerId: 102 }  // Charlie picked Ja'Marr Chase (WR, Bye 12)
   ],
-  keepers: [],
+  keepers: [
+    { slot: 4, round: 2, playerId: 108 } // Delta (user) has Keeper Breece Hall (RB, Bye 12)
+  ],
   tradedPicks: {},
   teamNames: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
   mySlot: 4,
   currentPickNum: 4,
   playersLookup: byIdLookup,
   rosterSlots: { qb: 1, rb: 2, wr: 2, te: 1, flex: 1, superflex: 0, k: 0, dst: 0, bench: 3 },
-  availablePlayers: availablePool
+  availablePlayers: availablePool,
+  watchlist: [201, 204] // Lamar Jackson and George Kittle are in watchlist
 });
 
 eq(onClockRes.isOnClock, true, 'User is on the clock at Pick 4');
 eq(onClockRes.picksUntilUserTurn, 0, '0 picks until turn');
 eq(onClockRes.opponentThreats.length, 0, '0 opponent picks before current pick');
+
+// Check watchlist flags on targets
+eq(onClockRes.targetsByPosition.QB[0].isWatched, true, 'Lamar Jackson is flagged isWatched=true');
+eq(onClockRes.targetsByPosition.WR[0].isWatched, false, 'Justin Jefferson is isWatched=false');
+eq(onClockRes.targetsByPosition.TE[0].isWatched, true, 'George Kittle is isWatched=true');
+
+// Check bye clash: Delta has Keeper Breece Hall (RB, Bye 12).
+// A candidate with Bye 12 would clash. Candidate Justin Jefferson has Bye 6 (no clash).
+eq(onClockRes.targetsByPosition.WR[0].byeClash.type, 'none', 'Justin Jefferson has no bye clash');
 
 // Scenario 3: Draft completed
 const completeRes = L.analyzeLiveDraftStrategy({

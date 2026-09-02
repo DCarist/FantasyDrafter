@@ -975,7 +975,8 @@
           playersLookup: byId,
           rosterSlots: s.rosterSlots,
           scoringSettings: { blend: s.blend / 100, qbFormat: s.qbFormat, scoring: s.scoring, tePremium: s.teprem },
-          availablePlayers: availablePlayers
+          availablePlayers: availablePlayers,
+          watchlist: global.state.watchlist || []
         })
         : null;
 
@@ -1090,16 +1091,49 @@
             rowsHtml = '<div style="font-size:11px; color:var(--dim); padding:10px 0; text-align:center">No available players</div>';
           } else {
             rowsHtml = pList.map((p, idx) => {
+              const isW = Boolean(p.isWatched || (global.state.watchlist && global.state.watchlist.includes(p.id)));
+              const starIcon = isW ? '★' : '☆';
+              const starClass = isW ? 'target-star-btn active' : 'target-star-btn';
+              const starTitle = isW ? 'In Watchlist (Click to remove)' : 'Add to Watchlist';
+
+              let byeHtml = '';
+              if (p.bye) {
+                const bClash = p.byeClash || { type: 'none' };
+                if (bClash.type === 'same-pos') {
+                  const names = (bClash.samePos || []).map(x => x.name).join(', ');
+                  const tip = 'Same-position bye clash with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                  byeHtml = '<span class="target-bye-pill clash" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ Wk ' + p.bye + '</span>';
+                } else if (bClash.type === 'other-pos') {
+                  const names = (bClash.otherPos || []).map(x => x.name).join(', ');
+                  const tip = 'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                  byeHtml = '<span class="target-bye-pill overlap" title="' + tip.replace(/"/g, '&quot;') + '">⚡ Wk ' + p.bye + '</span>';
+                } else {
+                  byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
+                }
+              } else {
+                byeHtml = '<span class="target-bye-pill normal">—</span>';
+              }
+
               const surplusTag = (p.valSurplus > 0)
                 ? ('<span style="color:var(--good); font-size:10px; font-weight:700">+' + p.valSurplus + ' vs ADP</span>')
                 : (p.adp ? ('<span style="color:var(--dim); font-size:10px">ADP ' + p.adp + '</span>') : '');
 
+              const rookieTag = p.rookie ? '<span class="rookietag" style="font-size:8.5px; padding:0 3px">R</span>' : '';
+
               return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
                 + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'
+                + '<button type="button" class="' + starClass + '" title="' + starTitle + '" onclick="event.stopPropagation(); toggleWatch(' + p.id + '); renderDraftBoardModalView();">' + starIcon + '</button>'
                 + '<span class="target-rank-num">#' + (idx + 1) + '</span>'
                 + '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis">'
-                + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">' + p.name + '</div>'
-                + '<div style="font-size:10px; color:var(--dim)">' + (p.team || '—') + (p.bye ? ' · Wk ' + p.bye : '') + '</div>'
+                + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:4px">'
+                + '<span>' + p.name + '</span>'
+                + rookieTag
+                + '</div>'
+                + '<div style="font-size:10px; color:var(--dim); display:flex; align-items:center; gap:4px; margin-top:1px">'
+                + '<span>' + (p.team || '—') + '</span>'
+                + '<span>·</span>'
+                + byeHtml
+                + '</div>'
                 + '</div>'
                 + '</div>'
                 + '<div style="text-align:right; flex-shrink:0">'

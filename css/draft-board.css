@@ -1882,6 +1882,57 @@ td.clickname:hover .pname {
   flex-shrink: 0;
 }
 
+.target-star-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.25);
+  transition: all 0.15s ease;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.target-star-btn:hover {
+  color: var(--warn);
+  transform: scale(1.2);
+}
+
+.target-star-btn.active {
+  color: #fbbf24;
+  text-shadow: 0 0 6px rgba(251, 191, 36, 0.45);
+}
+
+.target-bye-pill {
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  display: inline-block;
+  line-height: 1.2;
+}
+
+.target-bye-pill.normal {
+  color: var(--dim);
+}
+
+.target-bye-pill.overlap {
+  background: rgba(255, 180, 84, 0.15);
+  color: var(--warn);
+  border: 1px solid rgba(255, 180, 84, 0.35);
+  font-weight: 700;
+}
+
+.target-bye-pill.clash {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  font-weight: 800;
+}
+
 /* Targets Grid Fallback */
 .targets-grid {
   display: grid;
