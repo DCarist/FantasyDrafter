@@ -177,6 +177,18 @@
   }
   global.setTierFilter = setTierFilter;
 
+  function formatTierPill(tier) {
+    if (tier == null || isNaN(tier)) return '<span class="tier-pill tier-none">—</span>';
+    const t = Math.max(1, Math.round(tier));
+    const cls = t <= 1 ? 'tier-1'
+      : t === 2 ? 'tier-2'
+      : t === 3 ? 'tier-3'
+      : t === 4 ? 'tier-4'
+      : t === 5 ? 'tier-5'
+      : 'tier-6';
+    return '<span class="tier-pill ' + cls + '">T' + t + '</span>';
+  }
+
   function renderPool() {
     const s = global.state.settings;
     const taken = takenMap();
@@ -256,7 +268,6 @@
       }
 
       const posClass = ['QB', 'RB', 'WR', 'TE'].includes(p.pos) ? p.pos : (['DST', 'DEF', 'D/ST'].includes(p.pos) ? 'DST' : (p.pos === 'K' ? 'K' : 'other'));
-      const posTierStr = p.posTier ? ' <span class="pos-tier">T' + p.posTier + '</span>' : '';
       const value = !isTaken && p.adp && p.adp - pick >= 8 ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>' : '';
       const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
       const rookie = p.rookie ? '<span class="rookietag" title="Rookie Draft Rank' + rookieRankStr + '">R' + rookieRankStr + '</span>' : '';
@@ -328,7 +339,8 @@
       html += '<tr class="' + tierRow + (isTaken ? ' takenrow' : '') + '">'
         + '<td class="rk">' + (idx + 1) + tierBadgeHtml + '</td>'
         + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + scarcityTag + '</td>'
-        + '<td><span class="pos ' + posClass + '">' + p.pos + posTierStr + '</span></td>'
+        + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
+        + '<td>' + formatTierPill(p.posTier) + '</td>'
         + '<td class="meta">' + (p.team || '—') + '</td>'
         + byeCell
         + '<td class="num rk">' + (p.activeDyn ?? '—') + '</td>'
@@ -343,7 +355,7 @@
     if (global.ui.posFilter === 'WATCHLIST' && global.PLAYERS.length) {
       emptyMsg = 'Your watchlist is empty. Click the ☆ star on any player to add them to your watchlist.';
     }
-    if ($('pool')) $('pool').innerHTML = html || '<tr><td colspan="10" class="empty">' + emptyMsg + '</td></tr>';
+    if ($('pool')) $('pool').innerHTML = html || '<tr><td colspan="11" class="empty">' + emptyMsg + '</td></tr>';
   }
 
   function renderRosterSection(resolvedPicks, rosterSlots, teamsCount) {
@@ -1235,7 +1247,7 @@
 
               const pAlert = modalScarcity ? modalScarcity.playerAlerts.get(p.id) : null;
               const scarcityTag = pAlert ? ' <span class="scarcity-tag' + (pAlert.isLast ? ' last-in-tier' : '') + '" style="font-size:8.5px; padding:0 4px">' + (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) + '</span>' : '';
-              const tierBadge = p.posTier ? ' <span class="pos-tier" style="font-size:9.5px; color:var(--accent); font-weight:700">T' + p.posTier + '</span>' : '';
+              const tierBadge = p.posTier ? ' ' + formatTierPill(p.posTier) : '';
 
               return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
                 + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'

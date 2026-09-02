@@ -243,6 +243,49 @@ tr.tierbreak td {
   text-transform: uppercase;
 }
 
+/* Positional Tier Pill & Green-to-Red Gradient (Harmonized with dark text) */
+.tier-pill {
+  display: inline-block;
+  min-width: 30px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1.5px 6px;
+  line-height: 1.25;
+  color: #10131a;
+}
+
+.tier-pill.tier-1 {
+  background: #3ddc84;
+}
+
+.tier-pill.tier-2 {
+  background: #a3e635;
+}
+
+.tier-pill.tier-3 {
+  background: #facc15;
+}
+
+.tier-pill.tier-4 {
+  background: #fb923c;
+}
+
+.tier-pill.tier-5 {
+  background: #ff6b6b;
+}
+
+.tier-pill.tier-6,
+.tier-pill.tier-deep {
+  background: #f87171;
+}
+
+.tier-pill.tier-none {
+  background: #334155;
+  color: #94a3b8;
+}
+
 .pos-tier {
   font-size: 9.5px;
   font-weight: 800;
@@ -250,6 +293,7 @@ tr.tierbreak td {
   margin-left: 2px;
   letter-spacing: -0.2px;
 }
+
 
 .scarcity-tag {
   display: inline-flex;
