@@ -45,13 +45,31 @@ Fantasy Drafter is a fast, responsive fantasy football draft board designed for 
   - Auditory chime synthesized via Web Audio API when your team is on the clock.
   - Pulsing green visual indicator on header countdown and draft board.
 
-### 📊 Master Consensus Player Rankings & Data Pipeline
-- Aggregates consensus draft rankings, positional projections, bye weeks, and average draft position (ADP).
-- Includes automated data fetchers:
-  - `update-rankings.py`: Multi-source data pipeline aggregator.
-  - `fetch_fantasypros.py`: FantasyPros consensus cheat sheet extractor.
-  - `fetch_sleeper.py`: Sleeper trending ADP and player metadata extractor.
-  - `fetch_adp.py`: Consensus average draft position aggregator.
+### 📈 Positional Tiers & Scarcity Cliff Detection
+- **1D Natural Breaks (Fisher-Jenks) Clustering**: Calculates mathematical tiers per position based on natural statistical cliffs in composite player draft scores, guaranteeing strict monotonicity ($T_1 \le T_2 \le \dots$).
+- **Dedicated POS TIER Column**: High-contrast, harmonized dark-text green-to-red gradient pills (`T1` to `T6+`) matching the visual style of position badges.
+- **Pre-Computed & Stable Tiers**: Positional tiers (`posTier`) and overall board tiers (`overallTier`) remain invariant when players are drafted or hidden.
+- **Impending Cliff Scarcity Alerts**: Badges flag critical drop-offs in real time (`⚡ Last in T1`, `⚠️ 2 left in T2`) when available tier players dwindle.
+
+### ⭐ Interactive Watchlist & Priority Drag-and-Drop
+- **Two-Way Drag-and-Drop Reordering**: Rearrange player priority on the fly via fluid native HTML5 drag-and-drop in both the left sidebar Watchlist panel and the main draft board table.
+- **Expanded Hit Target**: Generous ~28x28px clickable star button area with hover feedback and strict click event isolation, preventing accidental player modal popups.
+- **Watchlist Priority Sorting**: Dedicated "Watchlist priority" sorting option in the table sort dropdown with automatic sync when switching to the `★ WATCH` tab.
+
+### 🏈 NFL Injury Tracking & 32-Team Depth Charts
+- **Live NFL Injury Reports**: Live tracking of official NFL injury statuses (`OUT`, `IR`, `Q`, `D`), injury types, detail descriptions, and estimated return dates.
+- **Roster & Board Injury Badges**: Visible status tags in table rows, roster slots, and dedicated collapsible injury drawers in player modals.
+- **32-Team ESPN Depth Charts**: Real-time positional depth chart strings (e.g. `RB1 · Starter`, `WR2 · Slot`) embedded directly into player profile cards.
+
+### ⚙️ League Formats & Dynamic Data Pipeline
+- **League Type Setting**: Tailor composite draft scores and ranking blends specifically for **Dynasty** vs. **Redraft** formats in League Setup.
+- **In-App On-Demand Refresh**: One-click **🔄 Refresh Data Now** button in League Setup communicating directly with the Python server to update consensus rankings, depth charts, and injury reports without leaving the browser.
+- **Automated Data Fetchers in `scripts/`**:
+  - `scripts/update_rankings.py`: Multi-source consensus rankings aggregator.
+  - `scripts/fetch_depth_charts.py`: 32-team ESPN depth charts extractor.
+  - `scripts/fetch_injuries.py`: ESPN NFL injury report extractor.
+  - `scripts/merge_data.py`: Data merger and normalization engine.
+  - `scripts/patch_extras.py`: Metadata, bye weeks, and stat projection patcher.
 
 ---
 
@@ -99,7 +117,8 @@ FantasyDrafter/
 ├── draft-board.html                # Main single-page draft board application
 ├── server.py                       # Python HTTP relay, SSE streaming, and sync server
 ├── draft-logic.js                  # Pure core draft calculations, snake/3RR, roster slots & analytics
-├── players-data.js                 # Master consensus player rankings and metadata
+├── test-draft-logic.mjs            # Baseline unit test suite
+├── test-runner.mjs                 # Test runner discovering all 22 test suites
 │
 ├── js/                             # Client-side modular UI and sync components
 │   ├── draft-state.js              # State store, schema normalization, and persistence
@@ -117,16 +136,19 @@ FantasyDrafter/
 │       ├── background.js           # Background service worker (PNA loopback relay)
 │       └── content-script.js       # Live DOM observer and pick parser
 │
-├── tests/                          # Automated test suites (19 suites)
+├── tests/                          # Automated test suites (21 modular suites)
 │   ├── bye-conflicts.test.mjs
 │   ├── data-integrity.test.mjs
 │   ├── data-pipeline.test.mjs
+│   ├── depth-chart-and-league-type.test.mjs
 │   ├── draft-board-grid.test.mjs
 │   ├── draft-queue.test.mjs
 │   ├── draft-serialization.test.mjs
 │   ├── draft-strategy-radar.test.mjs
 │   ├── draft-summary-analysis.test.mjs
+│   ├── draft-tiers.test.mjs
 │   ├── espn-sync-robustness.test.mjs
+│   ├── injury-tracking.test.mjs
 │   ├── keepers.test.mjs
 │   ├── league-formats.test.mjs
 │   ├── league-setup.test.mjs
@@ -137,8 +159,13 @@ FantasyDrafter/
 │   ├── unlisted-picks.test.mjs
 │   └── watchlist.test.mjs
 │
-├── test-runner.mjs                 # Test runner discovering all test suites
-├── update-rankings.py              # Automated data pipeline updater
+├── scripts/                        # Automated data pipelines and fetchers
+│   ├── update_rankings.py          # Master consensus rankings updater
+│   ├── fetch_depth_charts.py       # 32-team ESPN depth charts fetcher
+│   ├── fetch_injuries.py           # ESPN NFL injury reports fetcher
+│   ├── merge_data.py               # Dataset merger and normalization
+│   └── patch_extras.py             # Schedules, byes, and projections patcher
+│
 ├── start.bat                       # Windows Batch 1-click launcher
 ├── start.ps1                       # Windows PowerShell 1-click launcher
 └── package.json                    # Project configuration and npm scripts
@@ -148,7 +175,7 @@ FantasyDrafter/
 
 ## 🧪 Testing
 
-Fantasy Drafter includes a comprehensive suite of **19 automated test suites** covering draft matrix calculations, 3RR order, live synchronization, pick trading, keepers, roster slots, live strategy radar, and post-draft league assessment.
+Fantasy Drafter includes a comprehensive suite of **22 automated test suites** covering draft matrix calculations, 3RR order, live synchronization, pick trading, keepers, roster slots, depth charts, injury tracking, natural breaks tiering, watchlist priority reordering, and post-draft league assessment.
 
 Run the full test suite with:
 ```bash
@@ -159,14 +186,12 @@ npm test
 
 ## 🔄 Updating Rankings Data
 
-To fetch the latest consensus rankings and ADP before your draft:
-```bash
-npm run update
-# or
-python update-rankings.py
-```
+To fetch the latest consensus rankings, 32-team depth charts, and injury reports before your draft:
+- **In-App:** Open **League Setup** and click **🔄 Refresh Data Now**.
+- **Via npm:** `npm run update`
+- **Via Python:** `python scripts/update_rankings.py`
 
-This updates `players-data.js` with fresh player values, bye weeks, and team assignments while preserving custom adjustments.
+This updates `players-data.js` and `players-data.json` with fresh player values, depth charts, and injury reports while preserving custom adjustments.
 
 ---
 

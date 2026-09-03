@@ -8,8 +8,8 @@
     "start:headless": "python server.py --no-browser",
     "serve": "python server.py",
     "test": "node test-runner.mjs",
-    "update": "python update-rankings.py",
-    "update-rankings": "python update-rankings.py"
+    "update": "python scripts/update_rankings.py",
+    "update-rankings": "python scripts/update_rankings.py"
   },
   "keywords": [
     "fantasy-football",

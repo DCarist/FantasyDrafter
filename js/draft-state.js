@@ -10,6 +10,7 @@
     mode: '3rr',
     scoring: 'half',
     qbFormat: 'sf',
+    leagueType: 'dynasty',
     teprem: false,
     blend: 60,
     maxKeepers: 2,
@@ -29,7 +30,7 @@
   };
 
   let state = load();
-  let ui = { posFilter: 'ALL', search: '', sort: 'score', hideTaken: false };
+  let ui = { posFilter: 'ALL', search: '', sort: 'score', hideTaken: false, hideOutIR: false };
   let viewingRosterSlot = null; // null = follow on-the-clock slot
 
   function normalizeState(s) {
@@ -41,6 +42,7 @@
 
     if (!['ppr', 'half', 'std'].includes(s.settings.scoring)) s.settings.scoring = 'half';
     if (!['sf', '1qb'].includes(s.settings.qbFormat)) s.settings.qbFormat = 'sf';
+    if (!['dynasty', 'redraft'].includes(s.settings.leagueType)) s.settings.leagueType = 'dynasty';
 
     s.settings.maxKeepers = (s.settings.maxKeepers !== undefined && s.settings.maxKeepers !== null)
       ? Math.max(0, Math.min(10, parseInt(s.settings.maxKeepers, 10) || 0))
@@ -318,13 +320,74 @@
     });
   }
 
+  function rerenderBoardModalIfOpen() {
+    if (typeof document !== 'undefined') {
+      const modal = document.getElementById('modalbox');
+      if (modal && modal.classList.contains('modal-board')) {
+        const fn = (typeof renderDraftBoardModalView === 'function')
+          ? renderDraftBoardModalView
+          : (typeof global !== 'undefined' && global.renderDraftBoardModalView);
+        if (typeof fn === 'function') fn();
+      }
+    }
+  }
+
   function toggleWatch(id, e) {
-    if (e) e.stopPropagation();
+    if (e) {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+    }
     state.watchlist = toggleWatchlist(state.watchlist, id);
     save();
     if (typeof renderTabs === 'function') renderTabs();
     if (typeof renderPool === 'function') renderPool();
     if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
+    rerenderBoardModalIfOpen();
+  }
+
+  function moveWatch(id, delta, e) {
+    if (e) {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+    }
+    if (!Array.isArray(state.watchlist)) return;
+    const fromIdx = state.watchlist.indexOf(id);
+    if (fromIdx < 0) return;
+    const toIdx = fromIdx + delta;
+    if (toIdx < 0 || toIdx >= state.watchlist.length) return;
+    const reorderFn = (typeof reorderWatchlist === 'function') ? reorderWatchlist : (typeof window !== 'undefined' ? window.reorderWatchlist : null);
+    if (typeof reorderFn === 'function') {
+      state.watchlist = reorderFn(state.watchlist, fromIdx, toIdx);
+    } else {
+      const list = state.watchlist.slice();
+      const [item] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, item);
+      state.watchlist = list;
+    }
+    save();
+    if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
+    if (typeof renderPool === 'function') renderPool();
+    rerenderBoardModalIfOpen();
+  }
+
+  function reorderWatch(fromPlayerId, toPlayerId) {
+    if (!Array.isArray(state.watchlist)) return;
+    const fromIdx = state.watchlist.indexOf(fromPlayerId);
+    const toIdx = state.watchlist.indexOf(toPlayerId);
+    if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
+    const reorderFn = (typeof reorderWatchlist === 'function') ? reorderWatchlist : (typeof window !== 'undefined' ? window.reorderWatchlist : null);
+    if (typeof reorderFn === 'function') {
+      state.watchlist = reorderFn(state.watchlist, fromIdx, toIdx);
+    } else {
+      const list = state.watchlist.slice();
+      const [item] = list.splice(fromIdx, 1);
+      list.splice(toIdx, 0, item);
+      state.watchlist = list;
+    }
+    save();
+    if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
+    if (typeof renderPool === 'function') renderPool();
+    rerenderBoardModalIfOpen();
   }
 
   function draftUnlistedPlayer(pos, name, team, bye) {
@@ -449,6 +512,8 @@
   global.updateMaxKeepers = updateMaxKeepers;
   global.draftPlayer = draftPlayer;
   global.toggleWatch = toggleWatch;
+  global.moveWatch = moveWatch;
+  global.reorderWatch = reorderWatch;
   global.draftUnlistedPlayer = draftUnlistedPlayer;
   global.undo = undo;
   global.jumpTo = jumpTo;

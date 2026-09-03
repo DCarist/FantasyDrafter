@@ -18,7 +18,7 @@
       <span id="clock" class="clock">—</span>
       <span id="nextpicks" class="nextpicks"></span>
       <span style="margin-left:auto"></span>
-      <button class="act" id="boardbtn" onclick="openDraftBoardModal()"
+      <button class="act" id="boardbtn"
         style="border-color:var(--accent); color:var(--text); font-weight:700">📊 Draft Board</button>
       <button class="act" id="syncbtn" onclick="openSyncModal()"
         style="border-color:var(--accent); color:var(--text); font-weight:600">⚡ Live Sync <span id="syncbadge"
@@ -37,6 +37,10 @@
       <label class="set">Order <select id="mode">
           <option value="3rr">3rd-Round Reversal</option>
           <option value="snake">Normal snake</option>
+        </select></label>
+      <label class="set">League <select id="hdrleaguetype">
+          <option value="dynasty">Dynasty</option>
+          <option value="redraft">Redraft</option>
         </select></label>
       <label class="set">Scoring <select id="hdrscoring">
           <option value="half">0.5 Half-PPR</option>
@@ -89,16 +93,19 @@
             <option value="red">Redraft rank</option>
             <option value="rookie">Rookie / Prospect rank</option>
             <option value="adp">ADP</option>
+            <option value="watch">Watchlist priority</option>
           </select></label>
         <label class="set"><input type="checkbox" id="hidetaken"> Hide taken</label>
+        <label class="set"><input type="checkbox" id="hideoutir"> Hide Out/IR</label>
       </div>
+      <div id="tierpills" class="tierpills-bar"></div>
       <div style="max-height: 72vh; overflow-y: auto;">
         <table>
           <thead>
             <tr>
-              <th>#</th>
-              <th>Player</th>
+              <th id="th_rk">#</th>
               <th>Pos</th>
+              <th>Pos Tier</th>
               <th>Team</th>
               <th>Bye</th>
               <th class="num" id="th_dyn">Dyn SF</th>

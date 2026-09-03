@@ -103,7 +103,7 @@
   function scored() {
     const s = global.state.settings;
     const blend = s.blend / 100;
-    return global.PLAYERS.map(p => {
+    const list = global.PLAYERS.map(p => {
       const dynRank = getDynastyRank(p, s.qbFormat);
       const redRank = getRedraftRank(p, s.qbFormat, s.scoring);
       const prospectRank = getProspectRank(p, s.qbFormat, s.scoring);
@@ -121,6 +121,72 @@
         score: score
       }, p);
     });
+
+    if (typeof assignTiers === 'function') {
+      assignTiers(list, {
+        leagueType: s.leagueType,
+        qbFormat: s.qbFormat,
+        scoring: s.scoring,
+        blend: blend
+      });
+    }
+
+    return list;
+  }
+
+  function renderTierPills(allScored, taken) {
+    const container = $('tierpills');
+    if (!container) return;
+    const posFilter = global.ui.posFilter;
+    if (posFilter === 'ROOKIE' || posFilter === 'WATCHLIST') {
+      container.style.display = 'none';
+      container.innerHTML = '';
+      return;
+    }
+    container.style.display = 'flex';
+
+    const scarcityInfo = (typeof getTierScarcity === 'function')
+      ? getTierScarcity(allScored, taken, posFilter)
+      : { tiers: [] };
+
+    const activeTierFilter = global.ui.tierFilter;
+    const totalAvail = scarcityInfo.tiers.reduce((acc, t) => acc + t.remaining, 0);
+
+    let pillsHtml = '<button type="button" class="tierpill' + (activeTierFilter == null ? ' active' : '') + '" onclick="setTierFilter(null)">All <span class="pill-count">(' + totalAvail + ')</span></button>';
+
+    for (const t of scarcityInfo.tiers) {
+      if (t.total === 0) continue;
+      const isSelected = (activeTierFilter === t.tier);
+      const scarcityClass = t.isScarcity ? ' scarcity' : '';
+      const warnIcon = t.isScarcity ? (t.remaining === 1 ? ' ⚡' : ' ⚠️') : '';
+      pillsHtml += '<button type="button" class="tierpill' + (isSelected ? ' active' : '') + scarcityClass + '" onclick="setTierFilter(' + t.tier + ')" title="' + (t.isScarcity ? t.scarcityLabel : ('Tier ' + t.tier + ': ' + t.remaining + ' of ' + t.total + ' available')) + '">'
+        + 'T' + t.tier + ' <span class="pill-count">(' + t.remaining + warnIcon + ')</span>'
+        + '</button>';
+    }
+
+    container.innerHTML = pillsHtml;
+  }
+
+  function setTierFilter(tier) {
+    if (global.ui.tierFilter === tier) {
+      global.ui.tierFilter = null;
+    } else {
+      global.ui.tierFilter = tier;
+    }
+    renderPool();
+  }
+  global.setTierFilter = setTierFilter;
+
+  function formatTierPill(tier) {
+    if (tier == null || isNaN(tier)) return '<span class="tier-pill tier-none">—</span>';
+    const t = Math.max(1, Math.round(tier));
+    const cls = t <= 1 ? 'tier-1'
+      : t === 2 ? 'tier-2'
+      : t === 3 ? 'tier-3'
+      : t === 4 ? 'tier-4'
+      : t === 5 ? 'tier-5'
+      : 'tier-6';
+    return '<span class="tier-pill ' + cls + '">T' + t + '</span>';
   }
 
   function renderPool() {
@@ -129,12 +195,25 @@
     const pickOf = new Map();
     for (const e of global.state.log) if (e.playerId != null) pickOf.set(e.playerId, e);
     const q = normalizeName(global.ui.search || '');
-    let rows = scored();
+    const allScored = scored();
+    const scarcityData = (typeof getTierScarcity === 'function')
+      ? getTierScarcity(allScored, taken, global.ui.posFilter)
+      : { playerAlerts: new Map() };
+
+    renderTierPills(allScored, taken);
+
+    let rows = allScored;
     if (global.ui.hideTaken) rows = rows.filter(p => !taken.has(p.id));
+    if (global.ui.hideOutIR) rows = rows.filter(p => !(p.injury && (p.injury.code === 'O' || p.injury.code === 'IR')));
     if (global.ui.posFilter === 'WATCHLIST') rows = rows.filter(p => isWatched(global.state.watchlist, p.id));
     else if (global.ui.posFilter === 'ROOKIE') rows = rows.filter(p => p.rookie);
     else if (global.ui.posFilter === 'DST') rows = rows.filter(p => ['DST', 'DEF', 'D/ST'].includes((p.pos || '').toUpperCase()));
     else if (global.ui.posFilter !== 'ALL') rows = rows.filter(p => (p.pos || '').toUpperCase() === global.ui.posFilter);
+
+    if (global.ui.tierFilter != null) {
+      const isAll = (global.ui.posFilter === 'ALL');
+      rows = rows.filter(p => (isAll ? p.overallTier : p.posTier) === global.ui.tierFilter);
+    }
 
     if (q) {
       const qDst = resolveDstCanonical(q);
@@ -147,6 +226,10 @@
     }
 
     // Dynamic table headers
+    if ($('th_rk')) {
+      $('th_rk').textContent = (global.ui.posFilter === 'WATCHLIST' && global.ui.sort === 'watch') ? 'Priority' : '#';
+      $('th_rk').title = (global.ui.posFilter === 'WATCHLIST') ? 'Drag rows to reorder watchlist priority' : '';
+    }
     if ($('th_dyn')) $('th_dyn').textContent = (s.qbFormat === '1qb') ? 'Dyn 1QB' : 'Dyn SF';
     if ($('th_red')) {
       const scTag = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'STD' : 'Half');
@@ -158,7 +241,11 @@
       dyn: p => p.activeDyn ?? 9999,
       red: p => p.activeRed ?? 9999,
       rookie: p => (p.rookie ? (p.prospectRank ?? p.activeDyn ?? 999) : 9999),
-      adp: p => p.adp ?? 9999
+      adp: p => p.adp ?? 9999,
+      watch: p => {
+        const wIdx = (global.state.watchlist || []).indexOf(p.id);
+        return wIdx >= 0 ? wIdx : 9999;
+      }
     }[global.ui.sort] || (p => -(p.score ?? -1));
 
     rows.sort((a, b) => key(a) - key(b));
@@ -167,17 +254,27 @@
     const onClock = teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks);
     const isOurPick = onClock.isMe;
     const myRoster = getMyRosterPlayers(global.state.log, byId, s.slot, s.teams, s.mode);
-    const showTiers = global.ui.sort === 'score' && !q && global.ui.posFilter !== 'ROOKIE' && global.ui.posFilter !== 'WATCHLIST';
-    let html = '', prevScore = null, tier = 1;
+    const showTiers = global.ui.sort === 'score' && !q && global.ui.posFilter !== 'ROOKIE' && global.ui.posFilter !== 'WATCHLIST' && global.ui.tierFilter == null;
+    let html = '', prevTier = null;
 
     rows.slice(0, 250).forEach((p, idx) => {
       const isTaken = taken.has(p.id);
+      const isAllView = (global.ui.posFilter === 'ALL');
+      const curTier = isAllView ? (p.overallTier || 1) : (p.posTier || 1);
+
       let tierRow = '';
-      if (showTiers && prevScore != null && p.score != null && prevScore - p.score > 4) {
-        tier++;
-        tierRow = ' tierbreak';
+      let tierBadgeHtml = '';
+      if (showTiers) {
+        if (idx === 0) {
+          tierBadgeHtml = ' <span class="tierlabel">T' + curTier + '</span>';
+          prevTier = curTier;
+        } else if (prevTier != null && curTier !== prevTier) {
+          tierRow = ' tierbreak';
+          tierBadgeHtml = ' <span class="tierlabel">T' + curTier + '</span>';
+          prevTier = curTier;
+        }
       }
-      if (p.score != null) prevScore = p.score;
+
       const posClass = ['QB', 'RB', 'WR', 'TE'].includes(p.pos) ? p.pos : (['DST', 'DEF', 'D/ST'].includes(p.pos) ? 'DST' : (p.pos === 'K' ? 'K' : 'other'));
       const value = !isTaken && p.adp && p.adp - pick >= 8 ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>' : '';
       const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
@@ -187,6 +284,24 @@
       const starBtn = !isTaken
         ? '<button type="button" class="watchbtn' + (watched ? ' active' : '') + '" title="' + (watched ? 'Remove from Watchlist' : 'Add to Watchlist') + '" onclick="toggleWatch(' + p.id + ', event)">' + (watched ? '★' : '☆') + '</button>'
         : '';
+
+      let scarcityTag = '';
+      if (!isTaken && scarcityData && scarcityData.playerAlerts) {
+        const scAlert = scarcityData.playerAlerts.get(p.id);
+        if (scAlert) {
+          scarcityTag = ' <span class="scarcity-tag' + (scAlert.isLast ? ' last-in-tier' : '') + '" title="' + scAlert.label + '">' + scAlert.label + '</span>';
+        }
+      }
+
+      let injTag = '';
+      if (p.injury && p.injury.code) {
+        const c = p.injury.code;
+        const tip = (p.injury.status || 'Injured')
+          + (p.injury.type ? ': ' + p.injury.type : '')
+          + (p.injury.detail ? ' (' + p.injury.detail + ')' : '')
+          + (p.injury.returnDate ? ' - Est. Return: ' + p.injury.returnDate : '');
+        injTag = ' <span class="injtag inj-' + c.toLowerCase() + '" title="' + tip.replace(/"/g, '&quot;') + '">' + c + '</span>';
+      }
 
       let actionCell = '';
       if (isTaken) {
@@ -229,10 +344,20 @@
         }
       }
 
-      html += '<tr class="' + tierRow + (isTaken ? ' takenrow' : '') + '">'
-        + '<td class="rk">' + (idx + 1) + (tierRow ? ' <span class="tierlabel">T' + tier + '</span>' : '') + '</td>'
-        + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + rookie + age + value + '</td>'
+      const isWatchlistTab = (global.ui.posFilter === 'WATCHLIST');
+      const dragAttrs = isWatchlistTab
+        ? ' class="' + tierRow + (isTaken ? ' takenrow' : '') + ' watch-drag-row" draggable="true" title="Drag to reorder priority" ondragstart="onWatchDragStart(event, ' + p.id + ')" ondragover="onWatchDragOver(event)" ondragleave="onWatchDragLeave(event)" ondrop="onWatchDrop(event, ' + p.id + ')" ondragend="onWatchDragEnd(event)"'
+        : ' class="' + tierRow + (isTaken ? ' takenrow' : '') + '"';
+
+      const rankCell = isWatchlistTab
+        ? '<td class="rk watch-rk-cell"><span class="watch-drag-grip" title="Drag to reorder">⠿</span>' + (idx + 1) + tierBadgeHtml + '</td>'
+        : '<td class="rk">' + (idx + 1) + tierBadgeHtml + '</td>';
+
+      html += '<tr' + dragAttrs + '>'
+        + rankCell
+        + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + scarcityTag + '</td>'
         + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
+        + '<td>' + formatTierPill(p.posTier) + '</td>'
         + '<td class="meta">' + (p.team || '—') + '</td>'
         + byeCell
         + '<td class="num rk">' + (p.activeDyn ?? '—') + '</td>'
@@ -247,7 +372,7 @@
     if (global.ui.posFilter === 'WATCHLIST' && global.PLAYERS.length) {
       emptyMsg = 'Your watchlist is empty. Click the ☆ star on any player to add them to your watchlist.';
     }
-    if ($('pool')) $('pool').innerHTML = html || '<tr><td colspan="10" class="empty">' + emptyMsg + '</td></tr>';
+    if ($('pool')) $('pool').innerHTML = html || '<tr><td colspan="11" class="empty">' + emptyMsg + '</td></tr>';
   }
 
   function renderRosterSection(resolvedPicks, rosterSlots, teamsCount) {
@@ -464,17 +589,85 @@
 
   function setFilter(t) {
     global.ui.posFilter = t;
+    global.ui.tierFilter = null;
+    if (t === 'WATCHLIST' && $('sortsel')) {
+      global.ui.sort = 'watch';
+      $('sortsel').value = 'watch';
+    } else if (global.ui.sort === 'watch' && $('sortsel')) {
+      global.ui.sort = 'score';
+      $('sortsel').value = 'score';
+    }
     renderTabs();
     renderPool();
   }
+
+  let draggedWatchPlayerId = null;
+
+  function onWatchDragStart(e, id) {
+    draggedWatchPlayerId = id;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(id));
+    }
+    const row = e.currentTarget;
+    if (row) row.classList.add('dragging');
+  }
+
+  function onWatchDragOver(e) {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    const row = e.currentTarget;
+    if (row && !row.classList.contains('drag-over')) {
+      row.classList.add('drag-over');
+    }
+  }
+
+  function onWatchDragLeave(e) {
+    const row = e.currentTarget;
+    if (row) row.classList.remove('drag-over');
+  }
+
+  function onWatchDrop(e, targetId) {
+    e.preventDefault();
+    const row = e.currentTarget;
+    if (row) row.classList.remove('drag-over');
+    if (draggedWatchPlayerId != null && draggedWatchPlayerId !== targetId) {
+      if (global.ui.sort !== 'watch' && $('sortsel')) {
+        global.ui.sort = 'watch';
+        $('sortsel').value = 'watch';
+      }
+      if (typeof reorderWatch === 'function') {
+        reorderWatch(draggedWatchPlayerId, targetId);
+      }
+    }
+    draggedWatchPlayerId = null;
+  }
+
+  function onWatchDragEnd(e) {
+    const row = e.currentTarget;
+    if (row) row.classList.remove('dragging');
+    const all = document.querySelectorAll('.watchlist-item, tr.watch-drag-row');
+    all.forEach(el => el.classList.remove('drag-over', 'dragging'));
+    draggedWatchPlayerId = null;
+  }
+
+  global.onWatchDragStart = onWatchDragStart;
+  global.onWatchDragOver = onWatchDragOver;
+  global.onWatchDragLeave = onWatchDragLeave;
+  global.onWatchDrop = onWatchDrop;
+  global.onWatchDragEnd = onWatchDragEnd;
 
   function renderWatchlistPanel() {
     if (!$('leftwatchlist')) return;
     const taken = takenMap();
     const allScored = scored();
+
+    const watchedOrder = new Map();
+    (global.state.watchlist || []).forEach((id, idx) => watchedOrder.set(id, idx));
+
     const scoredWatched = allScored
       .filter(p => isWatched(global.state.watchlist, p.id) && !taken.has(p.id))
-      .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+      .sort((a, b) => (watchedOrder.get(a.id) ?? 999) - (watchedOrder.get(b.id) ?? 999));
 
     if ($('mywatchlistcount')) {
       $('mywatchlistcount').textContent = scoredWatched.length ? scoredWatched.length + ' players' : 'Empty';
@@ -483,7 +676,7 @@
     const myRoster = getMyRosterPlayers(global.state.log, byId, global.state.settings.slot, global.state.settings.teams, global.state.settings.mode);
     const order = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
 
-    $('leftwatchlist').innerHTML = scoredWatched.map(p => {
+    $('leftwatchlist').innerHTML = scoredWatched.map((p, idx) => {
       const posClass = order.includes(p.pos) ? p.pos : 'other';
       const byeClash = getByeClashStatus(p, myRoster);
       let byeHtml = p.bye ? '<span class="bye">bye ' + p.bye + '</span>' : '<span class="bye">—</span>';
@@ -495,12 +688,13 @@
         byeHtml = '<span class="bye" style="color:var(--warn); font-weight:600" title="Bye coincides with ' + names + '">' + p.bye + '</span>';
       }
 
-      const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta" style="font-size:11.5px; font-weight:600">' + p.team + '</span>' : '';
+      const teamBadge = (p.team && p.team !== '—') ? ' <span class="meta team-meta">' + p.team + '</span>' : '';
       const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
       const rookieBadge = p.rookie ? '<span class="rookietag">R' + rookieRankStr + '</span>' : '';
 
-      return '<div class="rosteritem" style="padding:4px 0">'
-        + '<button type="button" class="watchbtn active" title="Remove from Watchlist" onclick="toggleWatch(' + p.id + ', event)" style="font-size:13px">★</button>'
+      return '<div class="watchlist-item" draggable="true" title="Drag to reorder priority" ondragstart="onWatchDragStart(event, ' + p.id + ')" ondragover="onWatchDragOver(event)" ondragleave="onWatchDragLeave(event)" ondrop="onWatchDrop(event, ' + p.id + ')" ondragend="onWatchDragEnd(event)">'
+        + '<span class="watch-rank-num">#' + (idx + 1) + '</span>'
+        + '<button type="button" class="watchbtn active" title="Remove from Watchlist" onclick="toggleWatch(' + p.id + ', event)">★</button>'
         + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
         + '<span class="pname" onclick="showPlayer(' + p.id + ')" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">' + p.name + rookieBadge + '</span>'
         + teamBadge
@@ -556,11 +750,29 @@
   let returnToBoardOnClose = false;
   let boardHighlightFilter = 'ALL';
   let boardDensity = 'normal';
+  try {
+    const savedDensity = localStorage.getItem('fantasy_drafter_board_density');
+    if (savedDensity === 'compact' || savedDensity === 'normal') {
+      boardDensity = savedDensity;
+    }
+  } catch (e) {}
   let boardActiveTab = 'grid';
   let summarySortKey = 'rank';
   let summarySortAsc = true;
   let expandedTeamSlot = null;
   let wasDraftComplete = false;
+  let strategyThreatsCollapsed = false;
+  try {
+    strategyThreatsCollapsed = (localStorage.getItem('fantasy_drafter_threats_collapsed') === 'true');
+  } catch (e) {}
+
+  function toggleStrategyThreats() {
+    strategyThreatsCollapsed = !strategyThreatsCollapsed;
+    try {
+      localStorage.setItem('fantasy_drafter_threats_collapsed', String(strategyThreatsCollapsed));
+    } catch (e) {}
+    renderDraftBoardModalView();
+  }
 
   function closeModal() {
     isBoardModalOpen = false;
@@ -635,9 +847,36 @@
     renderDraftBoardModalView();
   }
 
-  function toggleBoardDensity() {
-    boardDensity = (boardDensity === 'normal' ? 'compact' : 'normal');
+  function setBoardDensity(density) {
+    if (density !== 'normal' && density !== 'compact') return;
+    boardDensity = density;
+    try {
+      localStorage.setItem('fantasy_drafter_board_density', density);
+    } catch (e) {}
+
+    const container = $('board_container');
+    let prevRatioX = 0;
+    let prevRatioY = 0;
+    if (container) {
+      const maxScrollX = container.scrollWidth - container.clientWidth;
+      const maxScrollY = container.scrollHeight - container.clientHeight;
+      prevRatioX = maxScrollX > 0 ? (container.scrollLeft / maxScrollX) : 0;
+      prevRatioY = maxScrollY > 0 ? (container.scrollTop / maxScrollY) : 0;
+    }
+
     renderDraftBoardModalView();
+
+    const newContainer = $('board_container');
+    if (newContainer) {
+      const newMaxScrollX = newContainer.scrollWidth - newContainer.clientWidth;
+      const newMaxScrollY = newContainer.scrollHeight - newContainer.clientHeight;
+      if (newMaxScrollX > 0) newContainer.scrollLeft = Math.round(prevRatioX * newMaxScrollX);
+      if (newMaxScrollY > 0) newContainer.scrollTop = Math.round(prevRatioY * newMaxScrollY);
+    }
+  }
+
+  function toggleBoardDensity() {
+    setBoardDensity(boardDensity === 'normal' ? 'compact' : 'normal');
   }
 
   function setSummarySort(key) {
@@ -734,7 +973,10 @@
         return '<button type="button" class="board-filter-btn' + customClass + activeClass + '" onclick="setBoardFilter(\'' + f.id + '\')">' + f.label + '</button>';
       }).join('');
 
-      const densityBtnLabel = (boardDensity === 'normal') ? '🗜️ Compact' : '👁️ Normal';
+      const densityGroupHtml = '<div class="board-density-toggle" role="group" aria-label="Board density">'
+        + '<button type="button" class="board-density-btn' + (boardDensity === 'normal' ? ' active' : '') + '" onclick="setBoardDensity(\'normal\')" title="Normal Density View">👁️ Normal</button>'
+        + '<button type="button" class="board-density-btn' + (boardDensity === 'compact' ? ' active' : '') + '" onclick="setBoardDensity(\'compact\')" title="Compact Density View">🗜️ Compact</button>'
+        + '</div>';
 
       toolbarActionsHtml = '<div class="board-filters">'
         + '<span class="meta" style="font-size:12px; margin-right:4px">Highlight:</span>'
@@ -742,7 +984,7 @@
         + '</div>'
         + '<div class="board-actions">'
         + (!isComplete ? '<button type="button" class="act" onclick="scrollBoardToCurrentPick(true)" style="font-size:11.5px; padding:3px 8px; font-weight:600; color:var(--accent); border-color:var(--accent)">⚡ Jump to On-Clock</button>' : '')
-        + '<button type="button" class="act" onclick="toggleBoardDensity()" style="font-size:11.5px; padding:3px 8px">' + densityBtnLabel + '</button>'
+        + densityGroupHtml
         + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-size:11.5px; padding:3px 10px; font-weight:700">Done</button>'
         + '</div>';
     } else if (boardActiveTab === 'strategy') {
@@ -957,222 +1199,360 @@
         + '</table>'
         + '</div>';
     } else if (boardActiveTab === 'strategy') {
-      const taken = (typeof takenMap === 'function') ? takenMap() : (typeof global.takenMap === 'function' ? global.takenMap() : new Map());
-      const allScored = (typeof scored === 'function') ? scored() : (Array.isArray(global.PLAYERS) ? global.PLAYERS : []);
-      const availablePlayers = allScored.filter(p => p && p.id != null && !taken.has(p.id));
+      try {
+        const taken = (typeof takenMap === 'function') ? takenMap() : (typeof global.takenMap === 'function' ? global.takenMap() : new Map());
+        const allScored = (typeof scored === 'function') ? scored() : (Array.isArray(global.PLAYERS) ? global.PLAYERS : []);
+        const availablePlayers = allScored.filter(p => p && p.id != null && !taken.has(p.id));
 
-      const strat = (typeof analyzeLiveDraftStrategy === 'function')
-        ? analyzeLiveDraftStrategy({
-          teams: s.teams,
-          rounds: s.rounds,
-          mode: s.mode,
-          log: global.state.log,
-          keepers: global.state.keepers,
-          tradedPicks: global.state.tradedPicks,
-          teamNames: s.teamNames,
-          mySlot: s.slot,
-          currentPickNum: pick,
-          playersLookup: byId,
-          rosterSlots: s.rosterSlots,
-          scoringSettings: { blend: s.blend / 100, qbFormat: s.qbFormat, scoring: s.scoring, tePremium: s.teprem },
-          availablePlayers: availablePlayers,
-          watchlist: global.state.watchlist || []
-        })
-        : null;
+        const strat = (typeof analyzeLiveDraftStrategy === 'function')
+          ? analyzeLiveDraftStrategy({
+            teams: s.teams,
+            rounds: s.rounds,
+            mode: s.mode,
+            log: global.state.log,
+            keepers: global.state.keepers,
+            tradedPicks: global.state.tradedPicks,
+            teamNames: s.teamNames,
+            mySlot: s.slot,
+            currentPickNum: pick,
+            playersLookup: byId,
+            rosterSlots: s.rosterSlots,
+            scoringSettings: { blend: s.blend / 100, qbFormat: s.qbFormat, scoring: s.scoring, tePremium: s.teprem },
+            availablePlayers: availablePlayers,
+            watchlist: global.state.watchlist || []
+          })
+          : null;
 
-      if (!strat) return;
+        if (!strat) {
+          mainViewHtml = '<div class="strategy-container"><div class="strategy-banner"><div><h4 style="margin:0; font-size:15px; color:var(--warn)">Draft strategy is currently unavailable.</h4><div style="font-size:12px; color:var(--dim); margin-top:4px">Check league settings or return to Board Grid.</div></div><button type="button" class="act primary" onclick="setBoardActiveTab(\'grid\')">Return to Board Grid</button></div></div>';
+        } else {
+          const modalScarcity = (typeof getTierScarcity === 'function')
+            ? getTierScarcity(availablePlayers, taken, null)
+            : null;
 
-      // Banner
-      let bannerHtml = '';
-      if (strat.isOnClock) {
-        bannerHtml = '<div class="strategy-banner on-clock">'
-          + '<div>'
-          + '<h4 style="margin:0; font-size:16px; color:var(--good); display:flex; align-items:center; gap:6px">⚡ YOU ARE ON THE CLOCK! (Pick #' + pick + ')</h4>'
-          + '<div style="font-size:12px; color:#cbd5e1; margin-top:2px">It is your turn to pick. Check your top recommended targets below or view the player pool.</div>'
-          + '</div>'
-          + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-weight:700">Make Pick ➔</button>'
-          + '</div>';
-      } else if (strat.isComplete) {
-        bannerHtml = '<div class="strategy-banner">'
-          + '<div>'
-          + '<h4 style="margin:0; font-size:15px; color:var(--good)">🏆 Draft Complete</h4>'
-          + '<div style="font-size:12px; color:#cbd5e1">All ' + totalPicks + ' picks have been drafted. Switch to the League Value & Grades tab to view full team rankings and superlatives.</div>'
-          + '</div>'
-          + '<button type="button" class="act primary" onclick="setBoardActiveTab(\'summary\')" style="font-weight:700">View Final Rankings ➔</button>'
-          + '</div>';
-      } else {
-        bannerHtml = '<div class="strategy-banner">'
-          + '<div>'
-          + '<h4 style="margin:0; font-size:15px; color:var(--text)">⏳ ' + strat.picksUntilUserTurn + ' Pick' + (strat.picksUntilUserTurn === 1 ? '' : 's') + ' Until Your Turn</h4>'
-          + '<div style="font-size:12px; color:var(--dim); margin-top:2px">Your next turn is <strong style="color:var(--accent)">Pick #' + strat.nextUserPick + ' (' + fmtPick(strat.nextUserPick, s.teams) + ')</strong> · Currently on clock: <strong style="color:var(--text)">' + (onClockTeam ? onClockTeam.name : 'Pick #' + pick) + '</strong></div>'
-          + '</div>'
-          + '</div>';
-      }
+          // Banner
+          let bannerHtml = '';
+          if (strat.isOnClock) {
+            let cliffAlertHtml = '';
+            if (modalScarcity && strat.recommendedTargets && strat.recommendedTargets.length > 0) {
+              const topScarcityTarget = strat.recommendedTargets.find(t => {
+                const alert = (modalScarcity.playerAlerts) ? modalScarcity.playerAlerts.get(t.id) : null;
+                return alert && alert.isLast;
+              }) || strat.recommendedTargets.find(t => (modalScarcity.playerAlerts && modalScarcity.playerAlerts.has(t.id)));
 
-      // Opponent Threats
-      let threatsHtml = '';
-      if (strat.opponentThreats.length > 0) {
-        const cardsHtml = strat.opponentThreats.map(t => {
-          const needsHtml = t.urgentNeeds.map(n => {
-            const posUpper = (n.pos || '').toUpperCase();
-            const posBadgeClass = (posUpper === 'DST' || posUpper === 'DEF' || posUpper === 'D/ST') ? 'DST' : posUpper;
-            return '<span class="pos ' + posBadgeClass + '" style="font-size:9.5px; font-weight:800; padding:1px 5px; border-radius:3px">' + n.pos + '</span>';
-          }).join('') || '<span style="font-size:10px; color:var(--dim)">Depth / Bench</span>';
-
-          return '<div class="threat-card">'
-            + '<div class="threat-card-top">'
-            + '<span style="font-weight:800; color:var(--accent)">' + t.pickFmt + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">(#' + t.overall + ')</span></span>'
-            + '<span style="font-size:10px; color:var(--dim)">Slot ' + t.slot + '</span>'
-            + '</div>'
-            + '<div class="threat-card-team">' + t.teamName + '</div>'
-            + '<div style="font-size:10px; color:var(--dim); margin-top:2px">Target Needs:</div>'
-            + '<div class="threat-needs-list">' + needsHtml + '</div>'
-            + '</div>';
-        }).join('');
-
-        const dangersHtml = strat.runDangers.map(d => {
-          return '<span class="threat-danger-badge">🚨 ' + d.message + '</span>';
-        }).join('');
-
-        threatsHtml = '<div class="threat-timeline-wrapper">'
-          + '<div class="strategy-section-title">🛡️ Opponents Drafting Before Your Turn (' + strat.opponentThreats.length + ' Picks Ahead)</div>'
-          + '<div class="threat-timeline">' + cardsHtml + '</div>'
-          + (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
-          + '</div>';
-      }
-
-      // User Needs Grid
-      const needsCardsHtml = strat.userNeeds.map(n => {
-        let statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
-        let barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
-        let barColor = (n.urgency === 'CRITICAL') ? 'var(--qb)' : (n.urgency === 'NEEDED' ? 'var(--warn)' : 'var(--good)');
-
-        return '<div class="need-card">'
-          + '<div class="need-card-header">'
-          + '<span class="pos ' + (n.pos === 'DST' ? 'DST' : n.pos) + '" style="font-size:10px">' + n.pos + '</span>'
-          + '<span class="' + statusCls + '">' + n.label + '</span>'
-          + '</div>'
-          + '<div style="font-size:13px; font-weight:800; color:var(--text)">' + n.filled + ' / ' + n.baseReq + ' <span style="font-size:11px; font-weight:normal; color:var(--dim)">starters</span></div>'
-          + '<div style="background:rgba(255,255,255,0.08); height:4px; border-radius:2px; overflow:hidden"><div style="background:' + barColor + '; width:' + barPct + '%; height:100%"></div></div>'
-          + '</div>';
-      }).join('');
-
-      // Positional Targets: Top 5 BPA per Position
-      let targetsHtml = '';
-      if (strat.targetsByPosition) {
-        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
-        const posTitles = {
-          QB: 'Quarterbacks',
-          RB: 'Running Backs',
-          WR: 'Wide Receivers',
-          TE: 'Tight Ends',
-          K: 'Kickers',
-          DST: 'Defenses'
-        };
-
-        const currentRound = Math.ceil(pick / s.teams);
-        const isLateRounds = (currentRound >= s.rounds - 2);
-        const visiblePositions = posOrder.filter(pos => {
-          if (pos === 'K' || pos === 'DST') {
-            return isLateRounds || (strat.userNeeds.some(n => n.pos === pos && (n.urgency === 'CRITICAL' || n.urgency === 'NEEDED')));
-          }
-          return true;
-        });
-
-        const posColumnsHtml = visiblePositions.map(pos => {
-          const pList = strat.targetsByPosition[pos] || [];
-          const needInfo = strat.userNeeds.find(n => n.pos === pos) || { urgency: 'FILLED', label: 'Filled' };
-          const isCritical = (needInfo.urgency === 'CRITICAL' || needInfo.urgency === 'NEEDED');
-          const posClass = (pos === 'DST') ? 'DST' : pos;
-          const colClass = isCritical ? 'pos-target-col urgent' : 'pos-target-col';
-
-          let rowsHtml = '';
-          if (pList.length === 0) {
-            rowsHtml = '<div style="font-size:11px; color:var(--dim); padding:10px 0; text-align:center">No available players</div>';
-          } else {
-            rowsHtml = pList.map((p, idx) => {
-              const isW = Boolean(p.isWatched || (global.state.watchlist && global.state.watchlist.includes(p.id)));
-              const starIcon = isW ? '★' : '☆';
-              const starClass = isW ? 'target-star-btn active' : 'target-star-btn';
-              const starTitle = isW ? 'In Watchlist (Click to remove)' : 'Add to Watchlist';
-
-              let byeHtml = '';
-              if (p.bye) {
-                const bClash = p.byeClash || { type: 'none' };
-                if (bClash.type === 'same-pos') {
-                  const names = (bClash.samePos || []).map(x => x.name).join(', ');
-                  const tip = 'Same-position bye clash with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
-                  byeHtml = '<span class="target-bye-pill clash" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ Wk ' + p.bye + '</span>';
-                } else if (bClash.type === 'other-pos') {
-                  const names = (bClash.otherPos || []).map(x => x.name).join(', ');
-                  const tip = 'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
-                  byeHtml = '<span class="target-bye-pill overlap" title="' + tip.replace(/"/g, '&quot;') + '">⚡ Wk ' + p.bye + '</span>';
-                } else {
-                  byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
-                }
-              } else {
-                byeHtml = '<span class="target-bye-pill normal">—</span>';
+              if (topScarcityTarget) {
+                const a = modalScarcity.playerAlerts.get(topScarcityTarget.id);
+                cliffAlertHtml = '<div style="font-size:12px; color:#fbbf24; margin-top:4px; display:flex; align-items:center; gap:4px">⚠️ <strong>Tier Cliff Alert:</strong> ' + topScarcityTarget.name + ' is ' + (a.isLast ? 'the last available' : 'one of only ' + a.remaining + ' remaining') + ' Tier ' + a.tier + ' ' + topScarcityTarget.pos + '!</div>';
               }
+            }
 
-              const surplusTag = (p.valSurplus > 0)
-                ? ('<span style="color:var(--good); font-size:10px; font-weight:700">+' + p.valSurplus + ' vs ADP</span>')
-                : (p.adp ? ('<span style="color:var(--dim); font-size:10px">ADP ' + p.adp + '</span>') : '');
+            bannerHtml = '<div class="strategy-banner on-clock">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:16px; color:var(--good); display:flex; align-items:center; gap:6px">⚡ YOU ARE ON THE CLOCK! (Pick #' + pick + ')</h4>'
+              + '<div style="font-size:12px; color:#cbd5e1; margin-top:2px">It is your turn to pick. Check your top recommended targets below or view the player pool.</div>'
+              + cliffAlertHtml
+              + '</div>'
+              + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-weight:700">Make Pick ➔</button>'
+              + '</div>';
+          } else if (strat.isComplete) {
+            bannerHtml = '<div class="strategy-banner">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:15px; color:var(--good)">🏆 Draft Complete</h4>'
+              + '<div style="font-size:12px; color:#cbd5e1">All ' + totalPicks + ' picks have been drafted. Switch to the League Value & Grades tab to view full team rankings and superlatives.</div>'
+              + '</div>'
+              + '<button type="button" class="act primary" onclick="setBoardActiveTab(\'summary\')" style="font-weight:700">View Final Rankings ➔</button>'
+              + '</div>';
+          } else if (strat.nextUserPick != null) {
+            bannerHtml = '<div class="strategy-banner">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:15px; color:var(--text)">⏳ ' + strat.picksUntilUserTurn + ' Pick' + (strat.picksUntilUserTurn === 1 ? '' : 's') + ' Until Your Turn</h4>'
+              + '<div style="font-size:12px; color:var(--dim); margin-top:2px">Your next turn is <strong style="color:var(--accent)">Pick #' + strat.nextUserPick + ' (' + fmtPick(strat.nextUserPick, s.teams) + ')</strong> · Currently on clock: <strong style="color:var(--text)">' + (onClockTeam ? onClockTeam.name : 'Pick #' + pick) + '</strong></div>'
+              + '</div>'
+              + '</div>';
+          } else {
+            bannerHtml = '<div class="strategy-banner">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:15px; color:var(--good)">🎉 All Your Team\'s Picks Are Complete</h4>'
+              + '<div style="font-size:12px; color:var(--dim); margin-top:2px">Your team roster has completed all scheduled draft rounds. Switch to League Value & Grades to view your final report card.</div>'
+              + '</div>'
+              + '<button type="button" class="act primary" onclick="setBoardActiveTab(\'summary\')" style="font-weight:700">View Final Rankings ➔</button>'
+              + '</div>';
+          }
 
-              const rookieTag = p.rookie ? '<span class="rookietag" style="font-size:8.5px; padding:0 3px">R</span>' : '';
+          // Opponent Threats
+          let threatsHtml = '';
+          if (strat.opponentThreats && strat.opponentThreats.length > 0) {
+            const cardsHtml = strat.opponentThreats.map(t => {
+              const needsHtml = t.urgentNeeds.map(n => {
+                const posUpper = (n.pos || '').toUpperCase();
+                const posBadgeClass = (posUpper === 'DST' || posUpper === 'DEF' || posUpper === 'D/ST') ? 'DST' : posUpper;
+                return '<span class="pos ' + posBadgeClass + '" style="font-size:9.5px; font-weight:800; padding:1px 5px; border-radius:3px">' + n.pos + '</span>';
+              }).join('') || '<span style="font-size:10px; color:var(--dim)">Depth / Bench</span>';
 
-              return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
-                + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'
-                + '<button type="button" class="' + starClass + '" title="' + starTitle + '" onclick="event.stopPropagation(); toggleWatch(' + p.id + '); renderDraftBoardModalView();">' + starIcon + '</button>'
-                + '<span class="target-rank-num">#' + (idx + 1) + '</span>'
-                + '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis">'
-                + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:4px">'
-                + '<span>' + p.name + '</span>'
-                + rookieTag
+              return '<div class="threat-card">'
+                + '<div class="threat-card-top">'
+                + '<span style="font-weight:800; color:var(--accent)">' + t.pickFmt + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">(#' + t.overall + ')</span></span>'
+                + '<span style="font-size:10px; color:var(--dim)">Slot ' + t.slot + '</span>'
                 + '</div>'
-                + '<div style="font-size:10px; color:var(--dim); display:flex; align-items:center; gap:4px; margin-top:1px">'
-                + '<span>' + (p.team || '—') + '</span>'
-                + '<span>·</span>'
-                + byeHtml
-                + '</div>'
-                + '</div>'
-                + '</div>'
-                + '<div style="text-align:right; flex-shrink:0">'
-                + '<div style="font-size:12px; font-weight:800; color:var(--accent)">' + p.score + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">pts</span></div>'
-                + '<div>' + surplusTag + '</div>'
-                + '</div>'
+                + '<div class="threat-card-team">' + t.teamName + '</div>'
+                + '<div style="font-size:10px; color:var(--dim); margin-top:2px">Target Needs:</div>'
+                + '<div class="threat-needs-list">' + needsHtml + '</div>'
                 + '</div>';
             }).join('');
+
+            const dangersHtml = (strat.runDangers || []).map(d => {
+              return '<span class="threat-danger-badge">🚨 ' + d.message + '</span>';
+            }).join('');
+
+            const threatTitle = strat.isOnClock
+              ? ('🛡️ Anticipated Opponents Ahead (' + strat.opponentThreats.length + ' Picks Until Pick #' + strat.subsequentUserPick + ')')
+              : ('🛡️ Opponents Drafting Before Your Turn (' + strat.opponentThreats.length + ' Picks Ahead)');
+
+            const collapseBtnLabel = strategyThreatsCollapsed
+              ? ('▶ Expand (' + strat.opponentThreats.length + ' Picks)')
+              : '▼ Collapse';
+
+            threatsHtml = '<div class="threat-timeline-wrapper">'
+              + '<div class="threat-header" onclick="toggleStrategyThreats()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none">'
+              + '<div class="strategy-section-title" style="margin-bottom:0">' + threatTitle + '</div>'
+              + '<button type="button" class="act" style="font-size:11px; padding:2px 8px" onclick="event.stopPropagation(); toggleStrategyThreats()">' + collapseBtnLabel + '</button>'
+              + '</div>'
+              + (!strategyThreatsCollapsed ? (
+                  '<div class="threat-timeline" style="margin-top:10px">' + cardsHtml + '</div>'
+                  + (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
+                ) : '')
+              + '</div>';
+          } else if (strat.isOnClock && strat.subsequentUserPick != null && strat.subsequentUserPick === pick + 1) {
+            threatsHtml = '<div class="threat-timeline-wrapper" style="padding:10px 14px">'
+              + '<div style="font-size:12.5px; font-weight:700; color:var(--good); display:flex; align-items:center; gap:6px">'
+              + '⚡ Back-to-Back Picks! You also have the next pick: #' + strat.subsequentUserPick + ' (' + fmtPick(strat.subsequentUserPick, s.teams) + '). No opponents draft between your turns.'
+              + '</div>'
+              + '</div>';
           }
 
-          let statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
+          // User Needs Grid
+          const needsCardsHtml = (strat.userNeeds || []).map(n => {
+            let statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
+            let barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
+            let barColor = (n.urgency === 'CRITICAL') ? 'var(--qb)' : (n.urgency === 'NEEDED' ? 'var(--warn)' : 'var(--good)');
 
-          return '<div class="' + colClass + '">'
-            + '<div class="pos-target-header">'
-            + '<div style="display:flex; align-items:center; gap:5px">'
-            + '<span class="pos ' + posClass + '" style="font-size:10px; padding:1px 5px">' + pos + '</span>'
-            + '<span style="font-size:12px; font-weight:700; color:var(--text)">' + posTitles[pos] + '</span>'
+            return '<div class="need-card">'
+              + '<div class="need-card-header">'
+              + '<span class="pos ' + (n.pos === 'DST' ? 'DST' : n.pos) + '" style="font-size:10px">' + n.pos + '</span>'
+              + '<span class="' + statusCls + '">' + n.label + '</span>'
+              + '</div>'
+              + '<div style="font-size:13px; font-weight:800; color:var(--text)">' + n.filled + ' / ' + n.baseReq + ' <span style="font-size:11px; font-weight:normal; color:var(--dim)">starters</span></div>'
+              + '<div style="background:rgba(255,255,255,0.08); height:4px; border-radius:2px; overflow:hidden"><div style="background:' + barColor + '; width:' + barPct + '%; height:100%"></div></div>'
+              + '</div>';
+          }).join('');
+
+          // Positional Targets: Top 5 BPA per Position
+          let targetsHtml = '';
+          if (strat.targetsByPosition) {
+            const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+            const posTitles = {
+              QB: 'Quarterbacks',
+              RB: 'Running Backs',
+              WR: 'Wide Receivers',
+              TE: 'Tight Ends',
+              K: 'Kickers',
+              DST: 'Defenses'
+            };
+
+            const currentRound = Math.ceil(pick / s.teams);
+            const isLateRounds = (currentRound >= s.rounds - 2);
+            const visiblePositions = posOrder.filter(pos => {
+              if (pos === 'K' || pos === 'DST') {
+                return isLateRounds || (strat.userNeeds.some(n => n.pos === pos && (n.urgency === 'CRITICAL' || n.urgency === 'NEEDED')));
+              }
+              return true;
+            });
+
+            const posColumnsHtml = visiblePositions.map(pos => {
+              const pList = strat.targetsByPosition[pos] || [];
+              const needInfo = strat.userNeeds.find(n => n.pos === pos) || { urgency: 'FILLED', label: 'Filled' };
+              const isCritical = (needInfo.urgency === 'CRITICAL' || needInfo.urgency === 'NEEDED');
+              const posClass = (pos === 'DST') ? 'DST' : pos;
+              const colClass = isCritical ? 'pos-target-col urgent' : 'pos-target-col';
+
+              let rowsHtml = '';
+              if (pList.length === 0) {
+                rowsHtml = '<div style="font-size:11px; color:var(--dim); padding:10px 0; text-align:center">No available players</div>';
+              } else {
+                rowsHtml = pList.map((p, idx) => {
+                  const isW = Boolean(p.isWatched || (global.state.watchlist && global.state.watchlist.includes(p.id)));
+                  const starIcon = isW ? '★' : '☆';
+                  const starClass = isW ? 'target-star-btn active' : 'target-star-btn';
+                  const starTitle = isW ? 'In Watchlist (Click to remove)' : 'Add to Watchlist';
+
+                  let byeHtml = '';
+                  if (p.bye) {
+                    const bClash = p.byeClash || { type: 'none' };
+                    if (bClash.type === 'same-pos') {
+                      const names = (bClash.samePos || []).map(x => x.name).join(', ');
+                      const tip = 'Same-position bye clash with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                      byeHtml = '<span class="target-bye-pill clash" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ Wk ' + p.bye + '</span>';
+                    } else if (bClash.type === 'other-pos') {
+                      const names = (bClash.otherPos || []).map(x => x.name).join(', ');
+                      const tip = 'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                      byeHtml = '<span class="target-bye-pill overlap" title="' + tip.replace(/"/g, '&quot;') + '">⚡ Wk ' + p.bye + '</span>';
+                    } else {
+                      byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
+                    }
+                  } else {
+                    byeHtml = '<span class="target-bye-pill normal">—</span>';
+                  }
+
+                  const surplusTag = (p.valSurplus > 0)
+                    ? ('<span style="color:var(--good); font-size:10px; font-weight:700">+' + p.valSurplus + ' vs ADP</span>')
+                    : (p.adp ? ('<span style="color:var(--dim); font-size:10px">ADP ' + p.adp + '</span>') : '');
+
+                  const pAlert = (modalScarcity && modalScarcity.playerAlerts) ? modalScarcity.playerAlerts.get(p.id) : null;
+                  const scarcityTag = pAlert ? ' <span class="scarcity-tag' + (pAlert.isLast ? ' last-in-tier' : '') + '" style="font-size:8.5px; padding:0 4px">' + (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) + '</span>' : '';
+                  const tierBadge = p.posTier ? ' ' + formatTierPill(p.posTier) : '';
+                  const rookieTag = p.rookie ? ' <span class="rookietag">R</span>' : '';
+
+                  return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
+                    + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'
+                    + '<button type="button" class="' + starClass + '" title="' + starTitle + '" onclick="event.stopPropagation(); toggleWatch(' + p.id + '); renderDraftBoardModalView();">' + starIcon + '</button>'
+                    + '<span class="target-rank-num">#' + (idx + 1) + '</span>'
+                    + '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis">'
+                    + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:4px">'
+                    + '<span>' + p.name + '</span>'
+                    + tierBadge
+                    + scarcityTag
+                    + rookieTag
+                    + '</div>'
+                    + '<div style="font-size:10px; color:var(--dim); display:flex; align-items:center; gap:4px; margin-top:1px">'
+                    + '<span>' + (p.team || '—') + '</span>'
+                    + '<span>·</span>'
+                    + byeHtml
+                    + '</div>'
+                    + '</div>'
+                    + '</div>'
+                    + '<div style="text-align:right; flex-shrink:0">'
+                    + '<div style="font-size:12px; font-weight:800; color:var(--accent)">' + p.score + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">pts</span></div>'
+                    + '<div>' + surplusTag + '</div>'
+                    + '</div>'
+                    + '</div>';
+                }).join('');
+              }
+
+              let statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
+
+              return '<div class="' + colClass + '">'
+                + '<div class="pos-target-header">'
+                + '<div style="display:flex; align-items:center; gap:5px">'
+                + '<span class="pos ' + posClass + '" style="font-size:10px; padding:1px 5px">' + pos + '</span>'
+                + '<span style="font-size:12px; font-weight:700; color:var(--text)">' + posTitles[pos] + '</span>'
+                + '</div>'
+                + '<span class="' + statusPillCls + '">' + needInfo.label + '</span>'
+                + '</div>'
+                + '<div class="pos-target-list">' + rowsHtml + '</div>'
+                + '</div>';
+            }).join('');
+
+            targetsHtml = '<div>'
+              + '<div class="strategy-section-title">🎯 Best Available Players by Position (Top 5 per Position)</div>'
+              + '<div class="pos-targets-grid">' + posColumnsHtml + '</div>'
+              + '</div>';
+          }
+
+          // Watchlist Section below Best Available Players
+          const myRoster = getMyRosterPlayers(global.state.log, byId, s.slot, s.teams, s.mode);
+          const watchedOrder = new Map();
+          (global.state.watchlist || []).forEach((id, idx) => watchedOrder.set(id, idx));
+
+          const scoredWatched = allScored
+            .filter(p => p && p.id != null && isWatched(global.state.watchlist, p.id) && !taken.has(p.id))
+            .sort((a, b) => (watchedOrder.get(a.id) ?? 999) - (watchedOrder.get(b.id) ?? 999));
+
+          let watchlistCardsHtml = '';
+          if (scoredWatched.length === 0) {
+            watchlistCardsHtml = '<div class="strategy-empty-watchlist">'
+              + '⭐ No available players in your watchlist. Click the ☆ star on any player in the recommendations above or the main board to prioritize them here.'
+              + '</div>';
+          } else {
+            watchlistCardsHtml = '<div class="strategy-watchlist-grid">'
+              + scoredWatched.map((p, idx) => {
+                const posUpper = (p.pos || '').toUpperCase();
+                const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper) ? posUpper.toLowerCase() : 'dst';
+                const byeClash = getByeClashStatus(p, myRoster);
+                let byeHtml = '<span class="target-bye-pill normal">—</span>';
+                if (p.bye) {
+                  if (byeClash && byeClash.type === 'same-pos') {
+                    const names = (byeClash.samePos || []).map(x => x.name).join(', ');
+                    const tip = 'Same-position bye clash with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                    byeHtml = '<span class="target-bye-pill clash" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ Wk ' + p.bye + '</span>';
+                  } else if (byeClash && byeClash.type === 'other-pos') {
+                    const names = (byeClash.otherPos || []).map(x => x.name).join(', ');
+                    const tip = 'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                    byeHtml = '<span class="target-bye-pill overlap" title="' + tip.replace(/"/g, '&quot;') + '">⚡ Wk ' + p.bye + '</span>';
+                  } else {
+                    byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
+                  }
+                }
+
+                const surplus = (p.adp != null && strat.nextUserPick != null) ? Math.round(strat.nextUserPick - p.adp) : 0;
+                const surplusHtml = (surplus > 0)
+                  ? ('<span style="color:var(--good); font-weight:700">+' + surplus + ' vs ADP</span>')
+                  : (p.adp ? ('<span>ADP ' + p.adp + '</span>') : '');
+
+                const pAlert = (modalScarcity && modalScarcity.playerAlerts) ? modalScarcity.playerAlerts.get(p.id) : null;
+                const scarcityTag = pAlert ? (' <span class="scarcity-tag' + (pAlert.isLast ? ' last-in-tier' : '') + '" style="font-size:8.5px; padding:0 4px">' + (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) + '</span>') : '';
+                const tierBadge = p.posTier ? (' ' + formatTierPill(p.posTier)) : '';
+                const rookieBadge = p.rookie ? ' <span class="rookietag">R</span>' : '';
+
+                return '<div class="watchlist-item strategy-watch-card" draggable="true" title="Drag to reorder priority" ondragstart="onWatchDragStart(event, ' + p.id + ')" ondragover="onWatchDragOver(event)" ondragleave="onWatchDragLeave(event)" ondrop="onWatchDrop(event, ' + p.id + ')" ondragend="onWatchDragEnd(event)">'
+                  + '<span class="watch-drag-grip" title="Drag to reorder priority" style="cursor:grab; color:var(--dim); font-size:13px">⠿</span>'
+                  + '<span class="watch-rank-num">#' + (idx + 1) + '</span>'
+                  + '<button type="button" class="target-star-btn active" title="Remove from Watchlist" onclick="event.stopPropagation(); toggleWatch(' + p.id + ', event);">★</button>'
+                  + '<span class="pos ' + posClass + '" style="font-size:10px; padding:1px 5px">' + p.pos + '</span>'
+                  + '<div style="cursor:pointer; flex:1; min-width:0; overflow:hidden" onclick="showPlayer(' + p.id + ')">'
+                  + '<div style="display:flex; align-items:center; gap:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">'
+                  + '<span style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">' + p.name + '</span>'
+                  + tierBadge
+                  + scarcityTag
+                  + rookieBadge
+                  + '</div>'
+                  + '<div style="font-size:10.5px; color:var(--dim); display:flex; align-items:center; gap:5px; margin-top:1px">'
+                  + '<span>' + (p.team || '—') + '</span>'
+                  + '<span>·</span>'
+                  + byeHtml
+                  + (surplusHtml ? '<span>·</span>' + surplusHtml : '')
+                  + '</div>'
+                  + '</div>'
+                  + '<div style="text-align:right; flex-shrink:0">'
+                  + '<div style="font-size:12px; font-weight:800; color:var(--accent)">' + (p.score != null ? Math.round(p.score * 10) / 10 : '—') + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">pts</span></div>'
+                  + '</div>'
+                  + '</div>';
+              }).join('')
+              + '</div>';
+          }
+
+          const watchlistHtml = '<div class="strategy-watchlist-section">'
+            + '<div class="strategy-section-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px">'
+            + '<span>⭐ Your Watchlist (' + scoredWatched.length + ' Available Players · Drag to Reorder)</span>'
+            + '<span style="font-size:11px; font-weight:normal; color:var(--dim)">Targets prioritized in order across your board</span>'
             + '</div>'
-            + '<span class="' + statusPillCls + '">' + needInfo.label + '</span>'
-            + '</div>'
-            + '<div class="pos-target-list">' + rowsHtml + '</div>'
+            + watchlistCardsHtml
             + '</div>';
-        }).join('');
 
-        targetsHtml = '<div>'
-          + '<div class="strategy-section-title">🎯 Best Available Players by Position (Top 5 per Position)</div>'
-          + '<div class="pos-targets-grid">' + posColumnsHtml + '</div>'
-          + '</div>';
+          mainViewHtml = '<div class="strategy-container">'
+            + bannerHtml
+            + threatsHtml
+            + '<div>'
+            + '<div class="strategy-section-title">📋 Your Team Starter Needs & Roster Health</div>'
+            + '<div class="needs-grid">' + needsCardsHtml + '</div>'
+            + '</div>'
+            + targetsHtml
+            + watchlistHtml
+            + '</div>';
+        }
+      } catch (err) {
+        console.error('Error rendering Live Strategy & Needs tab:', err);
+        mainViewHtml = '<div class="strategy-container"><div class="strategy-banner"><div><h4 style="margin:0; font-size:15px; color:var(--warn)">⚠️ Could not generate live strategy view (' + (err.message || 'unknown error') + ').</h4><div style="font-size:12px; color:var(--dim); margin-top:4px">You can switch back to the Board Grid or League Value tabs.</div></div><button type="button" class="act primary" onclick="setBoardActiveTab(\'grid\')">Return to Board Grid</button></div></div>';
       }
-
-      mainViewHtml = '<div class="strategy-container">'
-        + bannerHtml
-        + threatsHtml
-        + '<div>'
-        + '<div class="strategy-section-title">📋 Your Team Starter Needs & Roster Health</div>'
-        + '<div class="needs-grid">' + needsCardsHtml + '</div>'
-        + '</div>'
-        + targetsHtml
-        + '</div>';
     } else {
       // Summary View
       const summary = (typeof generateDraftSummaryAnalysis === 'function')
@@ -1344,6 +1724,157 @@
     $('overlay').classList.add('show');
   }
 
+  let injuryAccordionExpanded = false;
+
+  function toggleInjuryAccordion() {
+    injuryAccordionExpanded = !injuryAccordionExpanded;
+    const body = $('inj_accordion_body');
+    const arrow = $('inj_accordion_arrow');
+    if (body) body.classList.toggle('show', injuryAccordionExpanded);
+    if (arrow) arrow.textContent = injuryAccordionExpanded ? '▲' : '▼';
+  }
+  global.toggleInjuryAccordion = toggleInjuryAccordion;
+
+  function renderInjurySection(p) {
+    const refreshDate = (window.DRAFT_DATA && (window.DRAFT_DATA.injuriesUpdated || window.DRAFT_DATA.generated)) || 'latest update';
+    if (!p.injury || !p.injury.code) {
+      return '<div class="injury-accordion inactive">'
+        + '<div class="injury-header-inactive">'
+        + '<span class="injury-inactive-icon">🩺</span>'
+        + '<span class="injury-inactive-text">No injury reported as of ' + refreshDate + '</span>'
+        + '</div>'
+        + '</div>';
+    }
+
+    const inj = p.injury;
+    const c = (inj.code || 'Q').toLowerCase();
+    const returnText = inj.returnDate ? '<span class="inj-returndate">Est. Return: <b>' + inj.returnDate + '</b></span>' : '';
+    const partText = inj.type ? (inj.type + (inj.detail ? ' (' + inj.detail + ')' : '')) : (inj.detail || 'Undisclosed');
+    const comments = inj.longComment || inj.shortComment || 'No additional notes reported.';
+
+    return '<div class="injury-accordion active inj-theme-' + c + '">'
+      + '<div class="injury-header" onclick="toggleInjuryAccordion()">'
+      + '<div class="injury-header-left">'
+      + '<span class="injtag inj-' + c + '">' + inj.code + '</span>'
+      + '<span class="inj-title"><b>' + inj.status + ':</b> ' + partText + '</span>'
+      + returnText
+      + '</div>'
+      + '<span id="inj_accordion_arrow" class="dc-arrow">' + (injuryAccordionExpanded ? '▲' : '▼') + '</span>'
+      + '</div>'
+      + '<div id="inj_accordion_body" class="injury-body' + (injuryAccordionExpanded ? ' show' : '') + '">'
+      + '<div class="injury-comment">' + comments + '</div>'
+      + '<div class="injury-footer">Report Date: ' + (inj.date ? inj.date.split('T')[0] : refreshDate) + ' · Source: ESPN NFL Injury Report</div>'
+      + '</div>'
+      + '</div>';
+  }
+
+  let depthChartExpanded = false;
+
+  function toggleDepthChart() {
+    depthChartExpanded = !depthChartExpanded;
+    const body = $('dc_accordion_body');
+    const arrow = $('dc_accordion_arrow');
+    if (body) body.classList.toggle('show', depthChartExpanded);
+    if (arrow) arrow.textContent = depthChartExpanded ? '▲' : '▼';
+  }
+  global.toggleDepthChart = toggleDepthChart;
+
+  function renderDepthChart(p, taken) {
+    if (!p.team || p.team === 'FA') {
+      return '<div class="dc-accordion">'
+        + '<div class="dc-header" onclick="toggleDepthChart()">'
+        + '<h4>📊 Depth Chart (Free Agent)</h4>'
+        + '<span id="dc_accordion_arrow" class="dc-arrow">' + (depthChartExpanded ? '▲' : '▼') + '</span>'
+        + '</div>'
+        + '<div id="dc_accordion_body" class="dc-body' + (depthChartExpanded ? ' show' : '') + '">'
+        + '<div class="meta" style="font-size:12px">No NFL depth chart available for Free Agents.</div>'
+        + '</div></div>';
+    }
+
+    const teamDc = (window.DRAFT_DATA && window.DRAFT_DATA.depthCharts) ? window.DRAFT_DATA.depthCharts[p.team] : null;
+    if (!teamDc) {
+      return '<div class="dc-accordion">'
+        + '<div class="dc-header" onclick="toggleDepthChart()">'
+        + '<h4>📊 Depth Chart (' + p.team + ' Offense)</h4>'
+        + '<span id="dc_accordion_arrow" class="dc-arrow">' + (depthChartExpanded ? '▲' : '▼') + '</span>'
+        + '</div>'
+        + '<div id="dc_accordion_body" class="dc-body' + (depthChartExpanded ? ' show' : '') + '">'
+        + '<div class="meta" style="font-size:12px">Depth chart data not available for ' + p.team + '.</div>'
+        + '</div></div>';
+    }
+
+    const normName = (name) => String(name || '').toLowerCase().replace(/[.'’,-]/g, '').replace(/\b(jr|sr|ii|iii|iv|v)\b/g, '').replace(/\s+/g, ' ').trim();
+
+    const renderAthletePill = (ath) => {
+      const pid = ath.playerId;
+      const isCurrent = (pid != null && pid === p.id) || (normName(ath.name) === normName(p.name));
+      const isTaken = (pid != null && taken.has(pid));
+      const clickable = (pid != null);
+
+      let classes = 'dc-player';
+      if (clickable) classes += ' clickable';
+      if (isCurrent) classes += ' active-player';
+      if (isTaken) classes += ' taken';
+      else if (pid != null) classes += ' available';
+
+      let tag = '';
+      if (isCurrent) {
+        tag = '<span class="dc-tag active">ACTIVE</span>';
+      } else if (isTaken) {
+        tag = '<span class="dc-tag taken">TAKEN</span>';
+      } else if (pid != null) {
+        tag = '<span class="dc-tag ava">AVAIL</span>';
+      }
+
+      const inj = ath.injury || (pid != null && byId(pid) ? byId(pid).injury : null);
+      let injTag = '';
+      if (inj && inj.code) {
+        const c = inj.code;
+        const tip = (inj.status || 'Injured')
+          + (inj.type ? ': ' + inj.type : '')
+          + (inj.detail ? ' (' + inj.detail + ')' : '')
+          + (inj.returnDate ? ' - Est. Return: ' + inj.returnDate : '');
+        injTag = '<span class="dc-inj inj-' + c.toLowerCase() + '" title="' + tip.replace(/"/g, '&quot;') + '">' + c + '</span>';
+      }
+
+      const clickAttr = clickable ? ' onclick="showPlayer(' + pid + ')" title="Click to view ' + ath.name.replace(/"/g, '&quot;') + '"' : '';
+      return '<div class="' + classes + '"' + clickAttr + '>'
+        + '<span class="dc-rank">' + ath.rank + '</span>'
+        + '<span class="dc-name">' + ath.name + '</span>'
+        + injTag
+        + tag
+        + '</div>';
+    };
+
+    const renderRow = (label, badgeClass, athletes) => {
+      if (!athletes || !athletes.length) return '';
+      return '<div class="dc-pos-row">'
+        + '<span class="dc-pos-badge ' + badgeClass + '">' + label + '</span>'
+        + '<div class="dc-athletes-list">' + athletes.map(renderAthletePill).join('') + '</div>'
+        + '</div>';
+    };
+
+    let rowsHtml = '';
+    rowsHtml += renderRow('QB', 'qb', teamDc.qb);
+    rowsHtml += renderRow('RB', 'rb', teamDc.rb);
+    if (teamDc.wr) {
+      if (teamDc.wr.wr1 && teamDc.wr.wr1.length) rowsHtml += renderRow('WR1', 'wr', teamDc.wr.wr1);
+      if (teamDc.wr.wr2 && teamDc.wr.wr2.length) rowsHtml += renderRow('WR2', 'wr', teamDc.wr.wr2);
+      if (teamDc.wr.wr3 && teamDc.wr.wr3.length) rowsHtml += renderRow('WR3', 'wr', teamDc.wr.wr3);
+    }
+    rowsHtml += renderRow('TE', 'te', teamDc.te);
+    rowsHtml += renderRow('K', 'k', teamDc.pk);
+
+    return '<div class="dc-accordion">'
+      + '<div class="dc-header" onclick="toggleDepthChart()">'
+      + '<h4>📊 Depth Chart (' + p.team + ' Offense)</h4>'
+      + '<span id="dc_accordion_arrow" class="dc-arrow">' + (depthChartExpanded ? '▲' : '▼') + '</span>'
+      + '</div>'
+      + '<div id="dc_accordion_body" class="dc-body' + (depthChartExpanded ? ' show' : '') + '">'
+      + rowsHtml
+      + '</div></div>';
+  }
+
   function showPlayer(id) {
     const p = byId(id);
     if (!p) return;
@@ -1381,23 +1912,18 @@
       }
     }
 
-    const stats = [
-      ['Active Mode (' + (s.qbFormat === '1qb' ? '1QB' : 'SF') + ' ' + s.scoring.toUpperCase() + ')', activeScore != null ? activeScore.toFixed(1) + ' pts' : null],
-      ['Dynasty ' + (s.qbFormat === '1qb' ? '1QB' : 'SF'), activeDyn],
-      ['Redraft (' + s.scoring.toUpperCase() + ')', activeRed],
-      ['Dyn SF', p.dynSF], ['Dyn 1QB', p.dyn1QB],
-      ['1QB PPR', p.red_1qb_ppr], ['1QB Half', p.red_1qb_half], ['1QB Std', p.red_1qb_std],
-      ['SF PPR', p.red_sf_ppr], ['SF Half', p.red_sf_half], ['SF Std', p.red_sf_std],
-      ['Rookie Draft Rank', p.rookieRank ? '#' + p.rookieRank : (p.rookie ? 'Rookie' : null)],
-      ['ADP', p.adp ? p.adp.toFixed(0) : null], ['Age', p.age ? p.age + 'y' : null], ['Bye', p.bye ? 'Wk ' + p.bye : null],
-      ['ESPN', p.espn_ppr || p.espn_std], ['Yahoo', p.yahoo], ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std]
-    ].filter(x => x[1] != null)
+    const rawStats = (typeof formatPlayerStats === 'function')
+      ? formatPlayerStats(p, s, activeScore)
+      : [];
+
+    const stats = rawStats
       .map(x => '<span class="stat">' + x[0] + '<b>' + x[1] + '</b></span>').join('');
 
     const snapDate = window.DRAFT_DATA.extrasGenerated || window.DRAFT_DATA.generated || '';
     const blurb = p.blurb
       ? '<div class="blurb">' + p.blurb + '</div><div class="blurbnote">News snapshot from ' + snapDate + ' — use the links below for anything newer.</div>'
       : '<div class="blurbnote">No baked-in news for this player — use the live links below.</div>';
+    const depthChartHtml = renderDepthChart(p, taken);
     const sched = (window.DRAFT_DATA.schedules || {})[p.team];
     const schedHtml = sched
       ? '<h4>2026 Schedule</h4><div class="schedgrid">' + sched.map((opp, i) =>
@@ -1426,6 +1952,13 @@
       ? '<button type="button" class="act' + (watched ? ' primary' : '') + '" onclick="toggleWatch(' + p.id + '); showPlayer(' + p.id + ');" style="margin-left:auto; font-size:12px">' + (watched ? '★ In Watchlist' : '☆ Add to Watchlist') + '</button>'
       : '';
 
+    let headerInjBadge = '';
+    if (p.injury && p.injury.code) {
+      const c = p.injury.code.toLowerCase();
+      headerInjBadge = ' <span class="injtag-lg inj-' + c + '">' + p.injury.code + (p.injury.type ? ' · ' + p.injury.type : '') + '</span>';
+    }
+    const injuryHtml = renderInjurySection(p);
+
     const pBox = $('playerModalbox') || $('modalbox');
     const pOverlay = $('playerOverlay') || $('overlay');
 
@@ -1434,11 +1967,13 @@
       pBox.innerHTML =
         '<h3><span class="pos ' + posClass + '">' + p.pos + '</span>' + p.name
         + (p.rookie ? '<span class="rookietag">R</span>' : '')
-        + ' <span class="meta">' + (p.team || '') + '</span>' + status
+        + ' <span class="meta">' + (p.team || '') + '</span>'
+        + headerInjBadge
+        + status
         + watchModalBtn
         + '<button class="close" onclick="closePlayerModal()">×</button></h3>'
         + '<div class="statrow">' + stats + '</div>'
-        + byeAlert + blurb + schedHtml + links;
+        + byeAlert + injuryHtml + blurb + depthChartHtml + schedHtml + links;
     }
 
     if (pOverlay) pOverlay.classList.add('show');
@@ -1592,6 +2127,7 @@
       + '<div class="setup-field"><label>Total Teams</label><input type="number" id="setup_team_count" min="2" max="32" value="' + s.teams + '"></div>'
       + '<div class="setup-field"><label>Total Draft Rounds</label><input type="number" id="setup_rounds_count" min="1" max="50" value="' + s.rounds + '"></div>'
       + '<div class="setup-field"><label>Draft Order</label><select id="setup_mode_select"><option value="3rr"' + (s.mode === '3rr' ? ' selected' : '') + '>3rd-Round Reversal (3RR)</option><option value="snake"' + (s.mode === 'snake' ? ' selected' : '') + '>Normal Snake</option></select></div>'
+      + '<div class="setup-field"><label>League Type</label><select id="setup_leaguetype_select"><option value="dynasty"' + (s.leagueType === 'dynasty' ? ' selected' : '') + '>Dynasty</option><option value="redraft"' + (s.leagueType === 'redraft' ? ' selected' : '') + '>Redraft</option></select></div>'
       + '<div class="setup-field"><label>Scoring Format</label><select id="setup_scoring_select"><option value="half"' + (s.scoring === 'half' ? ' selected' : '') + '>Half-PPR (0.5)</option><option value="ppr"' + (s.scoring === 'ppr' ? ' selected' : '') + '>Full PPR (1.0)</option><option value="std"' + (s.scoring === 'std' ? ' selected' : '') + '>Standard (0 PPR)</option></select></div>'
       + '<div class="setup-field"><label>QB Format</label><select id="setup_qb_select"><option value="sf"' + (s.qbFormat === 'sf' ? ' selected' : '') + '>Superflex (2QB/SF)</option><option value="1qb"' + (s.qbFormat === '1qb' ? ' selected' : '') + '>1 QB (Single QB)</option></select></div>'
       + '<div class="setup-field"><label>Max Keepers per Team</label><input type="number" id="setup_max_keepers" min="0" max="10" value="' + maxKeepersVal + '"></div>'
@@ -1624,9 +2160,12 @@
       + '<div class="setup-teams-wrap"><table class="team-table"><tbody id="setup_teams_body">'
       + renderSetupTable(s.teams)
       + '</tbody></table></div>'
-      + '<div style="margin-top:10px; padding:8px 10px; background:#141923; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--dim)">'
-      + '📊 <b style="color:var(--text)">Rankings Status:</b> ' + (window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' active NFL players loaded (Snapshot date: <b style="color:var(--accent)">' + (window.DRAFT_DATA.generated || 'live') + '</b>).<br>'
-      + 'To refresh with latest consensus rankings before drafting, run <code style="color:var(--text); background:var(--panel2); padding:1px 4px; border-radius:3px">python update-rankings.py</code>.'
+      + '<div style="margin-top:10px; padding:10px; background:#141923; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--dim)">'
+      + '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">'
+      + '<div>📊 <b style="color:var(--text)">Rankings & Injury Status:</b> ' + (window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' players loaded (Data date: <b style="color:var(--accent)">' + (window.DRAFT_DATA.generated || 'live') + '</b>).</div>'
+      + '<button type="button" class="act primary" id="refresh_data_btn" onclick="triggerDataRefresh(this)" style="font-size:12px; padding:4px 10px">🔄 Refresh Data Now</button>'
+      + '</div>'
+      + '<div id="refresh_data_status" style="margin-top:6px; font-size:11.5px; color:var(--dim)">Run latest consensus rankings, 32-team depth charts, and injury reports refresh on-demand.</div>'
       + '</div>'
       + '<div class="modal-actions">'
       + '<button type="button" class="act" onclick="resetSetupDefaults()">Reset Default Names</button>'
@@ -1767,9 +2306,20 @@
   function saveLeagueSetup() {
     syncSetupInputsFromDom();
     const s = global.state.settings;
+    const prevLeagueType = s.leagueType;
     s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
     s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     s.mode = $('setup_mode_select').value;
+    if ($('setup_leaguetype_select')) {
+      s.leagueType = $('setup_leaguetype_select').value;
+      if (s.leagueType !== prevLeagueType) {
+        if (s.leagueType === 'redraft') {
+          s.blend = 0;
+        } else if (s.leagueType === 'dynasty' && s.blend === 0) {
+          s.blend = 60;
+        }
+      }
+    }
     s.scoring = $('setup_scoring_select').value;
     s.qbFormat = $('setup_qb_select').value;
     s.slot = setupMySlot;
@@ -1801,6 +2351,52 @@
     if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
     render();
   }
+
+  async function triggerDataRefresh(btn) {
+    const statusEl = $('refresh_data_status');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⏳ Refreshing...';
+    }
+    if (statusEl) {
+      statusEl.style.color = 'var(--accent)';
+      statusEl.textContent = '⏳ Fetching latest consensus rankings, 32-team depth charts, and NFL injury reports (~10-15s)...';
+    }
+
+    try {
+      const res = await fetch('/api/data/refresh', { method: 'POST' });
+      const cType = res.headers.get('content-type') || '';
+      let data = {};
+      if (cType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text || ('Server returned status ' + res.status));
+      }
+      if (res.ok && data.ok) {
+        if (statusEl) {
+          statusEl.style.color = 'var(--good)';
+          statusEl.textContent = '✅ ' + (data.message || 'Data updated successfully!') + ' Reloading app...';
+        }
+        if (btn) btn.textContent = '✅ Done!';
+        setTimeout(() => {
+          window.location.reload();
+        }, 1200);
+      } else {
+        throw new Error(data.message || 'Server returned status ' + res.status);
+      }
+    } catch (err) {
+      if (statusEl) {
+        statusEl.style.color = 'var(--warn)';
+        statusEl.textContent = '⚠️ Live server refresh failed (' + err.message + '). Alternatively run "python scripts/update_rankings.py" in terminal.';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '🔄 Retry Refresh';
+      }
+    }
+  }
+  global.triggerDataRefresh = triggerDataRefresh;
 
   // ---------- Keepers Management Modal ----------
   let editingKeeperId = null;
@@ -2273,7 +2869,9 @@
   global.closeBoardModal = closeBoardModal;
   global.setBoardActiveTab = setBoardActiveTab;
   global.setBoardFilter = setBoardFilter;
+  global.setBoardDensity = setBoardDensity;
   global.toggleBoardDensity = toggleBoardDensity;
+  global.toggleStrategyThreats = toggleStrategyThreats;
   global.setSummarySort = setSummarySort;
   global.toggleTeamRosterDrawer = toggleTeamRosterDrawer;
   global.scrollBoardToCurrentPick = scrollBoardToCurrentPick;

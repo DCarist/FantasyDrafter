@@ -4,6 +4,7 @@
     const s = global.state.settings;
     if ($('rounds')) $('rounds').value = s.rounds;
     if ($('mode')) $('mode').value = s.mode;
+    if ($('hdrleaguetype')) $('hdrleaguetype').value = s.leagueType || 'dynasty';
     if ($('hdrscoring')) $('hdrscoring').value = s.scoring;
     if ($('hdrqb')) $('hdrqb').value = s.qbFormat;
     if ($('teprem')) $('teprem').checked = s.teprem;
@@ -20,6 +21,20 @@
 
     on('hdrslot', 'change', () => {
       global.state.settings.slot = +$('hdrslot').value || 1;
+      save();
+      render();
+    });
+
+    on('hdrleaguetype', 'change', () => {
+      const newType = $('hdrleaguetype').value;
+      global.state.settings.leagueType = newType;
+      if (newType === 'redraft') {
+        global.state.settings.blend = 0;
+      } else if (newType === 'dynasty') {
+        if (global.state.settings.blend === 0) global.state.settings.blend = 60;
+      }
+      if ($('blend')) $('blend').value = global.state.settings.blend;
+      if ($('blendval')) $('blendval').textContent = global.state.settings.blend + '%';
       save();
       render();
     });
@@ -77,6 +92,11 @@
 
     on('hidetaken', 'change', () => {
       global.ui.hideTaken = $('hidetaken').checked;
+      renderPool();
+    });
+
+    on('hideoutir', 'change', () => {
+      global.ui.hideOutIR = $('hideoutir').checked;
       renderPool();
     });
 

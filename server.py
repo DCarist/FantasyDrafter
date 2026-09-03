@@ -24,9 +24,9 @@ import subprocess
 if sys.platform == "win32":
     try:
         if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # ty: ignore
         if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # ty: ignore
     except Exception:
         pass
 
@@ -162,6 +162,12 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global last_espn_ping, latest_snapshot, latest_league_info, last_reset_timestamp
+        if self.path == "/api/data/refresh" or self.path.startswith(
+            "/api/data/refresh"
+        ):
+            self.handle_data_refresh()
+            return
+
         if self.path.startswith("/api/sync/reset"):
             with sync_lock:
                 last_reset_timestamp = int(time.time() * 1000)
@@ -655,8 +661,46 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         sse_clients.remove(self.wfile)
             return
 
+        if self.path == "/api/data/refresh" or self.path.startswith(
+            "/api/data/refresh"
+        ):
+            self.handle_data_refresh()
+            return
+
         # Serve regular static files
         super().do_GET()
+
+    def handle_data_refresh(self):
+        safe_print("\n🔄 On-demand data refresh triggered from application UI...")
+        update_script = os.path.join(DIRECTORY, "scripts", "update_rankings.py")
+        cmd = [sys.executable, update_script]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
+                safe_print("✅ On-demand data refresh completed successfully!\n")
+                payload = {
+                    "ok": True,
+                    "message": "Player consensus rankings, depth charts, and injury reports updated successfully!",
+                }
+            else:
+                err_msg = (
+                    res.stderr
+                    or res.stdout
+                    or f"Updater exited with code {res.returncode}"
+                )
+                safe_print(f"⚠️  Data refresh failed ({err_msg})\n")
+                payload = {"ok": False, "message": f"Updater failed: {err_msg[:200]}"}
+        except Exception as e:
+            safe_print(f"⚠️  Data refresh exception ({e})\n")
+            payload = {"ok": False, "message": str(e)}
+
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(200 if payload["ok"] else 500)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
 
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
@@ -724,7 +768,8 @@ def ensure_player_data_fresh(max_days=2, force=False, skip=False):
         )
 
         try:
-            cmd = [sys.executable, "update-rankings.py"]
+            update_script = os.path.join(DIRECTORY, "scripts", "update_rankings.py")
+            cmd = [sys.executable, update_script]
             res = subprocess.run(cmd)
             if res.returncode == 0:
                 safe_print("✅ Player rankings successfully updated!\n")

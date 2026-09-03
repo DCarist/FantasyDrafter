@@ -8,8 +8,9 @@ resetFailures();
 printSuiteHeader('Data Pipeline & Ingestion');
 
 // --- Test 1: CLI Help & Argument Parsing ---
-const helpResult = spawnSync('python', ['update-rankings.py', '--help'], { encoding: 'utf-8' });
-eq(helpResult.status, 0, 'update-rankings.py --help exits with code 0');
+const updateScript = join('scripts', 'update_rankings.py');
+const helpResult = spawnSync('python', [updateScript, '--help'], { encoding: 'utf-8' });
+eq(helpResult.status, 0, 'scripts/update_rankings.py --help exits with code 0');
 assert(helpResult.stdout.includes('--ecr-source'), 'CLI supports --ecr-source');
 assert(helpResult.stdout.includes('--values-source'), 'CLI supports --values-source');
 assert(helpResult.stdout.includes('--sheet-source'), 'CLI supports --sheet-source');
@@ -55,7 +56,7 @@ writeFileSync(valPath, mockValuesCsv, 'utf-8');
 writeFileSync(sheetPath, mockSheetCsv, 'utf-8');
 
 const runResult = spawnSync('python', [
-  'update-rankings.py',
+  updateScript,
   '--ecr-source', ecrPath,
   '--values-source', valPath,
   '--sheet-source', sheetPath,

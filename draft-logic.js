@@ -245,6 +245,44 @@ function getProspectRank(player, qbFormat, scoringFormat) {
   return getDynastyRank(player, qbFormat);
 }
 
+// Formats player ranking pills based on active leagueType and format settings
+function formatPlayerStats(p, settings, activeScore) {
+  if (!p) return [];
+  const s = settings || {};
+  const isRedraft = (s.leagueType === 'redraft');
+  const qbTag = (s.qbFormat === '1qb' ? '1QB' : 'SF');
+  const scTag = (s.scoring || 'half').toUpperCase();
+  const activeDyn = getDynastyRank(p, s.qbFormat);
+  const activeRed = getRedraftRank(p, s.qbFormat, s.scoring);
+
+  let rawStats = [];
+  if (isRedraft) {
+    rawStats = [
+      ['Active Mode (' + qbTag + ' ' + scTag + ')', activeScore != null ? Number(activeScore).toFixed(1) + ' pts' : null],
+      ['Redraft (' + qbTag + ' ' + scTag + ')', activeRed],
+      ['ADP', p.adp ? Number(p.adp).toFixed(0) : null],
+      ['Age', p.age ? p.age + 'y' : null],
+      ['ESPN', p.espn_ppr || p.espn_std],
+      ['Yahoo', p.yahoo],
+      ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std]
+    ];
+  } else {
+    // Dynasty
+    rawStats = [
+      ['Active Mode (' + qbTag + ' ' + scTag + ')', activeScore != null ? Number(activeScore).toFixed(1) + ' pts' : null],
+      ['Dynasty ' + qbTag, activeDyn],
+      ['Rookie Draft Rank', p.rookieRank ? '#' + p.rookieRank : (p.rookie ? 'Rookie' : null)],
+      ['Age', p.age ? p.age + 'y' : null],
+      ['ADP', p.adp ? Number(p.adp).toFixed(0) : null],
+      ['ESPN', p.espn_ppr || p.espn_std],
+      ['Yahoo', p.yahoo],
+      ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std]
+    ];
+  }
+
+  return rawStats.filter(x => x[1] != null);
+}
+
 // Composite draft score, 0-100 scale.
 // dynastyScore / redraftScore are each already 0-100 (100 = best available anywhere).
 // blend: 0 = pure win-now (redraft), 1 = pure dynasty. TE premium gives TEs a bump.
@@ -267,6 +305,203 @@ function rankToScore(rank, depth) {
   if (rank == null) return null;
   const frac = Math.min(1, Math.max(0, (rank - 1) / depth));
   return 100 * Math.pow(1 - frac, 1.5);
+}
+
+// 1D Natural Breaks (Fisher-Jenks Algorithm)
+// Partitions a sorted array of numeric values into `numClasses` clusters that
+// minimize the sum of squared deviations from cluster means (SSD).
+function computeJenksBreaks(data, numClasses) {
+  if (!Array.isArray(data) || data.length === 0) return [];
+  const sorted = data.slice().filter(v => typeof v === 'number' && !isNaN(v)).sort((a, b) => a - b);
+  const n = sorted.length;
+  if (n === 0) return [];
+  const kClasses = Math.max(1, Math.min(numClasses || 1, n));
+  if (kClasses <= 1) return [sorted[n - 1]];
+  if (n <= kClasses) return sorted;
+
+  const sum = new Float64Array(n + 1);
+  const sumSq = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    sum[i + 1] = sum[i] + sorted[i];
+    sumSq[i + 1] = sumSq[i] + sorted[i] * sorted[i];
+  }
+
+  function ssd(j, i) {
+    const count = i - j;
+    if (count <= 0) return 0;
+    const s = sum[i] - sum[j];
+    const ss = sumSq[i] - sumSq[j];
+    const v = ss - (s * s) / count;
+    return v < 0 ? 0 : v;
+  }
+
+  const dp = Array.from({ length: kClasses + 1 }, () => new Float64Array(n + 1).fill(Infinity));
+  const back = Array.from({ length: kClasses + 1 }, () => new Int32Array(n + 1));
+
+  for (let i = 1; i <= n; i++) {
+    dp[1][i] = ssd(0, i);
+  }
+
+  for (let k = 2; k <= kClasses; k++) {
+    for (let i = k; i <= n; i++) {
+      for (let j = k - 1; j < i; j++) {
+        const val = dp[k - 1][j] + ssd(j, i);
+        if (val < dp[k][i]) {
+          dp[k][i] = val;
+          back[k][i] = j;
+        }
+      }
+    }
+  }
+
+  const breaks = [];
+  let cur = n;
+  for (let k = kClasses; k >= 2; k--) {
+    const idx = back[k][cur];
+    breaks.unshift(sorted[idx - 1]);
+    cur = idx;
+  }
+  breaks.push(sorted[n - 1]);
+  return breaks;
+}
+
+// Maps a 0-100 score to a 1-based Tier (1 = highest score cluster) based on Jenks breaks.
+function scoreToTierFromBreaks(score, breaks) {
+  if (!breaks || breaks.length <= 1 || score == null) return 1;
+  let tier = 1;
+  for (let i = breaks.length - 2; i >= 0; i--) {
+    if (score <= breaks[i]) {
+      tier++;
+    } else {
+      break;
+    }
+  }
+  return tier;
+}
+
+// Assigns stable pre-computed Positional Tiers (`posTier`) and Overall Board Tiers (`overallTier`)
+// to player records. Tiers remain invariant when players are drafted or hidden.
+function assignTiers(players, options) {
+  if (!Array.isArray(players) || players.length === 0) return players || [];
+  const opt = options || {};
+
+  const posTierCounts = {
+    QB: 5,
+    RB: 6,
+    WR: 6,
+    TE: 5,
+    K: 3,
+    DST: 3
+  };
+
+  // 1. Assign Positional Tiers (`posTier`) using 1D Natural Breaks (Jenks)
+  const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+  for (const pos of positions) {
+    const posPlayers = players.filter(p => {
+      const pPos = (p.pos || '').toUpperCase();
+      if (pos === 'DST') return ['DST', 'DEF', 'D/ST'].includes(pPos);
+      return pPos === pos;
+    }).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+
+    if (posPlayers.length === 0) continue;
+
+    const targetK = posTierCounts[pos] || 5;
+    const activeScores = posPlayers.filter(p => (p.score ?? 0) >= 5).map(p => p.score);
+    const maxK = Math.max(1, Math.floor(activeScores.length / 2));
+    const k = Math.min(targetK, maxK);
+    const breaks = computeJenksBreaks(activeScores, k);
+
+    for (const p of posPlayers) {
+      if (p.score == null || p.score < 5) {
+        p.posTier = breaks.length > 0 ? breaks.length + 1 : (targetK + 1);
+      } else {
+        p.posTier = scoreToTierFromBreaks(p.score, breaks);
+      }
+    }
+  }
+
+  // 2. Assign Overall Board Tiers (`overallTier`) for ALL view (~12-14 round-equivalent value tiers)
+  const allScored = players.filter(p => p.score != null && p.score >= 5).sort((a, b) => b.score - a.score).slice(0, 250);
+  const targetOverallK = opt.numOverallTiers || 12;
+  const maxOverallK = Math.max(1, Math.floor(allScored.length / 3));
+  const overallK = Math.min(targetOverallK, maxOverallK);
+  const overallBreaks = computeJenksBreaks(allScored.map(p => p.score), overallK);
+
+  for (const p of players) {
+    if (p.score == null || p.score < 5) {
+      p.overallTier = overallBreaks.length > 0 ? overallBreaks.length + 1 : (overallK + 1);
+    } else {
+      p.overallTier = scoreToTierFromBreaks(p.score, overallBreaks);
+    }
+  }
+
+  return players;
+}
+
+// Calculates remaining available player counts and tier scarcity alerts per tier.
+function getTierScarcity(players, takenSet, posFilter) {
+  const isTaken = (id) => {
+    if (!takenSet) return false;
+    if (typeof takenSet.has === 'function') return takenSet.has(id);
+    if (Array.isArray(takenSet)) return takenSet.includes(id);
+    return Boolean(takenSet[id]);
+  };
+
+  const isAll = (!posFilter || posFilter === 'ALL');
+  const filtered = (players || []).filter(p => {
+    if (!p) return false;
+    if (isAll) return true;
+    const pPos = (p.pos || '').toUpperCase();
+    if (posFilter === 'DST') return ['DST', 'DEF', 'D/ST'].includes(pPos);
+    return pPos === posFilter;
+  });
+
+  const tierMap = new Map();
+  for (const p of filtered) {
+    const t = isAll ? (p.overallTier || 1) : (p.posTier || 1);
+    if (!tierMap.has(t)) {
+      tierMap.set(t, { tier: t, total: 0, taken: 0, remaining: 0 });
+    }
+    const entry = tierMap.get(t);
+    entry.total++;
+    if (isTaken(p.id)) {
+      entry.taken++;
+    } else {
+      entry.remaining++;
+    }
+  }
+
+  const tiers = Array.from(tierMap.values()).sort((a, b) => a.tier - b.tier);
+  const playerAlerts = new Map();
+
+  for (const tInfo of tiers) {
+    // Flag critical tier cliffs: top tiers (T1-T4) where players have been drafted and 1-2 remain
+    tInfo.isScarcity = (tInfo.taken > 0 && tInfo.remaining > 0 && tInfo.remaining <= 2 && tInfo.tier <= 4);
+    if (tInfo.isScarcity) {
+      const isLast = (tInfo.remaining === 1);
+      const label = isLast ? ('⚡ Last in T' + tInfo.tier) : ('⚠️ 2 left in T' + tInfo.tier);
+      tInfo.scarcityLabel = label;
+
+      // Find available players in this tier to attach row alerts
+      for (const p of filtered) {
+        const pt = isAll ? (p.overallTier || 1) : (p.posTier || 1);
+        if (pt === tInfo.tier && !isTaken(p.id)) {
+          playerAlerts.set(p.id, {
+            tier: tInfo.tier,
+            remaining: tInfo.remaining,
+            label: label,
+            isLast: isLast
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    isAll: isAll,
+    tiers: tiers,
+    playerAlerts: playerAlerts
+  };
 }
 
 // Generate default team list for a given league size.
@@ -433,6 +668,18 @@ function cleanWatchlist(watchlist, takenContainer) {
   return watchlist.filter(id => !hasTaken(id));
 }
 
+// Reorders an item in the watchlist from fromIdx to toIdx. Returns a new array.
+function reorderWatchlist(watchlist, fromIdx, toIdx) {
+  if (!Array.isArray(watchlist)) return [];
+  const list = watchlist.slice();
+  if (fromIdx < 0 || fromIdx >= list.length || toIdx < 0 || toIdx >= list.length) {
+    return list;
+  }
+  const [item] = list.splice(fromIdx, 1);
+  list.splice(toIdx, 0, item);
+  return list;
+}
+
 const DEFAULT_ROSTER_SLOTS = {
   qb: 1,
   rb: 2,
@@ -578,9 +825,20 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
   const keeperBadge = isKeeper ? '<span class="keeper-badge" title="Keeper" style="font-size:11px; margin-right:2px">🔒</span>' : '';
   const pkStr = p.entry ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + fmtPick(p.entry.overall, teamsCount) + '</span>' : (isKeeper ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + '</span>' : '');
 
+  let injTag = '';
+  if (p.injury && p.injury.code) {
+    const c = p.injury.code;
+    const tip = (p.injury.status || 'Injured')
+      + (p.injury.type ? ': ' + p.injury.type : '')
+      + (p.injury.detail ? ' (' + p.injury.detail + ')' : '')
+      + (p.injury.returnDate ? ' - Est. Return: ' + p.injury.returnDate : '');
+    injTag = ' <span class="injtag inj-' + c.toLowerCase() + '" title="' + tip.replace(/"/g, '&quot;') + '">' + c + '</span>';
+  }
+
   return '<div class="rosteritem ' + (isStarter ? 'starter-slot' : 'bench-slot') + (isKeeper ? ' keeper-slot' : '') + '">'
     + '<span class="pos ' + posClass + '">' + p.pos + '</span>'
     + '<span class="pname" onclick="' + clickHandler + '" title="' + (p.name || '').replace(/"/g, '&quot;') + '">' + p.name + unlistedBadge + '</span>'
+    + injTag
     + teamBadge
     + pkStr
     + '<span class="bye' + (clash ? ' clash' : '') + '">' + (p.bye ? 'bye ' + p.bye : '—') + '</span>'
@@ -1492,6 +1750,7 @@ function analyzeLiveDraftStrategy(options) {
   const nextUserPick = remainingUserPicks[0] || null;
   const picksUntilUserTurn = nextUserPick != null ? Math.max(0, nextUserPick - currentPickNum) : 0;
   const isOnClock = (currentPickNum === nextUserPick);
+  const subsequentUserPick = isOnClock ? (remainingUserPicks[1] || null) : nextUserPick;
 
   const currentRound = Math.ceil(currentPickNum / teams);
   const isLateRounds = (currentRound >= rounds - 2);
@@ -1561,7 +1820,9 @@ function analyzeLiveDraftStrategy(options) {
     });
   }
 
-  // 4. Opponent Threat Timeline between currentPickNum and nextUserPick
+  // 4. Opponent Threat Timeline
+  // When user is waiting: analyze picks between currentPickNum and nextUserPick
+  // When user is on the clock: look ahead and analyze opponent picks between currentPickNum + 1 and user's subsequent pick!
   const opponentThreats = [];
   const uniqueTeamsNeedingPos = {
     QB: new Set(),
@@ -1570,9 +1831,13 @@ function analyzeLiveDraftStrategy(options) {
     TE: new Set()
   };
 
-  if (nextUserPick != null && nextUserPick > currentPickNum) {
-    for (let pNum = currentPickNum; pNum < nextUserPick; pNum++) {
+  const threatWindowStart = isOnClock ? (currentPickNum + 1) : currentPickNum;
+  const threatWindowEnd = isOnClock ? subsequentUserPick : nextUserPick;
+
+  if (threatWindowEnd != null && threatWindowEnd > threatWindowStart) {
+    for (let pNum = threatWindowStart; pNum < threatWindowEnd; pNum++) {
       const oppTeamInfo = teamForOverall(pNum, teams, mode, teamNames, mySlot, tradedPicks);
+      if (oppTeamInfo.slot === mySlot) continue; // Skip user's own picks in window (e.g. back-to-back turns)
       const oppDrafted = teamDraftedMap[oppTeamInfo.slot] || [];
       const oppAllocation = assignRosterSlots(oppDrafted, rosterSlots);
       const oppCounts = oppAllocation.counts || { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
@@ -1660,6 +1925,7 @@ function analyzeLiveDraftStrategy(options) {
         bye: cand.bye,
         adp: cand.adp,
         rookie: cand.rookie,
+        posTier: cand.posTier,
         score: Math.round(cScore * 10) / 10,
         valSurplus: valSurplus,
         isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase()),
@@ -1700,6 +1966,7 @@ function analyzeLiveDraftStrategy(options) {
         bye: cand.bye,
         adp: cand.adp,
         rookie: cand.rookie,
+        posTier: cand.posTier,
         score: Math.round(cScore * 10) / 10,
         valSurplus: valSurplus,
         isUrgentNeed: criticalPositions.includes((cand.pos || '').toUpperCase()),
@@ -1716,6 +1983,9 @@ function analyzeLiveDraftStrategy(options) {
     nextUserPick: nextUserPick,
     picksUntilUserTurn: picksUntilUserTurn,
     isOnClock: isOnClock,
+    subsequentUserPick: subsequentUserPick,
+    threatWindowStart: threatWindowStart,
+    threatWindowEnd: threatWindowEnd,
     userNeeds: userNeeds,
     opponentThreats: opponentThreats,
     runDangers: runDangers,
@@ -1969,6 +2239,7 @@ if (typeof module !== 'undefined' && module.exports) {
     isWatched: isWatched,
     toggleWatchlist: toggleWatchlist,
     cleanWatchlist: cleanWatchlist,
+    reorderWatchlist: reorderWatchlist,
     DEFAULT_ROSTER_SLOTS: DEFAULT_ROSTER_SLOTS,
     formatLineupSummary: formatLineupSummary,
     assignRosterSlots: assignRosterSlots,
@@ -1979,6 +2250,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getRedraftRank: getRedraftRank,
     computeFormatScore: computeFormatScore,
     getProspectRank: getProspectRank,
+    formatPlayerStats: formatPlayerStats,
     NFL_DEFENSES: NFL_DEFENSES,
     resolveDstCanonical: resolveDstCanonical,
     parseSleeperDraft: parseSleeperDraft,
@@ -2004,5 +2276,16 @@ if (typeof module !== 'undefined' && module.exports) {
     generateDraftBoardGrid: generateDraftBoardGrid,
     analyzeLiveDraftStrategy: analyzeLiveDraftStrategy,
     generateDraftSummaryAnalysis: generateDraftSummaryAnalysis,
+    computeJenksBreaks: computeJenksBreaks,
+    assignTiers: assignTiers,
+    getTierScarcity: getTierScarcity,
   };
 }
+
+if (typeof window !== 'undefined') {
+  window.computeJenksBreaks = computeJenksBreaks;
+  window.assignTiers = assignTiers;
+  window.getTierScarcity = getTierScarcity;
+  window.reorderWatchlist = reorderWatchlist;
+}
+
