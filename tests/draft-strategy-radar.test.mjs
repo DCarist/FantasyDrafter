@@ -139,6 +139,60 @@ const completeRes = L.analyzeLiveDraftStrategy({
 
 eq(completeRes.isComplete, true, 'Draft is complete');
 
+// Scenario 4: Mid-draft with posTier and rookie tags on candidates
+const tieredPool = [
+  { id: 301, name: 'Marvin Harrison Jr.', pos: 'WR', team: 'ARI', bye: 11, adp: 15, rank: 14, rookie: true, posTier: 2 },
+  { id: 302, name: 'Malik Nabers', pos: 'WR', team: 'NYG', bye: 11, adp: 24, rank: 22, rookie: true, posTier: 3 },
+  { id: 303, name: 'Kyren Williams', pos: 'RB', team: 'LAR', bye: 6, adp: 18, rank: 16, rookie: false, posTier: 2 }
+];
+
+const midDraftRes = L.analyzeLiveDraftStrategy({
+  teams: 4,
+  rounds: 4,
+  mode: 'snake',
+  log: [
+    { overall: 1, playerId: 101 } // Pick 1 made
+  ],
+  keepers: [],
+  tradedPicks: {},
+  mySlot: 3,
+  currentPickNum: 2, // Pick 2 is on clock (Slot 2)
+  playersLookup: byIdLookup,
+  rosterSlots: { qb: 1, rb: 2, wr: 2, te: 1, flex: 1, superflex: 0, k: 0, dst: 0, bench: 3 },
+  availablePlayers: tieredPool
+});
+
+eq(midDraftRes.isOnClock, false, 'User is not on clock at Pick 2 (User is Slot 3, Pick 3)');
+eq(midDraftRes.nextUserPick, 3, 'User next pick is Pick 3');
+eq(midDraftRes.picksUntilUserTurn, 1, '1 pick until user turn');
+eq(midDraftRes.opponentThreats.length, 1, '1 opponent pick in threat window (Pick 2)');
+eq(midDraftRes.targetsByPosition.WR.length, 2, '2 WR targets available');
+eq(midDraftRes.targetsByPosition.WR[0].posTier, 2, 'Top WR target has posTier=2 preserved');
+eq(midDraftRes.targetsByPosition.WR[0].rookie, true, 'Top WR target has rookie=true preserved');
+
+// Scenario 5: User has no more remaining picks while draft is still ongoing
+const allUserPicksDoneRes = L.analyzeLiveDraftStrategy({
+  teams: 4,
+  rounds: 2, // 8 picks total, Slot 1 has Picks 1 and 8
+  mode: 'snake',
+  log: [
+    { overall: 1, playerId: 101 },
+    { overall: 2, playerId: 102 },
+    { overall: 3, playerId: 103 },
+    { overall: 4, playerId: 104 }
+  ],
+  keepers: [],
+  tradedPicks: { 8: 2 }, // Slot 1 traded away Pick 8 to Slot 2! So Slot 1 has NO remaining picks
+  mySlot: 1,
+  currentPickNum: 5,
+  playersLookup: byIdLookup,
+  availablePlayers: tieredPool
+});
+
+eq(allUserPicksDoneRes.nextUserPick, null, 'nextUserPick is null when user has no remaining picks');
+eq(allUserPicksDoneRes.picksUntilUserTurn, 0, 'picksUntilUserTurn is 0');
+eq(allUserPicksDoneRes.isComplete, false, 'Overall draft is not yet complete');
+
 const success = finishSuite('Live Draft Strategy Radar & Opponent Threat Analysis');
 if (!success) {
   process.exit(1);

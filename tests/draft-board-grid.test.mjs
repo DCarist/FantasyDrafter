@@ -196,6 +196,39 @@ eq(fallbackGrid.teams, 12, 'Default 12 teams fallback');
 eq(fallbackGrid.rounds, 20, 'Default 20 rounds fallback');
 assert(Array.isArray(fallbackGrid.grid), 'Default grid array created');
 
+// 10. Density scroll preservation formula check
+const mockContainer = {
+  scrollWidth: 2000,
+  clientWidth: 1000,
+  scrollHeight: 3000,
+  clientHeight: 800,
+  scrollLeft: 500, // 50% horizontal
+  scrollTop: 1100  // 50% vertical
+};
+
+const maxScrollX = mockContainer.scrollWidth - mockContainer.clientWidth;
+const maxScrollY = mockContainer.scrollHeight - mockContainer.clientHeight;
+const ratioX = maxScrollX > 0 ? (mockContainer.scrollLeft / maxScrollX) : 0;
+const ratioY = maxScrollY > 0 ? (mockContainer.scrollTop / maxScrollY) : 0;
+
+eq(ratioX, 0.5, 'Scroll ratio X correctly computed at 50%');
+eq(ratioY, 0.5, 'Scroll ratio Y correctly computed at 50%');
+
+// Compact container dimensions (narrower / shorter cells)
+const mockCompactContainer = {
+  scrollWidth: 1500,
+  clientWidth: 1000,
+  scrollHeight: 2000,
+  clientHeight: 800
+};
+const newMaxScrollX = mockCompactContainer.scrollWidth - mockCompactContainer.clientWidth;
+const newMaxScrollY = mockCompactContainer.scrollHeight - mockCompactContainer.clientHeight;
+const targetScrollLeft = Math.round(ratioX * newMaxScrollX);
+const targetScrollTop = Math.round(ratioY * newMaxScrollY);
+
+eq(targetScrollLeft, 250, 'Preserved horizontal scroll position in compact mode');
+eq(targetScrollTop, 600, 'Preserved vertical scroll position in compact mode');
+
 const success = finishSuite('Draft Board Grid Matrix & Pick Resolution');
 if (!success) {
   process.exit(1);

@@ -750,6 +750,12 @@
   let returnToBoardOnClose = false;
   let boardHighlightFilter = 'ALL';
   let boardDensity = 'normal';
+  try {
+    const savedDensity = localStorage.getItem('fantasy_drafter_board_density');
+    if (savedDensity === 'compact' || savedDensity === 'normal') {
+      boardDensity = savedDensity;
+    }
+  } catch (e) {}
   let boardActiveTab = 'grid';
   let summarySortKey = 'rank';
   let summarySortAsc = true;
@@ -829,9 +835,36 @@
     renderDraftBoardModalView();
   }
 
-  function toggleBoardDensity() {
-    boardDensity = (boardDensity === 'normal' ? 'compact' : 'normal');
+  function setBoardDensity(density) {
+    if (density !== 'normal' && density !== 'compact') return;
+    boardDensity = density;
+    try {
+      localStorage.setItem('fantasy_drafter_board_density', density);
+    } catch (e) {}
+
+    const container = $('board_container');
+    let prevRatioX = 0;
+    let prevRatioY = 0;
+    if (container) {
+      const maxScrollX = container.scrollWidth - container.clientWidth;
+      const maxScrollY = container.scrollHeight - container.clientHeight;
+      prevRatioX = maxScrollX > 0 ? (container.scrollLeft / maxScrollX) : 0;
+      prevRatioY = maxScrollY > 0 ? (container.scrollTop / maxScrollY) : 0;
+    }
+
     renderDraftBoardModalView();
+
+    const newContainer = $('board_container');
+    if (newContainer) {
+      const newMaxScrollX = newContainer.scrollWidth - newContainer.clientWidth;
+      const newMaxScrollY = newContainer.scrollHeight - newContainer.clientHeight;
+      if (newMaxScrollX > 0) newContainer.scrollLeft = Math.round(prevRatioX * newMaxScrollX);
+      if (newMaxScrollY > 0) newContainer.scrollTop = Math.round(prevRatioY * newMaxScrollY);
+    }
+  }
+
+  function toggleBoardDensity() {
+    setBoardDensity(boardDensity === 'normal' ? 'compact' : 'normal');
   }
 
   function setSummarySort(key) {
@@ -928,7 +961,10 @@
         return '<button type="button" class="board-filter-btn' + customClass + activeClass + '" onclick="setBoardFilter(\'' + f.id + '\')">' + f.label + '</button>';
       }).join('');
 
-      const densityBtnLabel = (boardDensity === 'normal') ? '🗜️ Compact' : '👁️ Normal';
+      const densityGroupHtml = '<div class="board-density-toggle" role="group" aria-label="Board density">'
+        + '<button type="button" class="board-density-btn' + (boardDensity === 'normal' ? ' active' : '') + '" onclick="setBoardDensity(\'normal\')" title="Normal Density View">👁️ Normal</button>'
+        + '<button type="button" class="board-density-btn' + (boardDensity === 'compact' ? ' active' : '') + '" onclick="setBoardDensity(\'compact\')" title="Compact Density View">🗜️ Compact</button>'
+        + '</div>';
 
       toolbarActionsHtml = '<div class="board-filters">'
         + '<span class="meta" style="font-size:12px; margin-right:4px">Highlight:</span>'
@@ -936,7 +972,7 @@
         + '</div>'
         + '<div class="board-actions">'
         + (!isComplete ? '<button type="button" class="act" onclick="scrollBoardToCurrentPick(true)" style="font-size:11.5px; padding:3px 8px; font-weight:600; color:var(--accent); border-color:var(--accent)">⚡ Jump to On-Clock</button>' : '')
-        + '<button type="button" class="act" onclick="toggleBoardDensity()" style="font-size:11.5px; padding:3px 8px">' + densityBtnLabel + '</button>'
+        + densityGroupHtml
         + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-size:11.5px; padding:3px 10px; font-weight:700">Done</button>'
         + '</div>';
     } else if (boardActiveTab === 'strategy') {
@@ -1151,244 +1187,260 @@
         + '</table>'
         + '</div>';
     } else if (boardActiveTab === 'strategy') {
-      const taken = (typeof takenMap === 'function') ? takenMap() : (typeof global.takenMap === 'function' ? global.takenMap() : new Map());
-      const allScored = (typeof scored === 'function') ? scored() : (Array.isArray(global.PLAYERS) ? global.PLAYERS : []);
-      const availablePlayers = allScored.filter(p => p && p.id != null && !taken.has(p.id));
+      try {
+        const taken = (typeof takenMap === 'function') ? takenMap() : (typeof global.takenMap === 'function' ? global.takenMap() : new Map());
+        const allScored = (typeof scored === 'function') ? scored() : (Array.isArray(global.PLAYERS) ? global.PLAYERS : []);
+        const availablePlayers = allScored.filter(p => p && p.id != null && !taken.has(p.id));
 
-      const strat = (typeof analyzeLiveDraftStrategy === 'function')
-        ? analyzeLiveDraftStrategy({
-          teams: s.teams,
-          rounds: s.rounds,
-          mode: s.mode,
-          log: global.state.log,
-          keepers: global.state.keepers,
-          tradedPicks: global.state.tradedPicks,
-          teamNames: s.teamNames,
-          mySlot: s.slot,
-          currentPickNum: pick,
-          playersLookup: byId,
-          rosterSlots: s.rosterSlots,
-          scoringSettings: { blend: s.blend / 100, qbFormat: s.qbFormat, scoring: s.scoring, tePremium: s.teprem },
-          availablePlayers: availablePlayers,
-          watchlist: global.state.watchlist || []
-        })
-        : null;
+        const strat = (typeof analyzeLiveDraftStrategy === 'function')
+          ? analyzeLiveDraftStrategy({
+            teams: s.teams,
+            rounds: s.rounds,
+            mode: s.mode,
+            log: global.state.log,
+            keepers: global.state.keepers,
+            tradedPicks: global.state.tradedPicks,
+            teamNames: s.teamNames,
+            mySlot: s.slot,
+            currentPickNum: pick,
+            playersLookup: byId,
+            rosterSlots: s.rosterSlots,
+            scoringSettings: { blend: s.blend / 100, qbFormat: s.qbFormat, scoring: s.scoring, tePremium: s.teprem },
+            availablePlayers: availablePlayers,
+            watchlist: global.state.watchlist || []
+          })
+          : null;
 
-      if (!strat) return;
+        if (!strat) {
+          mainViewHtml = '<div class="strategy-container"><div class="strategy-banner"><div><h4 style="margin:0; font-size:15px; color:var(--warn)">Draft strategy is currently unavailable.</h4><div style="font-size:12px; color:var(--dim); margin-top:4px">Check league settings or return to Board Grid.</div></div><button type="button" class="act primary" onclick="setBoardActiveTab(\'grid\')">Return to Board Grid</button></div></div>';
+        } else {
+          const modalScarcity = (typeof getTierScarcity === 'function')
+            ? getTierScarcity(availablePlayers, taken, null)
+            : null;
 
-      const modalScarcity = (typeof getTierScarcity === 'function')
-        ? getTierScarcity(availablePlayers, taken, null)
-        : null;
+          // Banner
+          let bannerHtml = '';
+          if (strat.isOnClock) {
+            let cliffAlertHtml = '';
+            if (modalScarcity && strat.recommendedTargets && strat.recommendedTargets.length > 0) {
+              const topScarcityTarget = strat.recommendedTargets.find(t => {
+                const alert = (modalScarcity.playerAlerts) ? modalScarcity.playerAlerts.get(t.id) : null;
+                return alert && alert.isLast;
+              }) || strat.recommendedTargets.find(t => (modalScarcity.playerAlerts && modalScarcity.playerAlerts.has(t.id)));
 
-      // Banner
-      let bannerHtml = '';
-      if (strat.isOnClock) {
-        let cliffAlertHtml = '';
-        if (modalScarcity && strat.recommendedTargets && strat.recommendedTargets.length > 0) {
-          const topScarcityTarget = strat.recommendedTargets.find(t => {
-            const alert = modalScarcity.playerAlerts.get(t.id);
-            return alert && alert.isLast;
-          }) || strat.recommendedTargets.find(t => modalScarcity.playerAlerts.has(t.id));
-
-          if (topScarcityTarget) {
-            const a = modalScarcity.playerAlerts.get(topScarcityTarget.id);
-            cliffAlertHtml = '<div style="font-size:12px; color:#fbbf24; margin-top:4px; display:flex; align-items:center; gap:4px">⚠️ <strong>Tier Cliff Alert:</strong> ' + topScarcityTarget.name + ' is ' + (a.isLast ? 'the last available' : 'one of only ' + a.remaining + ' remaining') + ' Tier ' + a.tier + ' ' + topScarcityTarget.pos + '!</div>';
-          }
-        }
-
-        bannerHtml = '<div class="strategy-banner on-clock">'
-          + '<div>'
-          + '<h4 style="margin:0; font-size:16px; color:var(--good); display:flex; align-items:center; gap:6px">⚡ YOU ARE ON THE CLOCK! (Pick #' + pick + ')</h4>'
-          + '<div style="font-size:12px; color:#cbd5e1; margin-top:2px">It is your turn to pick. Check your top recommended targets below or view the player pool.</div>'
-          + cliffAlertHtml
-          + '</div>'
-          + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-weight:700">Make Pick ➔</button>'
-          + '</div>';
-      } else if (strat.isComplete) {
-        bannerHtml = '<div class="strategy-banner">'
-          + '<div>'
-          + '<h4 style="margin:0; font-size:15px; color:var(--good)">🏆 Draft Complete</h4>'
-          + '<div style="font-size:12px; color:#cbd5e1">All ' + totalPicks + ' picks have been drafted. Switch to the League Value & Grades tab to view full team rankings and superlatives.</div>'
-          + '</div>'
-          + '<button type="button" class="act primary" onclick="setBoardActiveTab(\'summary\')" style="font-weight:700">View Final Rankings ➔</button>'
-          + '</div>';
-      } else {
-        bannerHtml = '<div class="strategy-banner">'
-          + '<div>'
-          + '<h4 style="margin:0; font-size:15px; color:var(--text)">⏳ ' + strat.picksUntilUserTurn + ' Pick' + (strat.picksUntilUserTurn === 1 ? '' : 's') + ' Until Your Turn</h4>'
-          + '<div style="font-size:12px; color:var(--dim); margin-top:2px">Your next turn is <strong style="color:var(--accent)">Pick #' + strat.nextUserPick + ' (' + fmtPick(strat.nextUserPick, s.teams) + ')</strong> · Currently on clock: <strong style="color:var(--text)">' + (onClockTeam ? onClockTeam.name : 'Pick #' + pick) + '</strong></div>'
-          + '</div>'
-          + '</div>';
-      }
-
-      // Opponent Threats
-      let threatsHtml = '';
-      if (strat.opponentThreats.length > 0) {
-        const cardsHtml = strat.opponentThreats.map(t => {
-          const needsHtml = t.urgentNeeds.map(n => {
-            const posUpper = (n.pos || '').toUpperCase();
-            const posBadgeClass = (posUpper === 'DST' || posUpper === 'DEF' || posUpper === 'D/ST') ? 'DST' : posUpper;
-            return '<span class="pos ' + posBadgeClass + '" style="font-size:9.5px; font-weight:800; padding:1px 5px; border-radius:3px">' + n.pos + '</span>';
-          }).join('') || '<span style="font-size:10px; color:var(--dim)">Depth / Bench</span>';
-
-          return '<div class="threat-card">'
-            + '<div class="threat-card-top">'
-            + '<span style="font-weight:800; color:var(--accent)">' + t.pickFmt + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">(#' + t.overall + ')</span></span>'
-            + '<span style="font-size:10px; color:var(--dim)">Slot ' + t.slot + '</span>'
-            + '</div>'
-            + '<div class="threat-card-team">' + t.teamName + '</div>'
-            + '<div style="font-size:10px; color:var(--dim); margin-top:2px">Target Needs:</div>'
-            + '<div class="threat-needs-list">' + needsHtml + '</div>'
-            + '</div>';
-        }).join('');
-
-        const dangersHtml = strat.runDangers.map(d => {
-          return '<span class="threat-danger-badge">🚨 ' + d.message + '</span>';
-        }).join('');
-
-        threatsHtml = '<div class="threat-timeline-wrapper">'
-          + '<div class="strategy-section-title">🛡️ Opponents Drafting Before Your Turn (' + strat.opponentThreats.length + ' Picks Ahead)</div>'
-          + '<div class="threat-timeline">' + cardsHtml + '</div>'
-          + (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
-          + '</div>';
-      }
-
-      // User Needs Grid
-      const needsCardsHtml = strat.userNeeds.map(n => {
-        let statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
-        let barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
-        let barColor = (n.urgency === 'CRITICAL') ? 'var(--qb)' : (n.urgency === 'NEEDED' ? 'var(--warn)' : 'var(--good)');
-
-        return '<div class="need-card">'
-          + '<div class="need-card-header">'
-          + '<span class="pos ' + (n.pos === 'DST' ? 'DST' : n.pos) + '" style="font-size:10px">' + n.pos + '</span>'
-          + '<span class="' + statusCls + '">' + n.label + '</span>'
-          + '</div>'
-          + '<div style="font-size:13px; font-weight:800; color:var(--text)">' + n.filled + ' / ' + n.baseReq + ' <span style="font-size:11px; font-weight:normal; color:var(--dim)">starters</span></div>'
-          + '<div style="background:rgba(255,255,255,0.08); height:4px; border-radius:2px; overflow:hidden"><div style="background:' + barColor + '; width:' + barPct + '%; height:100%"></div></div>'
-          + '</div>';
-      }).join('');
-
-      // Positional Targets: Top 5 BPA per Position
-      let targetsHtml = '';
-      if (strat.targetsByPosition) {
-        const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
-        const posTitles = {
-          QB: 'Quarterbacks',
-          RB: 'Running Backs',
-          WR: 'Wide Receivers',
-          TE: 'Tight Ends',
-          K: 'Kickers',
-          DST: 'Defenses'
-        };
-
-        const currentRound = Math.ceil(pick / s.teams);
-        const isLateRounds = (currentRound >= s.rounds - 2);
-        const visiblePositions = posOrder.filter(pos => {
-          if (pos === 'K' || pos === 'DST') {
-            return isLateRounds || (strat.userNeeds.some(n => n.pos === pos && (n.urgency === 'CRITICAL' || n.urgency === 'NEEDED')));
-          }
-          return true;
-        });
-
-        const posColumnsHtml = visiblePositions.map(pos => {
-          const pList = strat.targetsByPosition[pos] || [];
-          const needInfo = strat.userNeeds.find(n => n.pos === pos) || { urgency: 'FILLED', label: 'Filled' };
-          const isCritical = (needInfo.urgency === 'CRITICAL' || needInfo.urgency === 'NEEDED');
-          const posClass = (pos === 'DST') ? 'DST' : pos;
-          const colClass = isCritical ? 'pos-target-col urgent' : 'pos-target-col';
-
-          let rowsHtml = '';
-          if (pList.length === 0) {
-            rowsHtml = '<div style="font-size:11px; color:var(--dim); padding:10px 0; text-align:center">No available players</div>';
-          } else {
-            rowsHtml = pList.map((p, idx) => {
-              const isW = Boolean(p.isWatched || (global.state.watchlist && global.state.watchlist.includes(p.id)));
-              const starIcon = isW ? '★' : '☆';
-              const starClass = isW ? 'target-star-btn active' : 'target-star-btn';
-              const starTitle = isW ? 'In Watchlist (Click to remove)' : 'Add to Watchlist';
-
-              let byeHtml = '';
-              if (p.bye) {
-                const bClash = p.byeClash || { type: 'none' };
-                if (bClash.type === 'same-pos') {
-                  const names = (bClash.samePos || []).map(x => x.name).join(', ');
-                  const tip = 'Same-position bye clash with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
-                  byeHtml = '<span class="target-bye-pill clash" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ Wk ' + p.bye + '</span>';
-                } else if (bClash.type === 'other-pos') {
-                  const names = (bClash.otherPos || []).map(x => x.name).join(', ');
-                  const tip = 'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
-                  byeHtml = '<span class="target-bye-pill overlap" title="' + tip.replace(/"/g, '&quot;') + '">⚡ Wk ' + p.bye + '</span>';
-                } else {
-                  byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
-                }
-              } else {
-                byeHtml = '<span class="target-bye-pill normal">—</span>';
+              if (topScarcityTarget) {
+                const a = modalScarcity.playerAlerts.get(topScarcityTarget.id);
+                cliffAlertHtml = '<div style="font-size:12px; color:#fbbf24; margin-top:4px; display:flex; align-items:center; gap:4px">⚠️ <strong>Tier Cliff Alert:</strong> ' + topScarcityTarget.name + ' is ' + (a.isLast ? 'the last available' : 'one of only ' + a.remaining + ' remaining') + ' Tier ' + a.tier + ' ' + topScarcityTarget.pos + '!</div>';
               }
+            }
 
-              const surplusTag = (p.valSurplus > 0)
-                ? ('<span style="color:var(--good); font-size:10px; font-weight:700">+' + p.valSurplus + ' vs ADP</span>')
-                : (p.adp ? ('<span style="color:var(--dim); font-size:10px">ADP ' + p.adp + '</span>') : '');
+            bannerHtml = '<div class="strategy-banner on-clock">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:16px; color:var(--good); display:flex; align-items:center; gap:6px">⚡ YOU ARE ON THE CLOCK! (Pick #' + pick + ')</h4>'
+              + '<div style="font-size:12px; color:#cbd5e1; margin-top:2px">It is your turn to pick. Check your top recommended targets below or view the player pool.</div>'
+              + cliffAlertHtml
+              + '</div>'
+              + '<button type="button" class="act primary" onclick="closeBoardModal()" style="font-weight:700">Make Pick ➔</button>'
+              + '</div>';
+          } else if (strat.isComplete) {
+            bannerHtml = '<div class="strategy-banner">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:15px; color:var(--good)">🏆 Draft Complete</h4>'
+              + '<div style="font-size:12px; color:#cbd5e1">All ' + totalPicks + ' picks have been drafted. Switch to the League Value & Grades tab to view full team rankings and superlatives.</div>'
+              + '</div>'
+              + '<button type="button" class="act primary" onclick="setBoardActiveTab(\'summary\')" style="font-weight:700">View Final Rankings ➔</button>'
+              + '</div>';
+          } else if (strat.nextUserPick != null) {
+            bannerHtml = '<div class="strategy-banner">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:15px; color:var(--text)">⏳ ' + strat.picksUntilUserTurn + ' Pick' + (strat.picksUntilUserTurn === 1 ? '' : 's') + ' Until Your Turn</h4>'
+              + '<div style="font-size:12px; color:var(--dim); margin-top:2px">Your next turn is <strong style="color:var(--accent)">Pick #' + strat.nextUserPick + ' (' + fmtPick(strat.nextUserPick, s.teams) + ')</strong> · Currently on clock: <strong style="color:var(--text)">' + (onClockTeam ? onClockTeam.name : 'Pick #' + pick) + '</strong></div>'
+              + '</div>'
+              + '</div>';
+          } else {
+            bannerHtml = '<div class="strategy-banner">'
+              + '<div>'
+              + '<h4 style="margin:0; font-size:15px; color:var(--good)">🎉 All Your Team\'s Picks Are Complete</h4>'
+              + '<div style="font-size:12px; color:var(--dim); margin-top:2px">Your team roster has completed all scheduled draft rounds. Switch to League Value & Grades to view your final report card.</div>'
+              + '</div>'
+              + '<button type="button" class="act primary" onclick="setBoardActiveTab(\'summary\')" style="font-weight:700">View Final Rankings ➔</button>'
+              + '</div>';
+          }
 
-              const pAlert = modalScarcity ? modalScarcity.playerAlerts.get(p.id) : null;
-              const scarcityTag = pAlert ? ' <span class="scarcity-tag' + (pAlert.isLast ? ' last-in-tier' : '') + '" style="font-size:8.5px; padding:0 4px">' + (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) + '</span>' : '';
-              const tierBadge = p.posTier ? ' ' + formatTierPill(p.posTier) : '';
+          // Opponent Threats
+          let threatsHtml = '';
+          if (strat.opponentThreats && strat.opponentThreats.length > 0) {
+            const cardsHtml = strat.opponentThreats.map(t => {
+              const needsHtml = t.urgentNeeds.map(n => {
+                const posUpper = (n.pos || '').toUpperCase();
+                const posBadgeClass = (posUpper === 'DST' || posUpper === 'DEF' || posUpper === 'D/ST') ? 'DST' : posUpper;
+                return '<span class="pos ' + posBadgeClass + '" style="font-size:9.5px; font-weight:800; padding:1px 5px; border-radius:3px">' + n.pos + '</span>';
+              }).join('') || '<span style="font-size:10px; color:var(--dim)">Depth / Bench</span>';
 
-              return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
-                + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'
-                + '<button type="button" class="' + starClass + '" title="' + starTitle + '" onclick="event.stopPropagation(); toggleWatch(' + p.id + '); renderDraftBoardModalView();">' + starIcon + '</button>'
-                + '<span class="target-rank-num">#' + (idx + 1) + '</span>'
-                + '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis">'
-                + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:4px">'
-                + '<span>' + p.name + '</span>'
-                + tierBadge
-                + scarcityTag
-                + rookieTag
+              return '<div class="threat-card">'
+                + '<div class="threat-card-top">'
+                + '<span style="font-weight:800; color:var(--accent)">' + t.pickFmt + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">(#' + t.overall + ')</span></span>'
+                + '<span style="font-size:10px; color:var(--dim)">Slot ' + t.slot + '</span>'
                 + '</div>'
-                + '<div style="font-size:10px; color:var(--dim); display:flex; align-items:center; gap:4px; margin-top:1px">'
-                + '<span>' + (p.team || '—') + '</span>'
-                + '<span>·</span>'
-                + byeHtml
-                + '</div>'
-                + '</div>'
-                + '</div>'
-                + '<div style="text-align:right; flex-shrink:0">'
-                + '<div style="font-size:12px; font-weight:800; color:var(--accent)">' + p.score + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">pts</span></div>'
-                + '<div>' + surplusTag + '</div>'
-                + '</div>'
+                + '<div class="threat-card-team">' + t.teamName + '</div>'
+                + '<div style="font-size:10px; color:var(--dim); margin-top:2px">Target Needs:</div>'
+                + '<div class="threat-needs-list">' + needsHtml + '</div>'
                 + '</div>';
             }).join('');
+
+            const dangersHtml = (strat.runDangers || []).map(d => {
+              return '<span class="threat-danger-badge">🚨 ' + d.message + '</span>';
+            }).join('');
+
+            threatsHtml = '<div class="threat-timeline-wrapper">'
+              + '<div class="strategy-section-title">🛡️ Opponents Drafting Before Your Turn (' + strat.opponentThreats.length + ' Picks Ahead)</div>'
+              + '<div class="threat-timeline">' + cardsHtml + '</div>'
+              + (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
+              + '</div>';
           }
 
-          let statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
+          // User Needs Grid
+          const needsCardsHtml = (strat.userNeeds || []).map(n => {
+            let statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
+            let barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
+            let barColor = (n.urgency === 'CRITICAL') ? 'var(--qb)' : (n.urgency === 'NEEDED' ? 'var(--warn)' : 'var(--good)');
 
-          return '<div class="' + colClass + '">'
-            + '<div class="pos-target-header">'
-            + '<div style="display:flex; align-items:center; gap:5px">'
-            + '<span class="pos ' + posClass + '" style="font-size:10px; padding:1px 5px">' + pos + '</span>'
-            + '<span style="font-size:12px; font-weight:700; color:var(--text)">' + posTitles[pos] + '</span>'
+            return '<div class="need-card">'
+              + '<div class="need-card-header">'
+              + '<span class="pos ' + (n.pos === 'DST' ? 'DST' : n.pos) + '" style="font-size:10px">' + n.pos + '</span>'
+              + '<span class="' + statusCls + '">' + n.label + '</span>'
+              + '</div>'
+              + '<div style="font-size:13px; font-weight:800; color:var(--text)">' + n.filled + ' / ' + n.baseReq + ' <span style="font-size:11px; font-weight:normal; color:var(--dim)">starters</span></div>'
+              + '<div style="background:rgba(255,255,255,0.08); height:4px; border-radius:2px; overflow:hidden"><div style="background:' + barColor + '; width:' + barPct + '%; height:100%"></div></div>'
+              + '</div>';
+          }).join('');
+
+          // Positional Targets: Top 5 BPA per Position
+          let targetsHtml = '';
+          if (strat.targetsByPosition) {
+            const posOrder = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+            const posTitles = {
+              QB: 'Quarterbacks',
+              RB: 'Running Backs',
+              WR: 'Wide Receivers',
+              TE: 'Tight Ends',
+              K: 'Kickers',
+              DST: 'Defenses'
+            };
+
+            const currentRound = Math.ceil(pick / s.teams);
+            const isLateRounds = (currentRound >= s.rounds - 2);
+            const visiblePositions = posOrder.filter(pos => {
+              if (pos === 'K' || pos === 'DST') {
+                return isLateRounds || (strat.userNeeds.some(n => n.pos === pos && (n.urgency === 'CRITICAL' || n.urgency === 'NEEDED')));
+              }
+              return true;
+            });
+
+            const posColumnsHtml = visiblePositions.map(pos => {
+              const pList = strat.targetsByPosition[pos] || [];
+              const needInfo = strat.userNeeds.find(n => n.pos === pos) || { urgency: 'FILLED', label: 'Filled' };
+              const isCritical = (needInfo.urgency === 'CRITICAL' || needInfo.urgency === 'NEEDED');
+              const posClass = (pos === 'DST') ? 'DST' : pos;
+              const colClass = isCritical ? 'pos-target-col urgent' : 'pos-target-col';
+
+              let rowsHtml = '';
+              if (pList.length === 0) {
+                rowsHtml = '<div style="font-size:11px; color:var(--dim); padding:10px 0; text-align:center">No available players</div>';
+              } else {
+                rowsHtml = pList.map((p, idx) => {
+                  const isW = Boolean(p.isWatched || (global.state.watchlist && global.state.watchlist.includes(p.id)));
+                  const starIcon = isW ? '★' : '☆';
+                  const starClass = isW ? 'target-star-btn active' : 'target-star-btn';
+                  const starTitle = isW ? 'In Watchlist (Click to remove)' : 'Add to Watchlist';
+
+                  let byeHtml = '';
+                  if (p.bye) {
+                    const bClash = p.byeClash || { type: 'none' };
+                    if (bClash.type === 'same-pos') {
+                      const names = (bClash.samePos || []).map(x => x.name).join(', ');
+                      const tip = 'Same-position bye clash with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                      byeHtml = '<span class="target-bye-pill clash" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ Wk ' + p.bye + '</span>';
+                    } else if (bClash.type === 'other-pos') {
+                      const names = (bClash.otherPos || []).map(x => x.name).join(', ');
+                      const tip = 'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                      byeHtml = '<span class="target-bye-pill overlap" title="' + tip.replace(/"/g, '&quot;') + '">⚡ Wk ' + p.bye + '</span>';
+                    } else {
+                      byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
+                    }
+                  } else {
+                    byeHtml = '<span class="target-bye-pill normal">—</span>';
+                  }
+
+                  const surplusTag = (p.valSurplus > 0)
+                    ? ('<span style="color:var(--good); font-size:10px; font-weight:700">+' + p.valSurplus + ' vs ADP</span>')
+                    : (p.adp ? ('<span style="color:var(--dim); font-size:10px">ADP ' + p.adp + '</span>') : '');
+
+                  const pAlert = (modalScarcity && modalScarcity.playerAlerts) ? modalScarcity.playerAlerts.get(p.id) : null;
+                  const scarcityTag = pAlert ? ' <span class="scarcity-tag' + (pAlert.isLast ? ' last-in-tier' : '') + '" style="font-size:8.5px; padding:0 4px">' + (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) + '</span>' : '';
+                  const tierBadge = p.posTier ? ' ' + formatTierPill(p.posTier) : '';
+                  const rookieTag = p.rookie ? ' <span class="rookietag">R</span>' : '';
+
+                  return '<div class="target-row" onclick="showPlayer(' + p.id + ')">'
+                    + '<div style="display:flex; align-items:center; gap:6px; min-width:0">'
+                    + '<button type="button" class="' + starClass + '" title="' + starTitle + '" onclick="event.stopPropagation(); toggleWatch(' + p.id + '); renderDraftBoardModalView();">' + starIcon + '</button>'
+                    + '<span class="target-rank-num">#' + (idx + 1) + '</span>'
+                    + '<div style="min-width:0; overflow:hidden; text-overflow:ellipsis">'
+                    + '<div style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:4px">'
+                    + '<span>' + p.name + '</span>'
+                    + tierBadge
+                    + scarcityTag
+                    + rookieTag
+                    + '</div>'
+                    + '<div style="font-size:10px; color:var(--dim); display:flex; align-items:center; gap:4px; margin-top:1px">'
+                    + '<span>' + (p.team || '—') + '</span>'
+                    + '<span>·</span>'
+                    + byeHtml
+                    + '</div>'
+                    + '</div>'
+                    + '</div>'
+                    + '<div style="text-align:right; flex-shrink:0">'
+                    + '<div style="font-size:12px; font-weight:800; color:var(--accent)">' + p.score + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">pts</span></div>'
+                    + '<div>' + surplusTag + '</div>'
+                    + '</div>'
+                    + '</div>';
+                }).join('');
+              }
+
+              let statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
+
+              return '<div class="' + colClass + '">'
+                + '<div class="pos-target-header">'
+                + '<div style="display:flex; align-items:center; gap:5px">'
+                + '<span class="pos ' + posClass + '" style="font-size:10px; padding:1px 5px">' + pos + '</span>'
+                + '<span style="font-size:12px; font-weight:700; color:var(--text)">' + posTitles[pos] + '</span>'
+                + '</div>'
+                + '<span class="' + statusPillCls + '">' + needInfo.label + '</span>'
+                + '</div>'
+                + '<div class="pos-target-list">' + rowsHtml + '</div>'
+                + '</div>';
+            }).join('');
+
+            targetsHtml = '<div>'
+              + '<div class="strategy-section-title">🎯 Best Available Players by Position (Top 5 per Position)</div>'
+              + '<div class="pos-targets-grid">' + posColumnsHtml + '</div>'
+              + '</div>';
+          }
+
+          mainViewHtml = '<div class="strategy-container">'
+            + bannerHtml
+            + threatsHtml
+            + '<div>'
+            + '<div class="strategy-section-title">📋 Your Team Starter Needs & Roster Health</div>'
+            + '<div class="needs-grid">' + needsCardsHtml + '</div>'
             + '</div>'
-            + '<span class="' + statusPillCls + '">' + needInfo.label + '</span>'
-            + '</div>'
-            + '<div class="pos-target-list">' + rowsHtml + '</div>'
+            + targetsHtml
             + '</div>';
-        }).join('');
-
-        targetsHtml = '<div>'
-          + '<div class="strategy-section-title">🎯 Best Available Players by Position (Top 5 per Position)</div>'
-          + '<div class="pos-targets-grid">' + posColumnsHtml + '</div>'
-          + '</div>';
+        }
+      } catch (err) {
+        console.error('Error rendering Live Strategy & Needs tab:', err);
+        mainViewHtml = '<div class="strategy-container"><div class="strategy-banner"><div><h4 style="margin:0; font-size:15px; color:var(--warn)">⚠️ Could not generate live strategy view (' + (err.message || 'unknown error') + ').</h4><div style="font-size:12px; color:var(--dim); margin-top:4px">You can switch back to the Board Grid or League Value tabs.</div></div><button type="button" class="act primary" onclick="setBoardActiveTab(\'grid\')">Return to Board Grid</button></div></div>';
       }
-
-      mainViewHtml = '<div class="strategy-container">'
-        + bannerHtml
-        + threatsHtml
-        + '<div>'
-        + '<div class="strategy-section-title">📋 Your Team Starter Needs & Roster Health</div>'
-        + '<div class="needs-grid">' + needsCardsHtml + '</div>'
-        + '</div>'
-        + targetsHtml
-        + '</div>';
     } else {
       // Summary View
       const summary = (typeof generateDraftSummaryAnalysis === 'function')
@@ -2705,6 +2757,7 @@
   global.closeBoardModal = closeBoardModal;
   global.setBoardActiveTab = setBoardActiveTab;
   global.setBoardFilter = setBoardFilter;
+  global.setBoardDensity = setBoardDensity;
   global.toggleBoardDensity = toggleBoardDensity;
   global.setSummarySort = setSummarySort;
   global.toggleTeamRosterDrawer = toggleTeamRosterDrawer;
