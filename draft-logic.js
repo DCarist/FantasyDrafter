@@ -1750,6 +1750,7 @@ function analyzeLiveDraftStrategy(options) {
   const nextUserPick = remainingUserPicks[0] || null;
   const picksUntilUserTurn = nextUserPick != null ? Math.max(0, nextUserPick - currentPickNum) : 0;
   const isOnClock = (currentPickNum === nextUserPick);
+  const subsequentUserPick = isOnClock ? (remainingUserPicks[1] || null) : nextUserPick;
 
   const currentRound = Math.ceil(currentPickNum / teams);
   const isLateRounds = (currentRound >= rounds - 2);
@@ -1819,7 +1820,9 @@ function analyzeLiveDraftStrategy(options) {
     });
   }
 
-  // 4. Opponent Threat Timeline between currentPickNum and nextUserPick
+  // 4. Opponent Threat Timeline
+  // When user is waiting: analyze picks between currentPickNum and nextUserPick
+  // When user is on the clock: look ahead and analyze opponent picks between currentPickNum + 1 and user's subsequent pick!
   const opponentThreats = [];
   const uniqueTeamsNeedingPos = {
     QB: new Set(),
@@ -1828,9 +1831,13 @@ function analyzeLiveDraftStrategy(options) {
     TE: new Set()
   };
 
-  if (nextUserPick != null && nextUserPick > currentPickNum) {
-    for (let pNum = currentPickNum; pNum < nextUserPick; pNum++) {
+  const threatWindowStart = isOnClock ? (currentPickNum + 1) : currentPickNum;
+  const threatWindowEnd = isOnClock ? subsequentUserPick : nextUserPick;
+
+  if (threatWindowEnd != null && threatWindowEnd > threatWindowStart) {
+    for (let pNum = threatWindowStart; pNum < threatWindowEnd; pNum++) {
       const oppTeamInfo = teamForOverall(pNum, teams, mode, teamNames, mySlot, tradedPicks);
+      if (oppTeamInfo.slot === mySlot) continue; // Skip user's own picks in window (e.g. back-to-back turns)
       const oppDrafted = teamDraftedMap[oppTeamInfo.slot] || [];
       const oppAllocation = assignRosterSlots(oppDrafted, rosterSlots);
       const oppCounts = oppAllocation.counts || { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
@@ -1976,6 +1983,9 @@ function analyzeLiveDraftStrategy(options) {
     nextUserPick: nextUserPick,
     picksUntilUserTurn: picksUntilUserTurn,
     isOnClock: isOnClock,
+    subsequentUserPick: subsequentUserPick,
+    threatWindowStart: threatWindowStart,
+    threatWindowEnd: threatWindowEnd,
     userNeeds: userNeeds,
     opponentThreats: opponentThreats,
     runDangers: runDangers,

@@ -761,6 +761,18 @@
   let summarySortAsc = true;
   let expandedTeamSlot = null;
   let wasDraftComplete = false;
+  let strategyThreatsCollapsed = false;
+  try {
+    strategyThreatsCollapsed = (localStorage.getItem('fantasy_drafter_threats_collapsed') === 'true');
+  } catch (e) {}
+
+  function toggleStrategyThreats() {
+    strategyThreatsCollapsed = !strategyThreatsCollapsed;
+    try {
+      localStorage.setItem('fantasy_drafter_threats_collapsed', String(strategyThreatsCollapsed));
+    } catch (e) {}
+    renderDraftBoardModalView();
+  }
 
   function closeModal() {
     isBoardModalOpen = false;
@@ -1292,10 +1304,29 @@
               return '<span class="threat-danger-badge">🚨 ' + d.message + '</span>';
             }).join('');
 
+            const threatTitle = strat.isOnClock
+              ? ('🛡️ Anticipated Opponents Ahead (' + strat.opponentThreats.length + ' Picks Until Pick #' + strat.subsequentUserPick + ')')
+              : ('🛡️ Opponents Drafting Before Your Turn (' + strat.opponentThreats.length + ' Picks Ahead)');
+
+            const collapseBtnLabel = strategyThreatsCollapsed
+              ? ('▶ Expand (' + strat.opponentThreats.length + ' Picks)')
+              : '▼ Collapse';
+
             threatsHtml = '<div class="threat-timeline-wrapper">'
-              + '<div class="strategy-section-title">🛡️ Opponents Drafting Before Your Turn (' + strat.opponentThreats.length + ' Picks Ahead)</div>'
-              + '<div class="threat-timeline">' + cardsHtml + '</div>'
-              + (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
+              + '<div class="threat-header" onclick="toggleStrategyThreats()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none">'
+              + '<div class="strategy-section-title" style="margin-bottom:0">' + threatTitle + '</div>'
+              + '<button type="button" class="act" style="font-size:11px; padding:2px 8px" onclick="event.stopPropagation(); toggleStrategyThreats()">' + collapseBtnLabel + '</button>'
+              + '</div>'
+              + (!strategyThreatsCollapsed ? (
+                  '<div class="threat-timeline" style="margin-top:10px">' + cardsHtml + '</div>'
+                  + (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
+                ) : '')
+              + '</div>';
+          } else if (strat.isOnClock && strat.subsequentUserPick != null && strat.subsequentUserPick === pick + 1) {
+            threatsHtml = '<div class="threat-timeline-wrapper" style="padding:10px 14px">'
+              + '<div style="font-size:12.5px; font-weight:700; color:var(--good); display:flex; align-items:center; gap:6px">'
+              + '⚡ Back-to-Back Picks! You also have the next pick: #' + strat.subsequentUserPick + ' (' + fmtPick(strat.subsequentUserPick, s.teams) + '). No opponents draft between your turns.'
+              + '</div>'
               + '</div>';
           }
 
@@ -1427,6 +1458,86 @@
               + '</div>';
           }
 
+          // Watchlist Section below Best Available Players
+          const myRoster = getMyRosterPlayers(global.state.log, byId, s.slot, s.teams, s.mode);
+          const watchedOrder = new Map();
+          (global.state.watchlist || []).forEach((id, idx) => watchedOrder.set(id, idx));
+
+          const scoredWatched = allScored
+            .filter(p => p && p.id != null && isWatched(global.state.watchlist, p.id) && !taken.has(p.id))
+            .sort((a, b) => (watchedOrder.get(a.id) ?? 999) - (watchedOrder.get(b.id) ?? 999));
+
+          let watchlistCardsHtml = '';
+          if (scoredWatched.length === 0) {
+            watchlistCardsHtml = '<div class="strategy-empty-watchlist">'
+              + '⭐ No available players in your watchlist. Click the ☆ star on any player in the recommendations above or the main board to prioritize them here.'
+              + '</div>';
+          } else {
+            watchlistCardsHtml = '<div class="strategy-watchlist-grid">'
+              + scoredWatched.map((p, idx) => {
+                const posUpper = (p.pos || '').toUpperCase();
+                const posClass = ['QB', 'RB', 'WR', 'TE', 'K'].includes(posUpper) ? posUpper.toLowerCase() : 'dst';
+                const byeClash = getByeClashStatus(p, myRoster);
+                let byeHtml = '<span class="target-bye-pill normal">—</span>';
+                if (p.bye) {
+                  if (byeClash && byeClash.type === 'same-pos') {
+                    const names = (byeClash.samePos || []).map(x => x.name).join(', ');
+                    const tip = 'Same-position bye clash with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                    byeHtml = '<span class="target-bye-pill clash" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ Wk ' + p.bye + '</span>';
+                  } else if (byeClash && byeClash.type === 'other-pos') {
+                    const names = (byeClash.otherPos || []).map(x => x.name).join(', ');
+                    const tip = 'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                    byeHtml = '<span class="target-bye-pill overlap" title="' + tip.replace(/"/g, '&quot;') + '">⚡ Wk ' + p.bye + '</span>';
+                  } else {
+                    byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
+                  }
+                }
+
+                const surplus = (p.adp != null && strat.nextUserPick != null) ? Math.round(strat.nextUserPick - p.adp) : 0;
+                const surplusHtml = (surplus > 0)
+                  ? ('<span style="color:var(--good); font-weight:700">+' + surplus + ' vs ADP</span>')
+                  : (p.adp ? ('<span>ADP ' + p.adp + '</span>') : '');
+
+                const pAlert = (modalScarcity && modalScarcity.playerAlerts) ? modalScarcity.playerAlerts.get(p.id) : null;
+                const scarcityTag = pAlert ? (' <span class="scarcity-tag' + (pAlert.isLast ? ' last-in-tier' : '') + '" style="font-size:8.5px; padding:0 4px">' + (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) + '</span>') : '';
+                const tierBadge = p.posTier ? (' ' + formatTierPill(p.posTier)) : '';
+                const rookieBadge = p.rookie ? ' <span class="rookietag">R</span>' : '';
+
+                return '<div class="watchlist-item strategy-watch-card" draggable="true" title="Drag to reorder priority" ondragstart="onWatchDragStart(event, ' + p.id + ')" ondragover="onWatchDragOver(event)" ondragleave="onWatchDragLeave(event)" ondrop="onWatchDrop(event, ' + p.id + ')" ondragend="onWatchDragEnd(event)">'
+                  + '<span class="watch-drag-grip" title="Drag to reorder priority" style="cursor:grab; color:var(--dim); font-size:13px">⠿</span>'
+                  + '<span class="watch-rank-num">#' + (idx + 1) + '</span>'
+                  + '<button type="button" class="target-star-btn active" title="Remove from Watchlist" onclick="event.stopPropagation(); toggleWatch(' + p.id + ', event);">★</button>'
+                  + '<span class="pos ' + posClass + '" style="font-size:10px; padding:1px 5px">' + p.pos + '</span>'
+                  + '<div style="cursor:pointer; flex:1; min-width:0; overflow:hidden" onclick="showPlayer(' + p.id + ')">'
+                  + '<div style="display:flex; align-items:center; gap:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">'
+                  + '<span style="font-size:11.5px; font-weight:700; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">' + p.name + '</span>'
+                  + tierBadge
+                  + scarcityTag
+                  + rookieBadge
+                  + '</div>'
+                  + '<div style="font-size:10.5px; color:var(--dim); display:flex; align-items:center; gap:5px; margin-top:1px">'
+                  + '<span>' + (p.team || '—') + '</span>'
+                  + '<span>·</span>'
+                  + byeHtml
+                  + (surplusHtml ? '<span>·</span>' + surplusHtml : '')
+                  + '</div>'
+                  + '</div>'
+                  + '<div style="text-align:right; flex-shrink:0">'
+                  + '<div style="font-size:12px; font-weight:800; color:var(--accent)">' + (p.score != null ? Math.round(p.score * 10) / 10 : '—') + ' <span style="font-size:9.5px; font-weight:normal; color:var(--dim)">pts</span></div>'
+                  + '</div>'
+                  + '</div>';
+              }).join('')
+              + '</div>';
+          }
+
+          const watchlistHtml = '<div class="strategy-watchlist-section">'
+            + '<div class="strategy-section-title" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px">'
+            + '<span>⭐ Your Watchlist (' + scoredWatched.length + ' Available Players · Drag to Reorder)</span>'
+            + '<span style="font-size:11px; font-weight:normal; color:var(--dim)">Targets prioritized in order across your board</span>'
+            + '</div>'
+            + watchlistCardsHtml
+            + '</div>';
+
           mainViewHtml = '<div class="strategy-container">'
             + bannerHtml
             + threatsHtml
@@ -1435,6 +1546,7 @@
             + '<div class="needs-grid">' + needsCardsHtml + '</div>'
             + '</div>'
             + targetsHtml
+            + watchlistHtml
             + '</div>';
         }
       } catch (err) {
@@ -2759,6 +2871,7 @@
   global.setBoardFilter = setBoardFilter;
   global.setBoardDensity = setBoardDensity;
   global.toggleBoardDensity = toggleBoardDensity;
+  global.toggleStrategyThreats = toggleStrategyThreats;
   global.setSummarySort = setSummarySort;
   global.toggleTeamRosterDrawer = toggleTeamRosterDrawer;
   global.scrollBoardToCurrentPick = scrollBoardToCurrentPick;

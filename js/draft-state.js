@@ -320,6 +320,18 @@
     });
   }
 
+  function rerenderBoardModalIfOpen() {
+    if (typeof document !== 'undefined') {
+      const modal = document.getElementById('modalbox');
+      if (modal && modal.classList.contains('modal-board')) {
+        const fn = (typeof renderDraftBoardModalView === 'function')
+          ? renderDraftBoardModalView
+          : (typeof global !== 'undefined' && global.renderDraftBoardModalView);
+        if (typeof fn === 'function') fn();
+      }
+    }
+  }
+
   function toggleWatch(id, e) {
     if (e) {
       if (typeof e.stopPropagation === 'function') e.stopPropagation();
@@ -330,6 +342,7 @@
     if (typeof renderTabs === 'function') renderTabs();
     if (typeof renderPool === 'function') renderPool();
     if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
+    rerenderBoardModalIfOpen();
   }
 
   function moveWatch(id, delta, e) {
@@ -354,6 +367,7 @@
     save();
     if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
     if (typeof renderPool === 'function') renderPool();
+    rerenderBoardModalIfOpen();
   }
 
   function reorderWatch(fromPlayerId, toPlayerId) {
@@ -373,6 +387,7 @@
     save();
     if (typeof renderWatchlistPanel === 'function') renderWatchlistPanel();
     if (typeof renderPool === 'function') renderPool();
+    rerenderBoardModalIfOpen();
   }
 
   function draftUnlistedPlayer(pos, name, team, bye) {

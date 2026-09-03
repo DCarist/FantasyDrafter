@@ -76,6 +76,34 @@ eq(L.reorderWatchlist(initialWatch, -1, 2), initialWatch, 'reorderWatchlist nega
 eq(L.reorderWatchlist(initialWatch, 1, 10), initialWatch, 'reorderWatchlist out-of-bounds toIdx returns original list copy');
 eq(L.reorderWatchlist(null, 0, 1), [], 'reorderWatchlist on null returns empty array');
 
+// --- 5. Watchlist Priority Order Resolution for Strategy View ---
+const priorityList = [302, 301, 303]; // 302 first, then 301, then 303
+const watchedOrder = new Map();
+priorityList.forEach((id, idx) => watchedOrder.set(id, idx));
+
+const testCandidates = [
+  { id: 301, name: 'Marvin Harrison Jr.' },
+  { id: 303, name: 'Kyren Williams' },
+  { id: 302, name: 'Malik Nabers' }
+];
+
+const sortedByPriority = testCandidates.slice().sort((a, b) => {
+  return (watchedOrder.get(a.id) ?? 999) - (watchedOrder.get(b.id) ?? 999);
+});
+
+eq(sortedByPriority[0].id, 302, 'First player in strategy watchlist matches priority order (Malik Nabers)');
+eq(sortedByPriority[1].id, 301, 'Second player matches priority order (Marvin Harrison Jr.)');
+eq(sortedByPriority[2].id, 303, 'Third player matches priority order (Kyren Williams)');
+
+// Drag-and-drop ID resolution
+const fromPlayerId = 303; // Drag Kyren Williams to before Marvin Harrison Jr.
+const toPlayerId = 301;
+const fromIdx = priorityList.indexOf(fromPlayerId);
+const toIdx = priorityList.indexOf(toPlayerId);
+const reorderedByDrag = L.reorderWatchlist(priorityList, fromIdx, toIdx);
+
+eq(reorderedByDrag, [302, 303, 301], 'Drag and drop reordering by player ID successfully moves Kyren before Marvin');
+
 const success = finishSuite('Draft Watchlist Management');
 if (!success) {
   process.exit(1);

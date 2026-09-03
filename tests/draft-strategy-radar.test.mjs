@@ -193,6 +193,33 @@ eq(allUserPicksDoneRes.nextUserPick, null, 'nextUserPick is null when user has n
 eq(allUserPicksDoneRes.picksUntilUserTurn, 0, 'picksUntilUserTurn is 0');
 eq(allUserPicksDoneRes.isComplete, false, 'Overall draft is not yet complete');
 
+// Scenario 6: User on the clock with opponent anticipation until next turn
+const onClockAnticipationRes = L.analyzeLiveDraftStrategy({
+  teams: 4,
+  rounds: 4,
+  mode: 'snake',
+  log: [], // At pick 1, no picks made yet
+  keepers: [],
+  tradedPicks: {},
+  mySlot: 1,
+  currentPickNum: 1,
+  teamNames: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
+  playersLookup: byIdLookup,
+  rosterSlots: { qb: 1, rb: 2, wr: 2, te: 1, flex: 1, superflex: 0, k: 0, dst: 0, bench: 3 },
+  availablePlayers: availablePool
+});
+
+eq(onClockAnticipationRes.isOnClock, true, 'User is on the clock at Pick 1');
+eq(onClockAnticipationRes.nextUserPick, 1, 'Current user pick is Pick 1');
+eq(onClockAnticipationRes.subsequentUserPick, 8, 'User subsequent pick in 4-team snake is Pick 8');
+eq(onClockAnticipationRes.threatWindowStart, 2, 'Threat window starts at Pick 2');
+eq(onClockAnticipationRes.threatWindowEnd, 8, 'Threat window ends before Pick 8');
+eq(onClockAnticipationRes.opponentThreats.length, 6, 'Anticipates exactly 6 opponent picks between Pick 1 and Pick 8');
+eq(onClockAnticipationRes.opponentThreats[0].overall, 2, 'First opponent pick is Pick 2');
+eq(onClockAnticipationRes.opponentThreats[0].teamName, 'Bravo', 'Pick 2 team is Bravo');
+eq(onClockAnticipationRes.opponentThreats[5].overall, 7, 'Last opponent pick before user turn is Pick 7');
+eq(onClockAnticipationRes.opponentThreats[5].teamName, 'Bravo', 'Pick 7 team is Bravo (snake reverse)');
+
 const success = finishSuite('Live Draft Strategy Radar & Opponent Threat Analysis');
 if (!success) {
   process.exit(1);
