@@ -24,6 +24,55 @@ import urllib.request
 from collections import Counter
 from datetime import date
 
+# Ensure UTF-8 console output on Windows
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+DEFAULT_NFL_BYES = {
+    "ARI": 14,
+    "ATL": 11,
+    "BAL": 13,
+    "BUF": 7,
+    "CAR": 5,
+    "CHI": 10,
+    "CIN": 6,
+    "CLE": 11,
+    "DAL": 14,
+    "DEN": 10,
+    "DET": 6,
+    "GB": 11,
+    "HOU": 8,
+    "IND": 13,
+    "JAX": 7,
+    "KC": 5,
+    "LAC": 7,
+    "LAR": 11,
+    "LV": 13,
+    "MIA": 6,
+    "MIN": 6,
+    "NE": 11,
+    "NO": 8,
+    "NYG": 8,
+    "NYJ": 13,
+    "PHI": 10,
+    "PIT": 9,
+    "SEA": 11,
+    "SF": 8,
+    "TB": 10,
+    "TEN": 9,
+    "WAS": 7,
+}
+
 TEAM_FIX = {
     "JAC": "JAX",
     "WSH": "WAS",
@@ -247,14 +296,24 @@ def int_or_none(val):
 def fetch_source(url_or_path):
     if url_or_path.startswith(("http://", "https://")):
         print(f"Fetching remote: {url_or_path}")
+        try:
+            from espn_client import fetch_with_curl
+
+            out, err = fetch_with_curl(url_or_path, timeout=30)
+            if out:
+                return out
+        except Exception:
+            pass
+
         req = urllib.request.Request(
             url_or_path,
             headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FantasyDrafter/1.0"
+                "User-Agent": "curl/8.4.0",
+                "Accept": "*/*",
             },
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.read().decode("utf-8")
+            return resp.read().decode("utf-8", errors="replace")
     else:
         print(f"Reading local source: {url_or_path}")
         with open(url_or_path, "r", encoding="utf-8") as f:
@@ -401,7 +460,8 @@ def update_rankings(
 
     # 5. Build player records from ECR, Sheet, and Values
     players = {}  # norm_name -> dict
-    byes = dict(existing_byes)
+    byes = dict(DEFAULT_NFL_BYES)
+    byes.update(existing_byes)
     rookies = set()
 
     for r in ecr_rows:
@@ -737,7 +797,9 @@ def update_rankings(
         from fetch_depth_charts import fetch_all_depth_charts, build_player_lookup
 
         print("Refreshing 32-team depth charts from ESPN...")
-        depth_charts = fetch_all_depth_charts(out, verbose=False)
+        depth_charts = fetch_all_depth_charts(
+            out, verbose=False, existing_depth_charts=existing_depth_charts
+        )
         print(f"Successfully synced depth charts for {len(depth_charts)} teams.")
     except Exception as e:
         print(

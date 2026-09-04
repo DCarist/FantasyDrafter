@@ -148,6 +148,7 @@ FantasyDrafter/
 │   ├── draft-summary-analysis.test.mjs
 │   ├── draft-tiers.test.mjs
 │   ├── espn-sync-robustness.test.mjs
+│   ├── espn-fetch-robustness.test.mjs
 │   ├── injury-tracking.test.mjs
 │   ├── keepers.test.mjs
 │   ├── league-formats.test.mjs
@@ -160,6 +161,7 @@ FantasyDrafter/
 │   └── watchlist.test.mjs
 │
 ├── scripts/                        # Automated data pipelines and fetchers
+│   ├── espn_client.py              # Resilient ESPN API client (anti-403 & native curl transport)
 │   ├── update_rankings.py          # Master consensus rankings updater
 │   ├── fetch_depth_charts.py       # 32-team ESPN depth charts fetcher
 │   ├── fetch_injuries.py           # ESPN NFL injury reports fetcher
@@ -175,7 +177,7 @@ FantasyDrafter/
 
 ## 🧪 Testing
 
-Fantasy Drafter includes a comprehensive suite of **22 automated test suites** covering draft matrix calculations, 3RR order, live synchronization, pick trading, keepers, roster slots, depth charts, injury tracking, natural breaks tiering, watchlist priority reordering, and post-draft league assessment.
+Fantasy Drafter includes a comprehensive suite of **23 automated test suites** covering draft matrix calculations, 3RR order, live synchronization, pick trading, keepers, roster slots, depth charts, injury tracking, natural breaks tiering, watchlist priority reordering, anti-403 HTTP resilience, and post-draft league assessment.
 
 Run the full test suite with:
 ```bash

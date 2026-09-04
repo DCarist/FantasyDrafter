@@ -10,8 +10,26 @@ import json
 import os
 import re
 import sys
-import urllib.request
 from datetime import date
+
+# Ensure UTF-8 console output on Windows
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+try:
+    from espn_client import fetch_espn_json
+except ImportError:
+    from scripts.espn_client import fetch_espn_json
 
 ESPN_INJURIES_URL = (
     "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
@@ -54,12 +72,7 @@ def build_player_lookup(players):
 
 
 def fetch_espn_injuries():
-    req = urllib.request.Request(
-        ESPN_INJURIES_URL, headers={"User-Agent": "Mozilla/5.0"}
-    )
-    with urllib.request.urlopen(req, timeout=15) as res:
-        raw = res.read().decode("utf-8")
-        return json.loads(raw)
+    return fetch_espn_json(ESPN_INJURIES_URL, timeout=15)
 
 
 def extract_injury_record(inj_item):
@@ -100,12 +113,26 @@ def sync_injuries_into_data(data, verbose=True):
     """Fetch live ESPN injuries and attach them to players and depth chart athletes."""
     if verbose:
         print("Fetching official NFL injury report from ESPN...")
-    raw_data = fetch_espn_injuries()
+    try:
+        raw_data = fetch_espn_injuries()
+    except Exception as e:
+        if verbose:
+            print(
+                f"Warning: Failed to fetch live ESPN injuries: {e}. Preserving existing injuries."
+            )
+        return 0
+
+    if not raw_data or "injuries" not in raw_data:
+        if verbose:
+            print(
+                "Warning: No injury data returned by ESPN. Preserving existing injuries."
+            )
+        return 0
 
     players = data.get("players", [])
     lookup_exact, lookup_name = build_player_lookup(players)
 
-    # Reset all players' injury property to None
+    # Reset all players' injury property to None now that fresh data is confirmed
     for p in players:
         p["injury"] = None
 

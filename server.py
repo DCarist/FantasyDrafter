@@ -675,9 +675,16 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
         update_script = os.path.join(DIRECTORY, "scripts", "update_rankings.py")
         cmd = [sys.executable, update_script]
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             if res.returncode == 0:
                 safe_print("✅ On-demand data refresh completed successfully!\n")
+                log_event("✅ On-demand data refresh completed successfully")
                 payload = {
                     "ok": True,
                     "message": "Player consensus rankings, depth charts, and injury reports updated successfully!",

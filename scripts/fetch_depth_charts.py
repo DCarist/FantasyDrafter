@@ -10,8 +10,26 @@ import json
 import os
 import re
 import sys
-import urllib.request
 from datetime import date
+
+# Ensure UTF-8 console output on Windows
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+try:
+    from espn_client import fetch_espn_json
+except ImportError:
+    from scripts.espn_client import fetch_espn_json
 
 ESPN_TEAM_MAP = {
     "ARI": "ari",
@@ -72,10 +90,7 @@ def build_player_lookup(players):
 
 def fetch_team_depth_chart(team_abbr, espn_code, lookup_exact, lookup_name):
     url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{espn_code}/depthcharts"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=12) as res:
-        raw = res.read().decode("utf-8")
-        data = json.loads(raw)
+    data = fetch_espn_json(url, timeout=12, delay_before=0.08)
 
     off = next(
         (d for d in data.get("depthchart", []) if "qb" in d.get("positions", {})),
@@ -124,7 +139,7 @@ def fetch_team_depth_chart(team_abbr, espn_code, lookup_exact, lookup_name):
     return result
 
 
-def fetch_all_depth_charts(players, verbose=True):
+def fetch_all_depth_charts(players, verbose=True, existing_depth_charts=None):
     lookup_exact, lookup_name = build_player_lookup(players)
     depth_charts = {}
     total = len(ESPN_TEAM_MAP)
@@ -137,14 +152,18 @@ def fetch_all_depth_charts(players, verbose=True):
             )
         except Exception as e:
             print(f"Warning: Failed to fetch depth chart for {abbr}: {e}")
-            depth_charts[abbr] = {
-                "updated": date.today().isoformat(),
-                "qb": [],
-                "rb": [],
-                "wr": {"wr1": [], "wr2": [], "wr3": []},
-                "te": [],
-                "pk": [],
-            }
+            if existing_depth_charts and abbr in existing_depth_charts:
+                print(f"Retaining existing depth chart for {abbr}.")
+                depth_charts[abbr] = existing_depth_charts[abbr]
+            else:
+                depth_charts[abbr] = {
+                    "updated": date.today().isoformat(),
+                    "qb": [],
+                    "rb": [],
+                    "wr": {"wr1": [], "wr2": [], "wr3": []},
+                    "te": [],
+                    "pk": [],
+                }
     return depth_charts
 
 
@@ -185,7 +204,10 @@ def main():
     players = data.get("players", [])
     print(f"Found {len(players)} players in dataset. Fetching depth charts...")
 
-    depth_charts = fetch_all_depth_charts(players, verbose=True)
+    existing_dc = data.get("depthCharts", {})
+    depth_charts = fetch_all_depth_charts(
+        players, verbose=True, existing_depth_charts=existing_dc
+    )
     data["depthCharts"] = depth_charts
 
     # Write out JSON
