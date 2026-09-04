@@ -189,6 +189,20 @@
     return '<span class="tier-pill ' + cls + '">T' + t + '</span>';
   }
 
+  function getPlayerEdge(p, s) {
+    if (!p) return null;
+    const isRedraft = (s && s.leagueType === 'redraft');
+    const consensus = isRedraft ? p.activeRed : (p.activeDyn ?? p.activeRed);
+    const espnRank = (s && s.scoring === 'std' ? (p.espn_std ?? p.espn_ppr) : (p.espn_ppr ?? p.espn_std)) ?? p.yahoo ?? null;
+    if (consensus == null || espnRank == null) return null;
+    const edge = Math.round(espnRank - consensus);
+    return {
+      edge: edge,
+      espn: Math.round(espnRank),
+      consensus: Math.round(consensus)
+    };
+  }
+
   function renderPool() {
     const s = global.state.settings;
     const taken = takenMap();
@@ -230,18 +244,43 @@
       $('th_rk').textContent = (global.ui.posFilter === 'WATCHLIST' && global.ui.sort === 'watch') ? 'Priority' : '#';
       $('th_rk').title = (global.ui.posFilter === 'WATCHLIST') ? 'Drag rows to reorder watchlist priority' : '';
     }
-    if ($('th_dyn')) $('th_dyn').textContent = (s.qbFormat === '1qb') ? 'Dyn 1QB' : 'Dyn SF';
-    if ($('th_red')) {
-      const scTag = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'STD' : 'Half');
-      $('th_red').textContent = 'Red (' + (s.qbFormat === '1qb' ? scTag : 'SF ' + scTag) + ')';
+    const isRedraft = (s.leagueType === 'redraft');
+    const scTag = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'STD' : 'Half');
+    const redLabel = 'Red (' + (s.qbFormat === '1qb' ? scTag : 'SF ' + scTag) + ')';
+    const thRank1 = $('th_rank1') || $('th_dyn');
+    const thRank2 = $('th_rank2') || $('th_red');
+    if (thRank1) {
+      if (isRedraft) {
+        thRank1.textContent = redLabel;
+        thRank1.title = 'Consensus Redraft Rank';
+      } else {
+        thRank1.textContent = (s.qbFormat === '1qb') ? 'Dyn 1QB' : 'Dyn SF';
+        thRank1.title = (s.qbFormat === '1qb') ? 'Dynasty 1QB Rank' : 'Dynasty Superflex Rank';
+      }
+    }
+    if (thRank2) {
+      if (isRedraft) {
+        thRank2.textContent = 'ESPN (' + (s.scoring === 'std' ? 'STD' : 'PPR') + ')';
+        thRank2.title = 'ESPN Platform Rank';
+      } else {
+        thRank2.textContent = redLabel;
+        thRank2.title = 'Consensus Redraft Rank';
+      }
     }
 
     const key = {
       score: p => -(p.score ?? -1),
       dyn: p => p.activeDyn ?? 9999,
       red: p => p.activeRed ?? 9999,
+      edge: p => {
+        const info = getPlayerEdge(p, s);
+        return info != null ? -info.edge : 9999;
+      },
       rookie: p => (p.rookie ? (p.prospectRank ?? p.activeDyn ?? 999) : 9999),
-      adp: p => p.adp ?? 9999,
+      adp: p => {
+        const info = getPlayerEdge(p, s);
+        return info != null ? -info.edge : (p.adp ?? 9999);
+      },
       watch: p => {
         const wIdx = (global.state.watchlist || []).indexOf(p.id);
         return wIdx >= 0 ? wIdx : 9999;
@@ -276,7 +315,10 @@
       }
 
       const posClass = ['QB', 'RB', 'WR', 'TE'].includes(p.pos) ? p.pos : (['DST', 'DEF', 'D/ST'].includes(p.pos) ? 'DST' : (p.pos === 'K' ? 'K' : 'other'));
-      const value = !isTaken && p.adp && p.adp - pick >= 8 ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>' : '';
+      const edgeInfo = getPlayerEdge(p, s);
+      const value = !isTaken && edgeInfo && edgeInfo.edge >= 15
+        ? ' <span class="valuetag" title="' + ('+' + edgeInfo.edge + ' Edge vs ESPN').replace(/"/g, '&quot;') + '">+' + edgeInfo.edge + ' vs ESPN</span>'
+        : (!isTaken && p.adp && p.adp - pick >= 8 ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>' : '');
       const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
       const rookie = p.rookie ? '<span class="rookietag" title="Rookie Draft Rank' + rookieRankStr + '">R' + rookieRankStr + '</span>' : '';
       const age = p.age ? ' <span class="meta">' + p.age + 'y</span>' : '';
@@ -330,18 +372,44 @@
         }
       }
 
-      let byeCell = '<td class="meta">' + (p.bye || '—') + '</td>';
+      let byeCell = '<td class="meta col-center">' + (p.bye || '—') + '</td>';
       if (p.bye) {
         const byeClash = getByeClashStatus(p, myRoster);
         if (byeClash.type === 'same-pos') {
           const names = byeClash.samePos.map(x => x.name).join(', ');
           const tip = 'Same-position bye clash with ' + names + ' (' + p.pos + ', Week ' + p.bye + ')';
-          byeCell = '<td><span class="byetag bye-same-pos" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ ' + p.bye + '</span></td>';
+          byeCell = '<td class="col-center"><span class="byetag bye-same-pos" title="' + tip.replace(/"/g, '&quot;') + '">⚠️ ' + p.bye + '</span></td>';
         } else if (byeClash.type === 'other-pos') {
           const names = byeClash.otherPos.map(x => x.name + ' (' + x.pos + ')').join(', ');
           const tip = 'Bye week coincides with ' + names + ' (Week ' + p.bye + ')';
-          byeCell = '<td><span class="byetag bye-other-pos" title="' + tip.replace(/"/g, '&quot;') + '">' + p.bye + '</span></td>';
+          byeCell = '<td class="col-center"><span class="byetag bye-other-pos" title="' + tip.replace(/"/g, '&quot;') + '">' + p.bye + '</span></td>';
         }
+      }
+
+      let rank1Val, rank2Val;
+      if (isRedraft) {
+        rank1Val = (p.activeRed ?? '—');
+        const espnRank = (s.scoring === 'std' ? (p.espn_std ?? p.espn_ppr) : (p.espn_ppr ?? p.espn_std)) ?? p.yahoo ?? null;
+        rank2Val = espnRank != null ? espnRank : '—';
+      } else {
+        rank1Val = (p.activeDyn ?? '—');
+        rank2Val = (p.activeRed ?? '—');
+      }
+
+      let edgeCell = '<td class="num rk meta">—</td>';
+      if (edgeInfo != null) {
+        const { edge, espn, consensus } = edgeInfo;
+        const sign = edge > 0 ? '+' : '';
+        const cls = edge > 0 ? 'edge-pos' : (edge < 0 ? 'edge-neg' : 'edge-zero');
+        let tip;
+        if (edge > 0) {
+          tip = 'Market Steal: ESPN ranks at #' + espn + ' vs Consensus #' + consensus + ' (+' + edge + ' edge).\nOpponents following ESPN\'s queue will let this player slide!';
+        } else if (edge < 0) {
+          tip = 'Overdraft Risk: ESPN ranks at #' + espn + ' vs Consensus #' + consensus + ' (' + edge + ' reach).\nOpponents following ESPN\'s queue may draft this player early.';
+        } else {
+          tip = 'Market Neutral: ESPN rank (#' + espn + ') matches Consensus (#' + consensus + ').';
+        }
+        edgeCell = '<td class="num rk"><span class="' + cls + '" title="' + tip.replace(/"/g, '&quot;') + '">' + sign + edge + '</span></td>';
       }
 
       const isWatchlistTab = (global.ui.posFilter === 'WATCHLIST');
@@ -356,13 +424,13 @@
       html += '<tr' + dragAttrs + '>'
         + rankCell
         + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + scarcityTag + '</td>'
-        + '<td><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
-        + '<td>' + formatTierPill(p.posTier) + '</td>'
-        + '<td class="meta">' + (p.team || '—') + '</td>'
+        + '<td class="col-center"><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
+        + '<td class="col-center">' + formatTierPill(p.posTier) + '</td>'
+        + '<td class="meta col-center">' + (p.team || '—') + '</td>'
         + byeCell
-        + '<td class="num rk">' + (p.activeDyn ?? '—') + '</td>'
-        + '<td class="num rk">' + (p.activeRed ?? '—') + '</td>'
-        + '<td class="num rk">' + (p.adp ? p.adp.toFixed(0) : '—') + '</td>'
+        + '<td class="num rk">' + rank1Val + '</td>'
+        + '<td class="num rk">' + rank2Val + '</td>'
+        + edgeCell
         + '<td class="num score">' + (p.score != null ? p.score.toFixed(1) : '—') + '</td>'
         + actionCell
         + '</tr>';
@@ -2878,5 +2946,6 @@
   global.showPlayerFromBoard = showPlayerFromBoard;
   global.showUnlistedPlayerFromBoard = showUnlistedPlayerFromBoard;
   global.handleClosePlayerModal = handleClosePlayerModal;
+  global.getPlayerEdge = getPlayerEdge;
 })(typeof window !== 'undefined' ? window : globalThis);
 

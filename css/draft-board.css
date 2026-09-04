@@ -445,10 +445,43 @@ tr.tierbreak td {
   color: var(--dim);
 }
 
+th#th_rk,
+td.rk:first-child {
+  width: 50px;
+  min-width: 48px;
+  max-width: 60px;
+  white-space: nowrap;
+}
+
+.col-center {
+  text-align: center;
+}
+
+.clickname {
+  cursor: pointer;
+}
+
 .valuetag {
   color: var(--good);
   font-size: 10.5px;
   font-weight: 700;
+}
+
+.edge-pos {
+  color: #34d399;
+  font-weight: 700;
+  cursor: help;
+}
+
+.edge-neg {
+  color: #f87171;
+  font-weight: 600;
+  cursor: help;
+}
+
+.edge-zero {
+  color: var(--dim);
+  cursor: help;
 }
 
 tr.takenrow td {
@@ -657,10 +690,10 @@ h2 {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 15px;
   color: var(--dim);
-  padding: 4px 7px;
-  margin: -4px 3px -4px -5px;
+  padding: 2px 4px;
+  margin: 0 4px 0 0;
   line-height: 1;
   display: inline-flex;
   align-items: center;

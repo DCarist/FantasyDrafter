@@ -91,6 +91,7 @@
             <option value="score">Draft score</option>
             <option value="dyn">Dynasty rank</option>
             <option value="red">Redraft rank</option>
+            <option value="edge">Arbitrage Edge (vs ESPN)</option>
             <option value="rookie">Rookie / Prospect rank</option>
             <option value="adp">ADP</option>
             <option value="watch">Watchlist priority</option>
@@ -103,16 +104,17 @@
         <table>
           <thead>
             <tr>
-              <th id="th_rk">#</th>
-              <th>Pos</th>
-              <th>Pos Tier</th>
-              <th>Team</th>
-              <th>Bye</th>
-              <th class="num" id="th_dyn">Dyn SF</th>
-              <th class="num" id="th_red">Redraft</th>
-              <th class="num">ADP</th>
-              <th class="num">Score</th>
-              <th></th>
+              <th id="th_rk" style="width:52px">#</th>
+              <th id="th_name">Player</th>
+              <th id="th_pos" style="width:52px; text-align:center">Pos</th>
+              <th id="th_tier" style="width:54px; text-align:center">Tier</th>
+              <th id="th_team" style="width:52px; text-align:center">Team</th>
+              <th id="th_bye" style="width:52px; text-align:center">Bye</th>
+              <th class="num" id="th_rank1">Dyn SF</th>
+              <th class="num" id="th_rank2">Redraft</th>
+              <th class="num" id="th_edge" title="Market Arbitrage Edge: ESPN Platform Rank minus Consensus Rank. Green (+) indicates players undervalued by ESPN where you can wait for value. Red (-) indicates players ESPN overvalues.">Edge</th>
+              <th class="num" id="th_score">Score</th>
+              <th id="th_act" style="width:115px"></th>
             </tr>
           </thead>
           <tbody id="pool"></tbody>

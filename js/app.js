@@ -10,6 +10,8 @@
     if ($('teprem')) $('teprem').checked = s.teprem;
     if ($('blend')) $('blend').value = s.blend;
     if ($('blendval')) $('blendval').textContent = s.blend + '%';
+    if ($('hidetaken')) $('hidetaken').checked = !!s.hideTaken;
+    if ($('hideoutir')) $('hideoutir').checked = !!s.hideOutIR;
   }
 
   function bindSettings() {
@@ -91,12 +93,18 @@
     });
 
     on('hidetaken', 'change', () => {
-      global.ui.hideTaken = $('hidetaken').checked;
+      const val = $('hidetaken').checked;
+      global.ui.hideTaken = val;
+      global.state.settings.hideTaken = val;
+      save();
       renderPool();
     });
 
     on('hideoutir', 'change', () => {
-      global.ui.hideOutIR = $('hideoutir').checked;
+      const val = $('hideoutir').checked;
+      global.ui.hideOutIR = val;
+      global.state.settings.hideOutIR = val;
+      save();
       renderPool();
     });
 

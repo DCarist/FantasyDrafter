@@ -26,11 +26,19 @@
     ],
     rosterSlots: Object.assign({}, (typeof DEFAULT_ROSTER_SLOTS !== 'undefined' ? DEFAULT_ROSTER_SLOTS : {
       qb: 1, rb: 2, wr: 2, te: 1, flex: 3, superflex: 1, k: 0, dst: 0, bench: 15
-    }))
+    })),
+    hideTaken: false,
+    hideOutIR: false
   };
 
   let state = load();
-  let ui = { posFilter: 'ALL', search: '', sort: 'score', hideTaken: false, hideOutIR: false };
+  let ui = {
+    posFilter: 'ALL',
+    search: '',
+    sort: 'score',
+    hideTaken: !!(state && state.settings && state.settings.hideTaken),
+    hideOutIR: !!(state && state.settings && state.settings.hideOutIR)
+  };
   let viewingRosterSlot = null; // null = follow on-the-clock slot
 
   function normalizeState(s) {
@@ -54,6 +62,8 @@
     if (s.settings.syncRollback === undefined) s.settings.syncRollback = true;
     if (!s.settings.sleeperDraftId) s.settings.sleeperDraftId = '';
     if (!s.settings.sleeperUsername) s.settings.sleeperUsername = '';
+    s.settings.hideTaken = !!s.settings.hideTaken;
+    s.settings.hideOutIR = !!s.settings.hideOutIR;
 
     if (!Array.isArray(s.settings.teamNames)) s.settings.teamNames = [];
     const names = [];
