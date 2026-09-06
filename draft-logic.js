@@ -1481,6 +1481,284 @@ function remapKeepersOnSlotSwap(keepers, slotA, slotB) {
   });
 }
 
+// --- Player Pool Reconciliation & Stable Reference System ---
+
+// Builds an indexed lookup structure over playersList for fast, robust player resolution across data updates
+function buildPlayerLookupIndex(playersList) {
+  const list = Array.isArray(playersList) ? playersList : [];
+  const exactMap = new Map();     // "normName|pos|team" -> player
+  const namePosMap = new Map();   // "normName|pos" -> player
+  const nameOnlyMap = new Map();  // "normName" -> player
+  const dstMap = new Map();       // teamAbbr -> player (for defenses)
+
+  for (let i = 0; i < list.length; i++) {
+    const p = list[i];
+    if (!p || !p.name) continue;
+    const pid = p.id != null ? p.id : i;
+    const playerWithId = (p.id != null) ? p : Object.assign({ id: pid }, p);
+
+    const normN = normalizeName(p.name);
+    const normP = (p.pos || '').trim().toUpperCase();
+    const normT = (p.team || '').trim().toUpperCase();
+
+    if (normN) {
+      if (normP && normT) {
+        exactMap.set(normN + '|' + normP + '|' + normT, playerWithId);
+      }
+      if (normP && !namePosMap.has(normN + '|' + normP)) {
+        namePosMap.set(normN + '|' + normP, playerWithId);
+      }
+      if (!nameOnlyMap.has(normN)) {
+        nameOnlyMap.set(normN, playerWithId);
+      }
+    }
+
+    if (['DST', 'DEF', 'D/ST'].includes(normP) && normT) {
+      dstMap.set(normT, playerWithId);
+    }
+  }
+
+  return { exactMap, namePosMap, nameOnlyMap, dstMap };
+}
+
+// Resolves a player identity against playersList using exact and fuzzy lookup
+function findPlayerInPool(identity, playersList, lookupIndex) {
+  if (!identity) return null;
+  const list = Array.isArray(playersList) ? playersList : [];
+  if (list.length === 0) return null;
+
+  const idx = lookupIndex || buildPlayerLookupIndex(list);
+  const rawName = identity.name || identity.playerName || identity.customName || '';
+  if (!rawName) return null;
+
+  const normN = normalizeName(rawName);
+  let normP = (identity.pos || identity.playerPos || identity.customPos || '').trim().toUpperCase();
+  let normT = (identity.team || identity.playerTeam || identity.customTeam || '').trim().toUpperCase();
+
+  if (normP === 'DEF' || normP === 'D/ST') normP = 'DST';
+
+  // 1. D/ST special matching
+  if (normP === 'DST' || ['DST', 'DEF', 'D/ST'].includes(rawName.toUpperCase())) {
+    const dstInfo = (typeof resolveDstCanonical === 'function') ? resolveDstCanonical(rawName) : null;
+    const teamKey = normT || (dstInfo ? dstInfo.team : null);
+    if (teamKey && idx.dstMap.has(teamKey)) {
+      return idx.dstMap.get(teamKey);
+    }
+  }
+
+  // 2. Exact match: (name + pos + team)
+  if (normP && normT && idx.exactMap.has(normN + '|' + normP + '|' + normT)) {
+    return idx.exactMap.get(normN + '|' + normP + '|' + normT);
+  }
+
+  // 3. Name + Pos match
+  if (normP && idx.namePosMap.has(normN + '|' + normP)) {
+    return idx.namePosMap.get(normN + '|' + normP);
+  }
+
+  // 4. Name only match
+  if (idx.nameOnlyMap.has(normN)) {
+    return idx.nameOnlyMap.get(normN);
+  }
+
+  return null;
+}
+
+// Reconciles all state collections (keepers, draftLog, watchlist, queue) against a refreshed player dataset.
+// Re-maps index-based playerIds to updated indices and gracefully degrades dropped players.
+function reconcileStateWithNewPlayerPool(state, newPlayersList) {
+  if (!state || !Array.isArray(newPlayersList) || newPlayersList.length === 0) {
+    return {
+      keepersReconciled: 0,
+      keepersDropped: 0,
+      logReconciled: 0,
+      watchlistReconciled: 0,
+      queueReconciled: 0
+    };
+  }
+
+  const lookup = buildPlayerLookupIndex(newPlayersList);
+  state.playerSnapshots = (state.playerSnapshots && typeof state.playerSnapshots === 'object')
+    ? state.playerSnapshots
+    : {};
+  const originalSnapshots = Object.assign({}, state.playerSnapshots);
+  const nextSnapshots = Object.assign({}, originalSnapshots);
+
+  let keepersReconciled = 0;
+  let keepersDropped = 0;
+  let logReconciled = 0;
+  let watchlistReconciled = 0;
+  let queueReconciled = 0;
+
+  // 1. Reconcile Keepers
+  if (Array.isArray(state.keepers)) {
+    for (const k of state.keepers) {
+      if (!k || typeof k !== 'object') continue;
+
+      // Handle custom / unlisted keeper
+      if (k.playerId == null) {
+        if (k.wasDroppedFromPool && k.customName) {
+          const match = findPlayerInPool({ name: k.customName, pos: k.customPos, team: k.customTeam }, newPlayersList, lookup);
+          if (match) {
+            k.playerId = match.id;
+            k.playerName = match.name;
+            k.playerPos = match.pos;
+            k.playerTeam = match.team;
+            k.playerBye = match.bye != null ? match.bye : null;
+            k.customName = null;
+            k.customPos = null;
+            k.customTeam = null;
+            k.customBye = null;
+            k.wasDroppedFromPool = false;
+            nextSnapshots[match.id] = { name: match.name, pos: match.pos, team: match.team, bye: match.bye };
+            keepersReconciled++;
+          }
+        }
+        continue;
+      }
+
+      // Pool keeper with playerId
+      const snap = originalSnapshots[k.playerId] || {};
+      const identity = {
+        name: k.playerName || snap.name,
+        pos: k.playerPos || snap.pos,
+        team: k.playerTeam || snap.team
+      };
+
+      // If we had no metadata (legacy), attempt reading from index if within bounds
+      if (!identity.name && newPlayersList[k.playerId]) {
+        identity.name = newPlayersList[k.playerId].name;
+        identity.pos = newPlayersList[k.playerId].pos;
+        identity.team = newPlayersList[k.playerId].team;
+      }
+
+      const match = findPlayerInPool(identity, newPlayersList, lookup);
+      if (match) {
+        k.playerId = match.id;
+        k.playerName = match.name;
+        k.playerPos = match.pos;
+        k.playerTeam = match.team;
+        k.playerBye = match.bye != null ? match.bye : null;
+        k.wasDroppedFromPool = false;
+        nextSnapshots[match.id] = { name: match.name, pos: match.pos, team: match.team, bye: match.bye };
+        keepersReconciled++;
+      } else {
+        // Player dropped from pool -> gracefully convert to unlisted custom keeper
+        k.customName = k.playerName || identity.name || ('Player #' + k.playerId);
+        k.customPos = k.playerPos || identity.pos || 'WR';
+        k.customTeam = k.playerTeam || identity.team || null;
+        k.customBye = k.playerBye != null ? k.playerBye : null;
+        k.playerId = null;
+        k.wasDroppedFromPool = true;
+        keepersDropped++;
+      }
+    }
+  }
+
+  // 2. Reconcile Draft Log
+  const logList = Array.isArray(state.log) ? state.log : (Array.isArray(state.draftLog) ? state.draftLog : null);
+  if (logList) {
+    for (const entry of logList) {
+      if (!entry || typeof entry !== 'object' || entry.playerId == null) continue;
+      const snap = originalSnapshots[entry.playerId] || {};
+      const identity = {
+        name: entry.name || snap.name,
+        pos: entry.pos || snap.pos,
+        team: entry.team || snap.team
+      };
+
+      if (!identity.name && newPlayersList[entry.playerId]) {
+        identity.name = newPlayersList[entry.playerId].name;
+        identity.pos = newPlayersList[entry.playerId].pos;
+        identity.team = newPlayersList[entry.playerId].team;
+      }
+
+      const match = findPlayerInPool(identity, newPlayersList, lookup);
+      if (match) {
+        entry.playerId = match.id;
+        entry.name = match.name;
+        entry.pos = match.pos;
+        entry.team = match.team;
+        nextSnapshots[match.id] = { name: match.name, pos: match.pos, team: match.team, bye: match.bye };
+        logReconciled++;
+      } else {
+        // Preserve as unlisted pick so history is never broken
+        entry.customName = entry.name || identity.name || ('Player #' + entry.playerId);
+        entry.customPos = entry.pos || identity.pos || 'WR';
+        entry.customTeam = entry.team || identity.team || '';
+        entry.playerId = null;
+        entry.isUnlisted = true;
+      }
+    }
+  }
+
+  // 3. Reconcile Watchlist
+  if (Array.isArray(state.watchlist)) {
+    const updatedWatchlist = [];
+    const seen = new Set();
+    for (const oldId of state.watchlist) {
+      if (oldId == null) continue;
+      const snap = originalSnapshots[oldId];
+      let targetId = oldId;
+      if (snap && snap.name) {
+        const match = findPlayerInPool(snap, newPlayersList, lookup);
+        if (match) {
+          targetId = match.id;
+          nextSnapshots[match.id] = { name: match.name, pos: match.pos, team: match.team, bye: match.bye };
+        } else {
+          targetId = null;
+        }
+      } else if (!newPlayersList[oldId]) {
+        targetId = null;
+      }
+      if (targetId != null && !seen.has(targetId)) {
+        seen.add(targetId);
+        updatedWatchlist.push(targetId);
+        watchlistReconciled++;
+      }
+    }
+    state.watchlist = updatedWatchlist;
+  }
+
+  // 4. Reconcile Queue
+  if (Array.isArray(state.queue)) {
+    const updatedQueue = [];
+    const seen = new Set();
+    for (const oldId of state.queue) {
+      if (oldId == null) continue;
+      const snap = originalSnapshots[oldId];
+      let targetId = oldId;
+      if (snap && snap.name) {
+        const match = findPlayerInPool(snap, newPlayersList, lookup);
+        if (match) {
+          targetId = match.id;
+          nextSnapshots[match.id] = { name: match.name, pos: match.pos, team: match.team, bye: match.bye };
+        } else {
+          targetId = null;
+        }
+      } else if (!newPlayersList[oldId]) {
+        targetId = null;
+      }
+      if (targetId != null && !seen.has(targetId)) {
+        seen.add(targetId);
+        updatedQueue.push(targetId);
+        queueReconciled++;
+      }
+    }
+    state.queue = updatedQueue;
+  }
+
+  state.playerSnapshots = nextSnapshots;
+
+  return {
+    keepersReconciled,
+    keepersDropped,
+    logReconciled,
+    watchlistReconciled,
+    queueReconciled
+  };
+}
+
 // --- Draft State Serialization & Migration ---
 const DRAFT_SCHEMA_VERSION = 2;
 
@@ -1492,9 +1770,10 @@ function serializeDraftState(state) {
     exportedAt: new Date().toISOString(),
     settings: Object.assign({ maxKeepers: 2 }, s.settings || {}),
     keepers: keepers,
-    draftLog: Array.isArray(s.draftLog) ? s.draftLog.slice() : [],
+    draftLog: Array.isArray(s.draftLog) ? s.draftLog.slice() : (Array.isArray(s.log) ? s.log.slice() : []),
     watchlist: Array.isArray(s.watchlist) ? s.watchlist.slice() : [],
     queue: Array.isArray(s.queue) ? s.queue.slice() : [],
+    playerSnapshots: Object.assign({}, s.playerSnapshots || {}),
     tradedPicks: Object.assign({}, s.tradedPicks || {}),
     syncSettings: Object.assign({}, s.syncSettings || {}),
   };
@@ -1534,16 +1813,22 @@ function deserializeDraftState(input, currentPlayers) {
       slot: parseInt(k.slot, 10) || 1,
       round: parseInt(k.round, 10) || 1,
       playerId: k.playerId != null ? parseInt(k.playerId, 10) : null,
+      playerName: k.playerName ? String(k.playerName).trim() : null,
+      playerPos: k.playerPos ? String(k.playerPos).trim().toUpperCase() : null,
+      playerTeam: k.playerTeam ? String(k.playerTeam).trim().toUpperCase() : null,
+      playerBye: k.playerBye != null ? parseInt(k.playerBye, 10) : null,
       customName: k.customName ? String(k.customName).trim() : null,
       customPos: k.customPos ? String(k.customPos).trim().toUpperCase() : null,
       customTeam: k.customTeam ? String(k.customTeam).trim().toUpperCase() : null,
-      customBye: k.customBye != null ? parseInt(k.customBye, 10) : null
+      customBye: k.customBye != null ? parseInt(k.customBye, 10) : null,
+      wasDroppedFromPool: !!k.wasDroppedFromPool
     });
   }
 
-  const draftLog = Array.isArray(raw.draftLog) ? raw.draftLog : [];
+  const draftLog = Array.isArray(raw.draftLog) ? raw.draftLog : (Array.isArray(raw.log) ? raw.log : []);
   const watchlist = Array.isArray(raw.watchlist) ? raw.watchlist : [];
   const queue = Array.isArray(raw.queue) ? raw.queue : [];
+  const playerSnapshots = (raw.playerSnapshots && typeof raw.playerSnapshots === 'object') ? Object.assign({}, raw.playerSnapshots) : {};
   const tradedPicks = (raw.tradedPicks && typeof raw.tradedPicks === 'object') ? raw.tradedPicks : {};
   const syncSettings = (raw.syncSettings && typeof raw.syncSettings === 'object') ? raw.syncSettings : {};
 
@@ -1554,28 +1839,39 @@ function deserializeDraftState(input, currentPlayers) {
     validLog.push({
       overall: parseInt(entry.overall, 10) || (validLog.length + 1),
       playerId: entry.playerId != null ? parseInt(entry.playerId, 10) : null,
+      name: entry.name ? String(entry.name).trim() : null,
+      pos: entry.pos ? String(entry.pos).trim().toUpperCase() : null,
+      team: entry.team ? String(entry.team).trim().toUpperCase() : null,
       customName: entry.customName ? String(entry.customName).trim() : null,
       customPos: entry.customPos ? String(entry.customPos).trim().toUpperCase() : null,
       customTeam: entry.customTeam ? String(entry.customTeam).trim().toUpperCase() : null,
       customBye: entry.customBye != null ? parseInt(entry.customBye, 10) : null,
       mine: !!entry.mine,
-      isKeeper: !!entry.isKeeper
+      isKeeper: !!entry.isKeeper,
+      isUnlisted: !!entry.isUnlisted
     });
+  }
+
+  const resState = {
+    settings: settings,
+    keepers: validKeepers,
+    draftLog: validLog,
+    watchlist: watchlist.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
+    queue: queue.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
+    playerSnapshots: playerSnapshots,
+    tradedPicks: tradedPicks,
+    syncSettings: syncSettings
+  };
+
+  if (Array.isArray(currentPlayers) && currentPlayers.length > 0) {
+    reconcileStateWithNewPlayerPool(resState, currentPlayers);
   }
 
   return {
     ok: true,
     version: DRAFT_SCHEMA_VERSION,
     migratedFrom: version < DRAFT_SCHEMA_VERSION ? version : null,
-    state: {
-      settings: settings,
-      keepers: validKeepers,
-      draftLog: validLog,
-      watchlist: watchlist.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
-      queue: queue.map(x => parseInt(x, 10)).filter(x => !isNaN(x)),
-      tradedPicks: tradedPicks,
-      syncSettings: syncSettings
-    }
+    state: resState
   };
 }
 
@@ -2279,6 +2575,9 @@ if (typeof module !== 'undefined' && module.exports) {
     computeJenksBreaks: computeJenksBreaks,
     assignTiers: assignTiers,
     getTierScarcity: getTierScarcity,
+    buildPlayerLookupIndex: buildPlayerLookupIndex,
+    findPlayerInPool: findPlayerInPool,
+    reconcileStateWithNewPlayerPool: reconcileStateWithNewPlayerPool,
   };
 }
 
@@ -2287,5 +2586,8 @@ if (typeof window !== 'undefined') {
   window.assignTiers = assignTiers;
   window.getTierScarcity = getTierScarcity;
   window.reorderWatchlist = reorderWatchlist;
+  window.buildPlayerLookupIndex = buildPlayerLookupIndex;
+  window.findPlayerInPool = findPlayerInPool;
+  window.reconcileStateWithNewPlayerPool = reconcileStateWithNewPlayerPool;
 }
 

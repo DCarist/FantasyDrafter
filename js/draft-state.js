@@ -31,6 +31,29 @@
     hideOutIR: false
   };
 
+  // Raw players dataset reference
+  const getPlayersList = () => {
+    const raw = (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players) ? window.DRAFT_DATA.players : [];
+    return raw.map((p, i) => Object.assign({ id: i }, p));
+  };
+
+  const PLAYERS = (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players)
+    ? window.DRAFT_DATA.players.map((p, i) => Object.assign({ id: i }, p))
+    : [];
+
+  const byId = id => {
+    if (id == null) return null;
+    if (PLAYERS[id]) return PLAYERS[id];
+    if (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players && window.DRAFT_DATA.players[id]) {
+      return Object.assign({ id: id }, window.DRAFT_DATA.players[id]);
+    }
+    if (typeof state !== 'undefined' && state && state.playerSnapshots && state.playerSnapshots[id]) {
+      const snap = state.playerSnapshots[id];
+      return Object.assign({ id: id }, snap);
+    }
+    return null;
+  };
+
   let state = load();
   let ui = {
     posFilter: 'ALL',
@@ -93,39 +116,120 @@
       s.settings.rounds = totalRounds;
     }
 
+    s.playerSnapshots = (s.playerSnapshots && typeof s.playerSnapshots === 'object') ? s.playerSnapshots : {};
+
     const rawKeepers = Array.isArray(s.keepers) ? s.keepers : (Array.isArray(s.settings.keepers) ? s.settings.keepers : []);
     const validKeepers = [];
     for (const k of rawKeepers) {
       if (!k || typeof k !== 'object') continue;
+      const pId = k.playerId != null ? parseInt(k.playerId, 10) : null;
+      let pName = k.playerName ? String(k.playerName).trim() : null;
+      let pPos = k.playerPos ? String(k.playerPos).trim().toUpperCase() : null;
+      let pTeam = k.playerTeam ? String(k.playerTeam).trim().toUpperCase() : null;
+      let pBye = k.playerBye != null ? parseInt(k.playerBye, 10) : null;
+      if (pId != null && !pName && PLAYERS[pId]) {
+        pName = PLAYERS[pId].name || null;
+        pPos = PLAYERS[pId].pos || null;
+        pTeam = PLAYERS[pId].team || null;
+        pBye = PLAYERS[pId].bye != null ? PLAYERS[pId].bye : null;
+      }
       validKeepers.push({
         id: k.id || ('k_' + Math.random().toString(36).substr(2, 9)),
         slot: Math.max(1, Math.min(tCount, parseInt(k.slot, 10) || 1)),
         round: Math.max(1, Math.min(s.settings.rounds || 50, parseInt(k.round, 10) || 1)),
-        playerId: k.playerId != null ? parseInt(k.playerId, 10) : null,
+        playerId: pId,
+        playerName: pName,
+        playerPos: pPos,
+        playerTeam: pTeam,
+        playerBye: pBye,
         customName: k.customName ? String(k.customName).trim() : null,
         customPos: k.customPos ? String(k.customPos).trim().toUpperCase() : null,
         customTeam: k.customTeam ? String(k.customTeam).trim().toUpperCase() : null,
-        customBye: k.customBye != null ? parseInt(k.customBye, 10) : null
+        customBye: k.customBye != null ? parseInt(k.customBye, 10) : null,
+        wasDroppedFromPool: !!k.wasDroppedFromPool
       });
+      if (pId != null && pName) {
+        s.playerSnapshots[pId] = { name: pName, pos: pPos, team: pTeam, bye: pBye };
+      }
     }
     s.keepers = validKeepers;
 
-    if (!Array.isArray(s.log)) s.log = [];
-    if (!Array.isArray(s.watchlist)) s.watchlist = [];
-    if (!Array.isArray(s.queue)) s.queue = [];
+    if (!Array.isArray(s.log)) {
+      s.log = [];
+    } else {
+      for (const entry of s.log) {
+        if (!entry || typeof entry !== 'object') continue;
+        if (entry.playerId != null && !entry.name && PLAYERS[entry.playerId]) {
+          entry.name = PLAYERS[entry.playerId].name;
+          entry.pos = PLAYERS[entry.playerId].pos;
+          entry.team = PLAYERS[entry.playerId].team;
+        }
+        if (entry.playerId != null && entry.name) {
+          s.playerSnapshots[entry.playerId] = {
+            name: entry.name,
+            pos: entry.pos,
+            team: entry.team,
+            bye: entry.bye != null ? entry.bye : (PLAYERS[entry.playerId] ? PLAYERS[entry.playerId].bye : null)
+          };
+        }
+      }
+    }
+
+    if (!Array.isArray(s.watchlist)) {
+      s.watchlist = [];
+    } else {
+      for (const wId of s.watchlist) {
+        if (wId != null && PLAYERS[wId] && !s.playerSnapshots[wId]) {
+          s.playerSnapshots[wId] = {
+            name: PLAYERS[wId].name,
+            pos: PLAYERS[wId].pos,
+            team: PLAYERS[wId].team,
+            bye: PLAYERS[wId].bye
+          };
+        }
+      }
+    }
+
+    if (!Array.isArray(s.queue)) {
+      s.queue = [];
+    } else {
+      for (const qId of s.queue) {
+        if (qId != null && PLAYERS[qId] && !s.playerSnapshots[qId]) {
+          s.playerSnapshots[qId] = {
+            name: PLAYERS[qId].name,
+            pos: PLAYERS[qId].pos,
+            team: PLAYERS[qId].team,
+            bye: PLAYERS[qId].bye
+          };
+        }
+      }
+    }
+
     if (!s.tradedPicks || typeof s.tradedPicks !== 'object') s.tradedPicks = {};
     return s;
   }
 
   function load() {
+    let s = null;
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) {
-        const s = JSON.parse(raw);
-        return normalizeState(s);
+        s = JSON.parse(raw);
       }
     } catch (e) { /* fallback on error */ }
-    return normalizeState({ settings: Object.assign({}, DEFAULTS), keepers: [], log: [], watchlist: [], queue: [], tradedPicks: {} });
+    const norm = normalizeState(s || { settings: Object.assign({}, DEFAULTS), keepers: [], log: [], watchlist: [], queue: [], tradedPicks: {} });
+    const reconcileFn = (typeof reconcileStateWithNewPlayerPool === 'function')
+      ? reconcileStateWithNewPlayerPool
+      : (typeof window !== 'undefined' && typeof window.reconcileStateWithNewPlayerPool === 'function' ? window.reconcileStateWithNewPlayerPool : null);
+    if (typeof reconcileFn === 'function' && Array.isArray(PLAYERS) && PLAYERS.length > 0) {
+      const res = reconcileFn(norm, PLAYERS);
+      if (res && (res.keepersReconciled > 0 || res.keepersDropped > 0 || res.logReconciled > 0 || res.watchlistReconciled > 0 || res.queueReconciled > 0)) {
+        try {
+          localStorage.setItem(STORE_KEY, JSON.stringify(norm));
+        } catch (e) {}
+      }
+    }
+    return norm;
   }
 
   function save() {
@@ -138,25 +242,6 @@
     const name = s.teamNames && s.teamNames[slot - 1];
     return (name && name.trim()) ? name.trim() : (slot === s.slot ? 'My Team' : ('Team ' + slot));
   }
-
-  // Raw players dataset reference
-  const getPlayersList = () => {
-    const raw = (window.DRAFT_DATA && window.DRAFT_DATA.players) ? window.DRAFT_DATA.players : [];
-    return raw.map((p, i) => Object.assign({ id: i }, p));
-  };
-
-  const PLAYERS = (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players)
-    ? window.DRAFT_DATA.players.map((p, i) => Object.assign({ id: i }, p))
-    : [];
-
-  const byId = id => {
-    if (id == null) return null;
-    if (PLAYERS[id]) return PLAYERS[id];
-    if (window.DRAFT_DATA && window.DRAFT_DATA.players && window.DRAFT_DATA.players[id]) {
-      return Object.assign({ id: id }, window.DRAFT_DATA.players[id]);
-    }
-    return null;
-  };
 
   function takenMap() {
     const m = new Map();
@@ -210,14 +295,17 @@
 
       const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
       const p = (keeper.playerId != null) ? (byId(keeper.playerId) || {}) : {};
-      const posVal = keeper.customPos || p.pos || 'WR';
-      const nameVal = keeper.customName || p.name || ('Keeper ' + posVal);
-      const teamVal = keeper.customTeam || p.team || '';
-      const byeVal = keeper.customBye || p.bye || null;
+      const posVal = keeper.customPos || keeper.playerPos || p.pos || 'WR';
+      const nameVal = keeper.customName || keeper.playerName || p.name || ('Keeper ' + posVal);
+      const teamVal = keeper.customTeam || keeper.playerTeam || p.team || '';
+      const byeVal = keeper.customBye != null ? keeper.customBye : (keeper.playerBye != null ? keeper.playerBye : (p.bye || null));
 
       state.log.push({
         overall: pick,
         playerId: keeper.playerId != null ? keeper.playerId : null,
+        name: keeper.playerId != null ? nameVal : null,
+        pos: keeper.playerId != null ? posVal : null,
+        team: keeper.playerId != null ? teamVal : null,
         customName: keeper.playerId == null ? nameVal : null,
         customPos: posVal,
         customTeam: teamVal || null,
@@ -264,16 +352,32 @@
       }
     }
 
+    const p = candidate.playerId != null ? byId(candidate.playerId) : null;
     const newKeeper = {
       id: candidate.id || ('k_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
       slot: parseInt(candidate.slot, 10) || 1,
       round: parseInt(candidate.round, 10) || 1,
       playerId: candidate.playerId != null ? parseInt(candidate.playerId, 10) : null,
+      playerName: candidate.playerName || (p ? p.name : null),
+      playerPos: candidate.playerPos || (p ? p.pos : null),
+      playerTeam: candidate.playerTeam || (p ? p.team : null),
+      playerBye: candidate.playerBye != null ? parseInt(candidate.playerBye, 10) : (p && p.bye != null ? p.bye : null),
       customName: candidate.customName ? String(candidate.customName).trim() : null,
       customPos: candidate.customPos ? String(candidate.customPos).trim().toUpperCase() : null,
       customTeam: candidate.customTeam ? String(candidate.customTeam).trim().toUpperCase() : null,
-      customBye: candidate.customBye != null ? parseInt(candidate.customBye, 10) : null
+      customBye: candidate.customBye != null ? parseInt(candidate.customBye, 10) : null,
+      wasDroppedFromPool: !!candidate.wasDroppedFromPool
     };
+
+    if (newKeeper.playerId != null && newKeeper.playerName) {
+      state.playerSnapshots = state.playerSnapshots || {};
+      state.playerSnapshots[newKeeper.playerId] = {
+        name: newKeeper.playerName,
+        pos: newKeeper.playerPos,
+        team: newKeeper.playerTeam,
+        bye: newKeeper.playerBye
+      };
+    }
 
     const existingIndex = candidate.id ? state.keepers.findIndex(k => k && k.id === candidate.id) : -1;
     if (existingIndex >= 0) {
@@ -309,7 +413,19 @@
 
   function draftPlayer(id, mine) {
     const pick = currentPick();
-    state.log.push({ overall: pick, playerId: id, mine: Boolean(mine) });
+    const p = byId(id) || {};
+    state.log.push({
+      overall: pick,
+      playerId: id,
+      name: p.name || null,
+      pos: p.pos || null,
+      team: p.team || null,
+      mine: Boolean(mine)
+    });
+    if (id != null && p.name) {
+      state.playerSnapshots = state.playerSnapshots || {};
+      state.playerSnapshots[id] = { name: p.name, pos: p.pos, team: p.team, bye: p.bye };
+    }
     state.watchlist = cleanWatchlist(state.watchlist, [id]);
     if (typeof cleanQueue === 'function') {
       state.queue = cleanQueue(state.queue, [id]);
@@ -318,7 +434,6 @@
     save();
     if (typeof render === 'function') render();
 
-    const p = byId(id) || {};
     const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
     sendServerPick({
       source: 'manual',
@@ -346,6 +461,13 @@
     if (e) {
       if (typeof e.stopPropagation === 'function') e.stopPropagation();
       if (typeof e.preventDefault === 'function') e.preventDefault();
+    }
+    if (id != null) {
+      const p = byId(id);
+      if (p && p.name) {
+        state.playerSnapshots = state.playerSnapshots || {};
+        state.playerSnapshots[id] = { name: p.name, pos: p.pos, team: p.team, bye: p.bye };
+      }
     }
     state.watchlist = toggleWatchlist(state.watchlist, id);
     save();
@@ -448,13 +570,20 @@
       if (keeper) {
         const who = teamForOverall(nextPickNum, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
         const p = (keeper.playerId != null) ? (byId(keeper.playerId) || {}) : {};
+        const posVal = keeper.customPos || keeper.playerPos || p.pos || 'WR';
+        const nameVal = keeper.customName || keeper.playerName || p.name || ('Keeper ' + posVal);
+        const teamVal = keeper.customTeam || keeper.playerTeam || p.team || null;
+        const byeVal = keeper.customBye != null ? keeper.customBye : (keeper.playerBye != null ? keeper.playerBye : (p.bye || null));
         state.log.push({
           overall: nextPickNum,
           playerId: keeper.playerId != null ? keeper.playerId : null,
+          name: keeper.playerId != null ? nameVal : null,
+          pos: keeper.playerId != null ? posVal : null,
+          team: keeper.playerId != null ? teamVal : null,
           customName: keeper.playerId == null ? (keeper.customName || 'Keeper') : null,
-          customPos: keeper.customPos || p.pos || 'WR',
-          customTeam: keeper.customTeam || p.team || null,
-          customBye: keeper.customBye || p.bye || null,
+          customPos: posVal,
+          customTeam: teamVal,
+          customBye: byeVal,
           mine: who.isMe,
           isKeeper: true
         });
@@ -502,6 +631,20 @@
     if (typeof renderInspectRoster === 'function') renderInspectRoster();
   }
 
+  function reconcileWithPlayerPool(newPlayers) {
+    const list = Array.isArray(newPlayers) ? newPlayers : PLAYERS;
+    const reconcileFn = (typeof reconcileStateWithNewPlayerPool === 'function')
+      ? reconcileStateWithNewPlayerPool
+      : (typeof window !== 'undefined' && typeof window.reconcileStateWithNewPlayerPool === 'function' ? window.reconcileStateWithNewPlayerPool : null);
+    if (typeof reconcileFn === 'function' && Array.isArray(list) && list.length > 0) {
+      const res = reconcileFn(state, list);
+      save();
+      if (typeof render === 'function') render();
+      return res;
+    }
+    return null;
+  }
+
   // Export properties to global scope
   global.STORE_KEY = STORE_KEY;
   global.DEFAULTS = DEFAULTS;
@@ -529,5 +672,6 @@
   global.jumpTo = jumpTo;
   global.resetDraft = resetDraft;
   global.selectRosterSlot = selectRosterSlot;
+  global.reconcileWithPlayerPool = reconcileWithPlayerPool;
 })(typeof window !== 'undefined' ? window : globalThis);
 

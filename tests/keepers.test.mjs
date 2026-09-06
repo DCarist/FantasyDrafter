@@ -444,7 +444,215 @@ eq(mockGlobal.state.settings.mode, '3rr', 'openKeepersModal syncs mode from DOM'
 eq(mockGlobal.state.settings.rounds, 18, 'openKeepersModal syncs rounds from DOM');
 eq(mockElements.modalbox.className, 'modal modal-wide keepers-modal-box', 'openKeepersModal sets keepers-modal-box class');
 
+// ============================================================================
+// 14. Data Refresh Stability & Player Pool Reconciliation
+// ============================================================================
+
+// 1. buildPlayerLookupIndex and findPlayerInPool tests
+const samplePool = [
+  { id: 0, name: 'Justin Jefferson', pos: 'WR', team: 'MIN', bye: 6 },
+  { id: 1, name: "Ja'Marr Chase", pos: 'WR', team: 'CIN', bye: 12 },
+  { id: 2, name: 'CeeDee Lamb', pos: 'WR', team: 'DAL', bye: 7 },
+  { id: 3, name: 'Marvin Harrison Jr.', pos: 'WR', team: 'ARI', bye: 11 },
+  { id: 4, name: 'San Francisco 49ers', pos: 'DST', team: 'SF', bye: 9 },
+  { id: 5, name: 'Saquon Barkley', pos: 'RB', team: 'PHI', bye: 5 }
+];
+
+const lookup = L.buildPlayerLookupIndex(samplePool);
+assert(lookup && lookup.exactMap, 'buildPlayerLookupIndex builds lookup maps');
+
+// Exact match
+const matchExact = L.findPlayerInPool({ name: 'Justin Jefferson', pos: 'WR', team: 'MIN' }, samplePool, lookup);
+eq(matchExact.id, 0, 'findPlayerInPool matches exact player');
+
+// Suffix match (e.g. without "Jr.")
+const matchSuffix = L.findPlayerInPool({ name: 'Marvin Harrison', pos: 'WR', team: 'ARI' }, samplePool, lookup);
+eq(matchSuffix.id, 3, 'findPlayerInPool matches name without suffix variant (Jr.)');
+
+// Team changed (e.g. Barkley formerly NYG, now PHI)
+const matchTraded = L.findPlayerInPool({ name: 'Saquon Barkley', pos: 'RB', team: 'NYG' }, samplePool, lookup);
+eq(matchTraded.id, 5, 'findPlayerInPool matches by name + pos when player changes team');
+
+// DST match
+const matchDst = L.findPlayerInPool({ name: '49ers DST', pos: 'DST', team: 'SF' }, samplePool, lookup);
+eq(matchDst.id, 4, 'findPlayerInPool matches defense by canonical team');
+
+// Non-existent player
+const matchMissing = L.findPlayerInPool({ name: 'Nonexistent Player', pos: 'WR', team: 'FA' }, samplePool, lookup);
+eq(matchMissing, null, 'findPlayerInPool returns null for unranked/missing player');
+
+// 2. Full State Reconciliation with Re-ordered Player Pool (Rankings Shuffle)
+// Initial state before refresh:
+// Ja'Marr Chase was index 1, CeeDee Lamb was index 2, Justin Jefferson was index 0
+const stateToReconcile = {
+  settings: { teams: 12, rounds: 20, mode: 'snake', slot: 1 },
+  keepers: [
+    {
+      id: 'k_chase',
+      slot: 1,
+      round: 1,
+      playerId: 1,
+      playerName: "Ja'Marr Chase",
+      playerPos: 'WR',
+      playerTeam: 'CIN',
+      playerBye: 12
+    },
+    {
+      id: 'k_lamb',
+      slot: 2,
+      round: 1,
+      playerId: 2,
+      playerName: 'CeeDee Lamb',
+      playerPos: 'WR',
+      playerTeam: 'DAL',
+      playerBye: 7
+    },
+    {
+      id: 'k_dropped',
+      slot: 3,
+      round: 5,
+      playerId: 99,
+      playerName: 'Retired Player',
+      playerPos: 'RB',
+      playerTeam: 'DEN',
+      playerBye: 14
+    }
+  ],
+  log: [
+    { overall: 1, playerId: 0, name: 'Justin Jefferson', pos: 'WR', team: 'MIN', mine: true }
+  ],
+  watchlist: [1, 2], // Chase, Lamb
+  queue: [2],        // Lamb
+  playerSnapshots: {
+    0: { name: 'Justin Jefferson', pos: 'WR', team: 'MIN', bye: 6 },
+    1: { name: "Ja'Marr Chase", pos: 'WR', team: 'CIN', bye: 12 },
+    2: { name: 'CeeDee Lamb', pos: 'WR', team: 'DAL', bye: 7 },
+    99: { name: 'Retired Player', pos: 'RB', team: 'DEN', bye: 14 }
+  }
+};
+
+// Refreshed pool: rankings change array indices
+// Now:
+// 0 -> Ja'Marr Chase
+// 1 -> CeeDee Lamb
+// 2 -> Justin Jefferson
+// Retired Player is NOT in pool
+const refreshedPool = [
+  { id: 0, name: "Ja'Marr Chase", pos: 'WR', team: 'CIN', bye: 12 },
+  { id: 1, name: 'CeeDee Lamb', pos: 'WR', team: 'DAL', bye: 7 },
+  { id: 2, name: 'Justin Jefferson', pos: 'WR', team: 'MIN', bye: 6 }
+];
+
+const reconcileResult = L.reconcileStateWithNewPlayerPool(stateToReconcile, refreshedPool);
+
+// Verify Chase keeper in Slot 1 re-mapped from index 1 to new index 0
+const chaseKeeper = stateToReconcile.keepers.find(k => k.id === 'k_chase');
+eq(chaseKeeper.playerId, 0, "Slot 1 Ja'Marr Chase keeper re-mapped to new index 0");
+eq(chaseKeeper.playerName, "Ja'Marr Chase", 'Keeper playerName is intact');
+eq(chaseKeeper.wasDroppedFromPool, false, 'wasDroppedFromPool is false');
+
+// Verify Lamb keeper in Slot 2 re-mapped from index 2 to new index 1
+const lambKeeper = stateToReconcile.keepers.find(k => k.id === 'k_lamb');
+eq(lambKeeper.playerId, 1, 'Slot 2 CeeDee Lamb keeper re-mapped to new index 1');
+
+// Verify Retired Player keeper auto-converted to custom unlisted keeper
+const droppedKeeper = stateToReconcile.keepers.find(k => k.id === 'k_dropped');
+eq(droppedKeeper.playerId, null, 'Dropped keeper playerId is cleared to null');
+eq(droppedKeeper.wasDroppedFromPool, true, 'Dropped keeper flagged wasDroppedFromPool = true');
+eq(droppedKeeper.customName, 'Retired Player', 'Dropped keeper preserves name as customName');
+eq(droppedKeeper.customPos, 'RB', 'Dropped keeper preserves customPos');
+eq(droppedKeeper.customTeam, 'DEN', 'Dropped keeper preserves customTeam');
+eq(droppedKeeper.customBye, 14, 'Dropped keeper preserves customBye');
+eq(droppedKeeper.slot, 3, 'Dropped keeper preserves team slot');
+eq(droppedKeeper.round, 5, 'Dropped keeper preserves round assignment');
+
+// Verify draft log re-mapped from 0 to 2 (Justin Jefferson)
+eq(stateToReconcile.log[0].playerId, 2, 'Log entry for Justin Jefferson re-mapped to index 2');
+eq(stateToReconcile.log[0].name, 'Justin Jefferson', 'Log entry name preserved');
+
+// Verify watchlist and queue re-mapped
+eq(stateToReconcile.watchlist.includes(0), true, 'Watchlist contains Chase at new index 0');
+eq(stateToReconcile.watchlist.includes(1), true, 'Watchlist contains Lamb at new index 1');
+eq(stateToReconcile.queue.includes(1), true, 'Queue contains Lamb at new index 1');
+
+eq(reconcileResult.keepersReconciled, 2, 'reconcileResult counts 2 keepers reconciled');
+eq(reconcileResult.keepersDropped, 1, 'reconcileResult counts 1 keeper dropped');
+eq(reconcileResult.logReconciled, 1, 'reconcileResult counts 1 log entry reconciled');
+eq(reconcileResult.watchlistReconciled, 2, 'reconcileResult counts 2 watchlist items reconciled');
+eq(reconcileResult.queueReconciled, 1, 'reconcileResult counts 1 queue item reconciled');
+
+// 3. UI: Dropped keeper badge in keepers table view
+mockGlobal.state.keepers = [
+  {
+    id: 'k_test_dropped',
+    slot: 1,
+    round: 2,
+    playerId: null,
+    playerName: 'Nuk Hopkins',
+    playerPos: 'WR',
+    playerTeam: 'KC',
+    customName: 'Nuk Hopkins',
+    customPos: 'WR',
+    customTeam: 'KC',
+    wasDroppedFromPool: true
+  }
+];
+mockGlobal.renderKeepersModalView();
+assert(mockElements.modalbox.innerHTML.includes('⚠️ (unranked in pool)'), 'Keeper table displays ⚠️ (unranked in pool) badge for dropped keeper');
+assert(mockElements.modalbox.innerHTML.includes('Nuk Hopkins'), 'Keeper table displays dropped keeper name');
+
+// 4. UI: Auto-save League Setup before data refresh
+mockElements.setup_team_count = { value: '14' };
+mockElements.setup_league_name = { value: 'Pre-Refresh Championship League' };
+mockElements.setup_mode_select = { value: 'snake' };
+mockElements.setup_scoring_select = { value: 'ppr' };
+mockElements.setup_qb_select = { value: 'sf' };
+
+const mockSessionStorage = {
+  _data: {},
+  getItem(k) { return this._data[k]; },
+  setItem(k, v) { this._data[k] = v; },
+  removeItem(k) { delete this._data[k]; }
+};
+mockGlobal.window = mockGlobal;
+mockGlobal.sessionStorage = mockSessionStorage;
+context.sessionStorage = mockSessionStorage;
+mockGlobal.location = { reload: () => {} };
+context.location = mockGlobal.location;
+
+let fetchCalledWith = null;
+const mockFetch = async (url) => {
+  fetchCalledWith = url;
+  return {
+    ok: true,
+    headers: { get: () => 'application/json' },
+    json: async () => ({ ok: true, message: 'Rankings updated' })
+  };
+};
+mockGlobal.fetch = mockFetch;
+context.fetch = mockFetch;
+
+const mockRefreshBtn = { disabled: false, textContent: 'Refresh' };
+savedCalled = false;
+await mockGlobal.triggerDataRefresh(mockRefreshBtn);
+
+eq(fetchCalledWith, '/api/data/refresh', 'triggerDataRefresh posts to /api/data/refresh');
+eq(mockGlobal.state.settings.leagueName, 'Pre-Refresh Championship League', 'triggerDataRefresh auto-saves modified league name before refresh');
+eq(mockGlobal.state.settings.teams, 14, 'triggerDataRefresh auto-saves modified teams count before refresh');
+assert(savedCalled, 'global.save() was called prior to server fetch');
+assert(Boolean(mockSessionStorage.getItem('pendingDataRefreshToast')), 'pendingDataRefreshToast flag set in sessionStorage');
+
+// 5. UI: renderBanner renders confirmation and clears toast flag
+mockElements.databanner = { innerHTML: '' };
+mockGlobal.window.DRAFT_DATA = { players: [{ name: 'Test Player' }], generated: '2026-09-06' };
+mockGlobal.renderBanner();
+
+assert(mockElements.databanner.innerHTML.includes('Rankings Refreshed'), 'renderBanner displays rankings refreshed banner');
+assert(mockElements.databanner.innerHTML.includes('Keepers and draft picks were safely reconciled'), 'renderBanner displays reconciliation confirmation');
+eq(mockSessionStorage.getItem('pendingDataRefreshToast'), undefined, 'pendingDataRefreshToast flag was cleared from sessionStorage');
+
 const success = finishSuite('Keepers & Pre-Drafted Players');
 if (!success) {
   process.exit(1);
 }
+

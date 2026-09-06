@@ -777,8 +777,22 @@
     const qbStr = s.qbFormat === '1qb' ? '1-QB' : 'Superflex';
     const scStr = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'Standard' : 'Half-PPR');
     if ($('databanner')) {
-      $('databanner').innerHTML = d.players && d.players.length ? '' :
-        '<div class="warnbox">⏳ Rankings are still being fetched — the board works, but the player list is empty until the data lands.</div>';
+      let bannerHtml = '';
+      if (!d.players || !d.players.length) {
+        bannerHtml = '<div class="warnbox">⏳ Rankings are still being fetched — the board works, but the player list is empty until the data lands.</div>';
+      } else {
+        try {
+          const toastPending = (typeof sessionStorage !== 'undefined') && sessionStorage.getItem('pendingDataRefreshToast');
+          if (toastPending) {
+            sessionStorage.removeItem('pendingDataRefreshToast');
+            bannerHtml = '<div id="refresh_reconcile_toast" class="warnbox" style="background:#13241b; border:1px solid #16a34a; color:#86efac; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px;">'
+              + '<span>✅ <b>Rankings Refreshed:</b> Consensus rankings updated. Keepers and draft picks were safely reconciled.</span>'
+              + '<button type="button" onclick="const el=document.getElementById(\'refresh_reconcile_toast\'); if(el) el.remove();" style="background:none; border:none; color:#86efac; cursor:pointer; font-size:16px; margin-left:12px;">✕</button>'
+              + '</div>';
+          }
+        } catch (e) {}
+      }
+      $('databanner').innerHTML = bannerHtml;
     }
     if ($('sources')) {
       $('sources').textContent = d.players && d.players.length
@@ -2438,6 +2452,57 @@
       statusEl.textContent = '⏳ Fetching latest consensus rankings, 32-team depth charts, and NFL injury reports (~10-15s)...';
     }
 
+    // Auto-commit any open league setup inputs so changes aren't lost across refresh
+    if ($('setup_team_count')) {
+      try {
+        syncSetupInputsFromDom();
+        const s = global.state.settings;
+        const prevLeagueType = s.leagueType;
+        if ($('setup_league_name')) s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
+        if ($('setup_team_count')) s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
+        if ($('setup_mode_select')) s.mode = $('setup_mode_select').value;
+        if ($('setup_leaguetype_select')) {
+          s.leagueType = $('setup_leaguetype_select').value;
+          if (s.leagueType !== prevLeagueType) {
+            if (s.leagueType === 'redraft') {
+              s.blend = 0;
+            } else if (s.leagueType === 'dynasty' && s.blend === 0) {
+              s.blend = 60;
+            }
+          }
+        }
+        if ($('setup_scoring_select')) s.scoring = $('setup_scoring_select').value;
+        if ($('setup_qb_select')) s.qbFormat = $('setup_qb_select').value;
+        s.slot = setupMySlot;
+        if (Array.isArray(setupDraftNames)) {
+          s.teamNames = setupDraftNames.slice(0, s.teams);
+          while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
+        }
+        if ($('setup_max_keepers')) {
+          s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
+        }
+        if ($('setup_roster_qb')) {
+          s.rosterSlots = {
+            qb: Math.max(0, parseInt($('setup_roster_qb').value, 10) || 0),
+            rb: Math.max(0, parseInt($('setup_roster_rb').value, 10) || 0),
+            wr: Math.max(0, parseInt($('setup_roster_wr').value, 10) || 0),
+            te: Math.max(0, parseInt($('setup_roster_te').value, 10) || 0),
+            flex: Math.max(0, parseInt($('setup_roster_flex').value, 10) || 0),
+            superflex: Math.max(0, parseInt($('setup_roster_superflex').value, 10) || 0),
+            k: Math.max(0, parseInt($('setup_roster_k').value, 10) || 0),
+            dst: Math.max(0, parseInt($('setup_roster_dst').value, 10) || 0),
+            bench: Math.max(0, parseInt($('setup_roster_bench').value, 10) || 0)
+          };
+          const starters = s.rosterSlots.qb + s.rosterSlots.rb + s.rosterSlots.wr + s.rosterSlots.te +
+            s.rosterSlots.flex + s.rosterSlots.superflex + s.rosterSlots.k + s.rosterSlots.dst;
+          s.rounds = Math.max(1, starters + s.rosterSlots.bench);
+        }
+        global.save();
+      } catch (err) {
+        console.warn('Failed to auto-save setup prior to data refresh:', err);
+      }
+    }
+
     try {
       const res = await fetch('/api/data/refresh', { method: 'POST' });
       const cType = res.headers.get('content-type') || '';
@@ -2454,6 +2519,11 @@
           statusEl.textContent = '✅ ' + (data.message || 'Data updated successfully!') + ' Reloading app...';
         }
         if (btn) btn.textContent = '✅ Done!';
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('pendingDataRefreshToast', JSON.stringify({ timestamp: Date.now() }));
+          }
+        } catch (e) {}
         setTimeout(() => {
           window.location.reload();
         }, 1200);
@@ -2621,20 +2691,23 @@
       const sorted = keepers.slice().sort((a, b) => (a.slot - b.slot) || (a.round - b.round));
       for (const k of sorted) {
         const p = (k.playerId != null) ? (byId(k.playerId) || {}) : {};
-        const name = k.customName || p.name || ('Player #' + k.playerId);
-        const pos = k.customPos || p.pos || '—';
-        const team = k.customTeam || p.team || '—';
+        const name = k.customName || k.playerName || p.name || ('Player #' + k.playerId);
+        const pos = k.customPos || k.playerPos || p.pos || '—';
+        const team = k.customTeam || k.playerTeam || p.team || '—';
         const posClass = ['QB', 'RB', 'WR', 'TE'].includes(pos) ? pos : (['DST', 'DEF', 'D/ST'].includes(pos) ? 'DST' : (pos === 'K' ? 'K' : 'other'));
         const isMe = (k.slot === s.slot);
         const isEditing = (k.id === editingKeeperId);
         const overall = pickForKeeperId[k.id];
         const pickStr = overall ? ('#' + overall + ' (' + fmtPick(overall, s.teams) + ')') : ('Rd ' + k.round);
+        const droppedBadge = k.wasDroppedFromPool
+          ? ' <span class="meta" style="color:var(--warn); font-size:11px" title="Player fell out of consensus rankings pool during refresh; preserved as custom keeper">⚠️ (unranked in pool)</span>'
+          : (k.customName ? ' <span class="meta">(custom)</span>' : '');
 
         rowsHtml += '<tr class="' + (isMe ? 'is-me ' : '') + (isEditing ? 'is-editing' : '') + '">'
           + '<td><b style="color:' + (isMe ? 'var(--good)' : 'var(--text)') + '">' + getTeamName(k.slot) + '</b> <span class="meta">(Slot ' + k.slot + ')</span></td>'
           + '<td><b>Round ' + k.round + '</b></td>'
           + '<td><span class="meta">' + pickStr + '</span></td>'
-          + '<td><span class="pos ' + posClass + '" style="margin-right:4px">' + pos + '</span> <b>' + name + '</b>' + (k.customName ? ' <span class="meta">(custom)</span>' : '') + '</td>'
+          + '<td><span class="pos ' + posClass + '" style="margin-right:4px">' + pos + '</span> <b>' + name + '</b>' + droppedBadge + '</td>'
           + '<td><span class="meta">' + team + '</span></td>'
           + '<td style="text-align:right"><div style="display:inline-flex; gap:6px; justify-content:flex-end">'
           + '<button type="button" class="small" style="color:var(--accent); font-weight:600; cursor:pointer" onclick="startEditKeeper(\'' + k.id + '\')">✏️ Edit</button>'
@@ -2865,7 +2938,11 @@
         id: editingKeeperId || undefined,
         slot: slot,
         round: round,
-        playerId: selectedKeeperPlayer.id
+        playerId: selectedKeeperPlayer.id,
+        playerName: selectedKeeperPlayer.name,
+        playerPos: selectedKeeperPlayer.pos,
+        playerTeam: selectedKeeperPlayer.team,
+        playerBye: selectedKeeperPlayer.bye
       };
     }
 
