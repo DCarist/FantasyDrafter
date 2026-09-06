@@ -3000,8 +3000,78 @@
     render();
   }
 
+  // ---------- Clipboard Copy Helpers ----------
+  function copyTextToClipboard(text) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+    }
+    return fallbackCopyText(text);
+  }
+
+  function fallbackCopyText(text) {
+    try {
+      if (typeof document === 'undefined') return Promise.resolve(false);
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return Promise.resolve(ok);
+    } catch (e) {
+      return Promise.resolve(false);
+    }
+  }
+
+  function showCopyToast(msg, isWarn) {
+    if (typeof document === 'undefined') return;
+    let toast = $('copy_toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'copy_toast';
+      toast.className = 'copy-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.className = 'copy-toast show' + (isWarn ? ' warn' : '');
+    if (typeof clearTimeout !== 'undefined') clearTimeout(toast._timer);
+    if (typeof setTimeout !== 'undefined') {
+      toast._timer = setTimeout(() => {
+        toast.className = 'copy-toast' + (isWarn ? ' warn' : '');
+      }, 2200);
+    }
+  }
+
+  function copyLastDraftPick() {
+    const log = global.state ? global.state.log : [];
+    if (!log || log.length === 0) {
+      showCopyToast('⚠️ No draft picks in log to copy', true);
+      return null;
+    }
+    const lastEntry = log[log.length - 1];
+    const fmtFn = (typeof formatPickForClipboard === 'function')
+      ? formatPickForClipboard
+      : (typeof window !== 'undefined' && typeof window.formatPickForClipboard === 'function' ? window.formatPickForClipboard : null);
+    const text = (typeof fmtFn === 'function')
+      ? fmtFn(lastEntry, global.state.settings, global.state.tradedPicks, byId)
+      : ('#' + lastEntry.overall + ' pick');
+
+    if (text) {
+      copyTextToClipboard(text);
+      showCopyToast('📋 Copied: ' + text);
+    }
+    return text;
+  }
+
   // Export to global scope
   global.$ = $;
+  global.copyTextToClipboard = copyTextToClipboard;
+  global.showCopyToast = showCopyToast;
+  global.copyLastDraftPick = copyLastDraftPick;
   global.renderHeader = renderHeader;
   global.scored = scored;
   global.renderPool = renderPool;

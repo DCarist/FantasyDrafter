@@ -151,6 +151,34 @@
         e.preventDefault();
         undo();
       }
+      // Copy last draft pick on Ctrl+C / Cmd+C (when nothing is selected) or Alt+C / Ctrl+Shift+C
+      const isCopyKey = (e.key === 'c' || e.key === 'C');
+      const isPlainCopy = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && isCopyKey;
+      const isExplicitCopyVariant = ((e.ctrlKey || e.metaKey) && e.shiftKey && isCopyKey) || (e.altKey && isCopyKey);
+
+      if (isPlainCopy || isExplicitCopyVariant) {
+        const sel = (typeof window !== 'undefined' && window.getSelection) ? window.getSelection().toString() : '';
+        const activeEl = document.activeElement;
+        const isEditable = activeEl && ['INPUT', 'TEXTAREA'].includes(activeEl.tagName);
+        const hasInputSel = isEditable && (activeEl.selectionStart !== activeEl.selectionEnd);
+
+        if (isPlainCopy && (sel || hasInputSel)) {
+          // User highlighted text to copy; allow native browser copy
+          return;
+        }
+
+        if (!sel && !hasInputSel) {
+          const fn = (typeof copyLastDraftPick === 'function')
+            ? copyLastDraftPick
+            : (typeof global !== 'undefined' && typeof global.copyLastDraftPick === 'function' ? global.copyLastDraftPick : null);
+          if (typeof fn === 'function') {
+            const res = fn();
+            if (res) {
+              e.preventDefault();
+            }
+          }
+        }
+      }
       // Toggle Draft Board modal on 'b' or 'B' if not inside an input/textarea
       if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
         e.preventDefault();

@@ -805,6 +805,42 @@ function fmtPick(overall, teams) {
   return r + '.' + String(i).padStart(2, '0');
 }
 
+// Formats a draft pick entry into clean plain text for clipboard sharing
+// Omits "(You)" and check marks, but preserves keeper attribution.
+// Example: "#4 (1.04) Doug: James Cook III (RB · BUF)" or "#93 (8.09) Doug: Brock Bowers (TE · LV) [Keeper]"
+function formatPickForClipboard(entry, settings, tradedPicks, players) {
+  if (!entry || typeof entry !== 'object' || entry.overall == null) return '';
+  const s = settings || {};
+  const teams = parseInt(s.teams, 10) || 12;
+  const mode = s.mode || 'snake';
+  const teamNames = s.teamNames || [];
+  const mySlot = s.slot || 1;
+
+  const tInfo = teamForOverall(entry.overall, teams, mode, teamNames, mySlot, tradedPicks);
+  const p = resolvePickPlayer(entry, players) || {};
+
+  const hasPos = Boolean(p.pos && p.pos.trim());
+  const hasTeam = Boolean(p.team && p.team.trim() && p.team !== '—');
+  let posTeamStr = '';
+  if (hasPos && hasTeam) {
+    posTeamStr = ' (' + p.pos.trim() + ' · ' + p.team.trim() + ')';
+  } else if (hasPos) {
+    posTeamStr = ' (' + p.pos.trim() + ')';
+  } else if (hasTeam) {
+    posTeamStr = ' (' + p.team.trim() + ')';
+  }
+
+  const isKeeper = Boolean(entry.isKeeper || p.isKeeper);
+  const keeperSuffix = isKeeper ? ' [Keeper]' : '';
+
+  const pickNumStr = '#' + entry.overall;
+  const pickRoundStr = teams > 0 ? ' (' + fmtPick(entry.overall, teams) + ')' : '';
+  const teamNameStr = (tInfo && tInfo.name) ? tInfo.name.trim() : 'Team';
+  const playerNameStr = (p.name || entry.customName || 'Player').trim();
+
+  return (pickNumStr + pickRoundStr + ' ' + teamNameStr + ': ' + playerNameStr + posTeamStr + keeperSuffix).trim();
+}
+
 // Formats an individual starter or bench slot item as HTML
 function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
   const p = item.player;
@@ -2578,6 +2614,7 @@ if (typeof module !== 'undefined' && module.exports) {
     buildPlayerLookupIndex: buildPlayerLookupIndex,
     findPlayerInPool: findPlayerInPool,
     reconcileStateWithNewPlayerPool: reconcileStateWithNewPlayerPool,
+    formatPickForClipboard: formatPickForClipboard,
   };
 }
 
@@ -2589,5 +2626,6 @@ if (typeof window !== 'undefined') {
   window.buildPlayerLookupIndex = buildPlayerLookupIndex;
   window.findPlayerInPool = findPlayerInPool;
   window.reconcileStateWithNewPlayerPool = reconcileStateWithNewPlayerPool;
+  window.formatPickForClipboard = formatPickForClipboard;
 }
 

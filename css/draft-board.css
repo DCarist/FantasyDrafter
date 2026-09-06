@@ -2816,4 +2816,34 @@ td.clickname:hover .pname {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 8px;
-}
+}
+
+/* Clipboard copy toast notification */
+.copy-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  background: var(--panel2);
+  border: 1px solid var(--good);
+  color: var(--good);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.copy-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.copy-toast.warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
