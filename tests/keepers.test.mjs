@@ -289,6 +289,161 @@ eq(nextDataAt103.nextDraftPick, 105, 'Next draft pick remains 105');
 eq(nextDataAt103.distanceToNextDraftPick, 2, 'Distance is 2');
 assert(nextDataAt103.isSoon, 'isSoon becomes true when actual draft selection is within 3 turns');
 
+// --- 13. Keeper Modal UI & Navigation Action Handlers ---
+const fs = require('fs');
+const draftUiCode = fs.readFileSync('js/draft-ui.js', 'utf-8');
+
+// A. Verify global exports in draft-ui.js
+assert(
+  draftUiCode.includes('global.saveKeepersAndBackToSetup = saveKeepersAndBackToSetup;'),
+  'draft-ui.js exports saveKeepersAndBackToSetup to global scope'
+);
+assert(
+  draftUiCode.includes('global.saveAndCloseKeepersModal = saveAndCloseKeepersModal;'),
+  'draft-ui.js exports saveAndCloseKeepersModal to global scope'
+);
+
+// B. Verify inline onclick handlers in keeper modal template
+assert(
+  draftUiCode.includes('<button class="close" onclick="saveAndCloseKeepersModal()">×</button>'),
+  'Keeper modal header X button triggers saveAndCloseKeepersModal()'
+);
+assert(
+  draftUiCode.includes('onclick="saveKeepersAndBackToSetup()"'),
+  'Keeper modal contains Back to League Setup button triggering saveKeepersAndBackToSetup()'
+);
+assert(
+  draftUiCode.includes('onclick="saveAndCloseKeepersModal()"') &&
+  draftUiCode.includes('Save & Close'),
+  'Keeper modal contains primary Save & Close button triggering saveAndCloseKeepersModal()'
+);
+
+// C. Verify behavioral execution of keeper modal exit handlers in simulated environment
+let maxKeepersUpdated = null;
+let savedCalled = false;
+let renderCalled = false;
+
+const mockElements = {
+  keeper_modal_max: { value: '4' },
+  modalbox: { className: 'modal modal-wide keepers-modal-box', innerHTML: '', classList: { contains: () => false } },
+  overlay: { classList: { remove: () => {}, add: () => {} } },
+  playerOverlay: { classList: { remove: () => {}, add: () => {} } },
+  postabs: { innerHTML: '' }
+};
+
+const mockGlobal = {
+  state: {
+    settings: {
+      teams: 12,
+      rounds: 16,
+      slot: 1,
+      teamNames: ['Ken', 'Team 2'],
+      maxKeepers: 2,
+      mode: 'snake',
+      rosterSlots: {}
+    },
+    keepers: [],
+    tradedPicks: {},
+    watchlist: [],
+    queue: [],
+    log: []
+  },
+  updateMaxKeepers: (val) => {
+    maxKeepersUpdated = parseInt(val, 10);
+    mockGlobal.state.settings.maxKeepers = maxKeepersUpdated;
+  },
+  save: () => { savedCalled = true; },
+  render: () => { renderCalled = true; },
+  ui: { posFilter: 'ALL', search: '', sort: 'score' },
+  PLAYERS: []
+};
+
+const dummyEl = {
+  value: '',
+  textContent: '',
+  innerHTML: '',
+  classList: { add: () => {}, remove: () => {}, contains: () => false },
+  style: {},
+  addEventListener: () => {}
+};
+
+const vm = require('vm');
+const context = vm.createContext(Object.assign({}, L, {
+  window: mockGlobal,
+  globalThis: mockGlobal,
+  currentPick: () => 1,
+  fmtPick: () => '1.01',
+  roundForOverall: () => 1,
+  teamForOverall: () => ({ slot: 1, name: 'Ken', isMe: true }),
+  getTeamName: (slot) => (mockGlobal.state.settings.teamNames && mockGlobal.state.settings.teamNames[slot - 1]) || ('Team ' + slot),
+  picksForSlot: () => [],
+  scored: () => [],
+  takenMap: () => new Map(),
+  cleanName: (n) => n || '',
+  byId: () => null,
+  getKeeperPicksMap: () => ({}),
+  isDraftOver: () => false,
+  ui: { posFilter: 'ALL', search: '', sort: 'score' },
+  viewingRosterSlot: null,
+  DEFAULT_ROSTER_SLOTS: { qb: 1, rb: 2, wr: 2, te: 1, flex: 3, superflex: 1, k: 0, dst: 0, bench: 15 },
+  $: (id) => mockElements[id] || { value: '', textContent: '', innerHTML: '', classList: { add: () => {}, remove: () => {}, contains: () => false }, style: {}, addEventListener: () => {} },
+  document: {
+    getElementById: (id) => mockElements[id] || { value: '', textContent: '', innerHTML: '', classList: { add: () => {}, remove: () => {}, contains: () => false }, style: {}, addEventListener: () => {} },
+    addEventListener: () => {}
+  },
+  console: console
+}));
+
+vm.runInContext(draftUiCode, context);
+
+// Verify functions are exported onto mockGlobal
+assert(typeof mockGlobal.saveAndCloseKeepersModal === 'function', 'saveAndCloseKeepersModal is defined on global scope');
+assert(typeof mockGlobal.saveKeepersAndBackToSetup === 'function', 'saveKeepersAndBackToSetup is defined on global scope');
+
+// Test 1: saveAndCloseKeepersModal execution
+savedCalled = false;
+renderCalled = false;
+maxKeepersUpdated = null;
+mockElements.modalbox.className = 'modal modal-wide keepers-modal-box';
+
+mockGlobal.saveAndCloseKeepersModal();
+
+eq(maxKeepersUpdated, 4, 'saveAndCloseKeepersModal updates maxKeepers from #keeper_modal_max');
+eq(mockGlobal.state.settings.maxKeepers, 4, 'Settings maxKeepers updated to 4');
+assert(savedCalled, 'saveAndCloseKeepersModal calls global.save()');
+assert(mockElements.postabs.innerHTML.includes('ALL'), 'saveAndCloseKeepersModal triggers render()');
+eq(mockElements.modalbox.className, 'modal', 'closeModal() resets modalbox className to "modal"');
+
+// Test 2: saveKeepersAndBackToSetup execution
+savedCalled = false;
+maxKeepersUpdated = null;
+mockElements.keeper_modal_max.value = '3';
+
+mockGlobal.saveKeepersAndBackToSetup();
+
+eq(maxKeepersUpdated, 3, 'saveKeepersAndBackToSetup updates maxKeepers from #keeper_modal_max');
+eq(mockGlobal.state.settings.maxKeepers, 3, 'Settings maxKeepers updated to 3');
+assert(savedCalled, 'saveKeepersAndBackToSetup calls global.save()');
+assert(mockElements.modalbox.innerHTML.includes('League Setup'), 'saveKeepersAndBackToSetup navigates back to League Setup');
+eq(mockElements.modalbox.className, 'modal modal-wide', 'openLeagueSetup resets modalbox className to modal modal-wide');
+
+// Test 3: closeModal resets keeper modal editing flags
+assert(typeof mockGlobal.closeModal === 'function', 'closeModal is exported to global scope');
+mockGlobal.closeModal();
+eq(mockElements.modalbox.className, 'modal', 'closeModal resets modalbox class');
+
+// Test 4: openKeepersModal syncs settings from League Setup DOM
+mockElements.setup_team_count = { value: '10' };
+mockElements.setup_mode_select = { value: '3rr' };
+mockElements.setup_max_keepers = { value: '3' };
+mockElements.setup_rounds_count = { value: '18' };
+mockGlobal.openKeepersModal();
+
+eq(mockGlobal.state.settings.teams, 10, 'openKeepersModal syncs teams from DOM');
+eq(mockGlobal.state.settings.mode, '3rr', 'openKeepersModal syncs mode from DOM');
+eq(mockGlobal.state.settings.rounds, 18, 'openKeepersModal syncs rounds from DOM');
+eq(mockElements.modalbox.className, 'modal modal-wide keepers-modal-box', 'openKeepersModal sets keepers-modal-box class');
+
 const success = finishSuite('Keepers & Pre-Drafted Players');
 if (!success) {
   process.exit(1);

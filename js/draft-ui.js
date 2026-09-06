@@ -845,6 +845,9 @@
   function closeModal() {
     isBoardModalOpen = false;
     returnToBoardOnClose = false;
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
     const overlay = $('overlay');
     if (overlay) overlay.classList.remove('show');
     const playerOverlay = $('playerOverlay');
@@ -2155,6 +2158,10 @@
   }
 
   function openLeagueSetup() {
+    const modalBox = $('modalbox');
+    if (modalBox) {
+      modalBox.className = 'modal modal-wide';
+    }
     const s = global.state.settings;
     setupDraftNames = s.teamNames.slice();
     setupMySlot = s.slot;
@@ -2230,7 +2237,7 @@
       + '</tbody></table></div>'
       + '<div style="margin-top:10px; padding:10px; background:#141923; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--dim)">'
       + '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">'
-      + '<div>📊 <b style="color:var(--text)">Rankings & Injury Status:</b> ' + (window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' players loaded (Data date: <b style="color:var(--accent)">' + (window.DRAFT_DATA.generated || 'live') + '</b>).</div>'
+      + '<div>📊 <b style="color:var(--text)">Rankings & Injury Status:</b> ' + (window.DRAFT_DATA && window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' players loaded (Data date: <b style="color:var(--accent)">' + ((window.DRAFT_DATA && window.DRAFT_DATA.generated) || 'live') + '</b>).</div>'
       + '<button type="button" class="act primary" id="refresh_data_btn" onclick="triggerDataRefresh(this)" style="font-size:12px; padding:4px 10px">🔄 Refresh Data Now</button>'
       + '</div>'
       + '<div id="refresh_data_status" style="margin-top:6px; font-size:11.5px; color:var(--dim)">Run latest consensus rankings, 32-team depth charts, and injury reports refresh on-demand.</div>'
@@ -2295,7 +2302,7 @@
     for (let i = 1; i <= count; i++) {
       const input = $('team_input_' + i);
       if (input) {
-        setupDraftNames[i - 1] = input.value.trim() || ('Team ' + i);
+        setupDraftNames[i - 1] = (input.value != null ? String(input.value).trim() : '') || ('Team ' + i);
       }
     }
   }
@@ -2500,11 +2507,35 @@
     if ($('setup_team_count')) {
       syncSetupInputsFromDom();
       const s = global.state.settings;
+      if ($('setup_league_name')) s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
       s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
+      if ($('setup_mode_select')) s.mode = $('setup_mode_select').value;
+      if ($('setup_leaguetype_select')) s.leagueType = $('setup_leaguetype_select').value;
+      if ($('setup_scoring_select')) s.scoring = $('setup_scoring_select').value;
+      if ($('setup_qb_select')) s.qbFormat = $('setup_qb_select').value;
       s.slot = setupMySlot;
       s.teamNames = setupDraftNames.slice(0, s.teams);
+      while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
       if ($('setup_max_keepers')) {
         s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
+      }
+      if ($('setup_roster_qb') && $('setup_roster_qb').value !== '') {
+        s.rosterSlots = {
+          qb: Math.max(0, parseInt($('setup_roster_qb').value, 10) || 0),
+          rb: Math.max(0, parseInt($('setup_roster_rb').value, 10) || 0),
+          wr: Math.max(0, parseInt($('setup_roster_wr').value, 10) || 0),
+          te: Math.max(0, parseInt($('setup_roster_te').value, 10) || 0),
+          flex: Math.max(0, parseInt($('setup_roster_flex').value, 10) || 0),
+          superflex: Math.max(0, parseInt($('setup_roster_superflex').value, 10) || 0),
+          k: Math.max(0, parseInt($('setup_roster_k').value, 10) || 0),
+          dst: Math.max(0, parseInt($('setup_roster_dst').value, 10) || 0),
+          bench: Math.max(0, parseInt($('setup_roster_bench').value, 10) || 0)
+        };
+        const starters = s.rosterSlots.qb + s.rosterSlots.rb + s.rosterSlots.wr + s.rosterSlots.te +
+          s.rosterSlots.flex + s.rosterSlots.superflex + s.rosterSlots.k + s.rosterSlots.dst;
+        s.rounds = Math.max(1, starters + s.rosterSlots.bench);
+      } else if ($('setup_rounds_count')) {
+        s.rounds = Math.max(1, Math.min(50, parseInt($('setup_rounds_count').value, 10) || 16));
       }
       global.save();
     }
@@ -2888,6 +2919,7 @@
     }
     global.save();
     closeModal();
+    if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
     render();
   }
 
@@ -2932,6 +2964,8 @@
   global.submitKeeperForm = submitKeeperForm;
   global.handleRemoveKeeper = handleRemoveKeeper;
   global.handleKeeperMaxChange = handleKeeperMaxChange;
+  global.saveKeepersAndBackToSetup = saveKeepersAndBackToSetup;
+  global.saveAndCloseKeepersModal = saveAndCloseKeepersModal;
   global.openDraftBoardModal = openDraftBoardModal;
   global.renderDraftBoardModalView = renderDraftBoardModalView;
   global.closeBoardModal = closeBoardModal;
