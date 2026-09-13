@@ -486,6 +486,28 @@
     }
   }
 
+  function switchSyncContext() {
+    if (syncState.sleeperTimer) {
+      clearInterval(syncState.sleeperTimer);
+      syncState.sleeperTimer = null;
+      syncState.type = 'off';
+      syncState.sleeperStatus = 'Paused';
+    }
+    syncState.sleeperPicksCount = 0;
+    syncState.sleeperLastPoll = null;
+
+    const sleeperDraftId = global.state && global.state.settings && global.state.settings.sleeperDraftId;
+    if (sleeperDraftId) {
+      syncState.type = 'sleeper';
+      syncState.sleeperStatus = 'Connecting...';
+      pollSleeperPicks();
+      syncState.sleeperTimer = setInterval(pollSleeperPicks, 2000);
+    }
+
+    updateSyncBadge();
+    updateSleeperStatusBox();
+  }
+
   function updateSleeperStatusBox() {
     const box = document.getElementById('sleeper_status_box');
     const toggleBtn = document.getElementById('sleeper_toggle_btn');
@@ -704,5 +726,6 @@
   global.openSyncModal = openSyncModal;
   global.saveSyncSettings = saveSyncSettings;
   global.applyEspnLeagueSetup = applyEspnLeagueSetup;
+  global.switchSyncContext = switchSyncContext;
 })(typeof window !== 'undefined' ? window : globalThis);
 

@@ -1,6 +1,9 @@
 // 📦 Reactive State & Data Container for Fantasy Drafter
 (function (global) {
-  const STORE_KEY = 'kenDraftBoard-v1';
+  const LEGACY_STORE_KEY = 'kenDraftBoard-v1';
+  const LEAGUES_MANIFEST_KEY = 'fantasy_drafter_leagues_manifest';
+  const LEAGUE_STORE_PREFIX = 'fantasy_drafter_league_';
+  const STORE_KEY = LEAGUES_MANIFEST_KEY;
 
   const DEFAULTS = {
     leagueName: "Ken's Draft Board",
@@ -31,6 +34,72 @@
     hideOutIR: false
   };
 
+  function loadManifest() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(LEAGUES_MANIFEST_KEY);
+        if (raw) {
+          const m = JSON.parse(raw);
+          if (m && Array.isArray(m.leagues) && m.leagues.length > 0) {
+            if (!m.activeLeagueId || !m.leagues.some(l => l.id === m.activeLeagueId)) {
+              m.activeLeagueId = m.leagues[0].id;
+            }
+            return m;
+          }
+        }
+      }
+    } catch (e) {}
+
+    // Clean migration from legacy single-league STORE_KEY
+    let legacyState = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const legacyRaw = localStorage.getItem(LEGACY_STORE_KEY);
+        if (legacyRaw) {
+          legacyState = JSON.parse(legacyRaw);
+        }
+      }
+    } catch (e) {}
+
+    const defaultLeagueId = 'league_default';
+    const defaultLeagueName = (legacyState && legacyState.settings && legacyState.settings.leagueName)
+      ? legacyState.settings.leagueName
+      : "Ken's Draft Board";
+
+    const m = (typeof createDefaultLeagueManifest === 'function')
+      ? createDefaultLeagueManifest(defaultLeagueName, defaultLeagueId)
+      : {
+          version: 1,
+          activeLeagueId: defaultLeagueId,
+          leagues: [{
+            id: defaultLeagueId,
+            name: defaultLeagueName,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }]
+        };
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LEAGUES_MANIFEST_KEY, JSON.stringify(m));
+        if (legacyState) {
+          localStorage.setItem(LEAGUE_STORE_PREFIX + defaultLeagueId, JSON.stringify(legacyState));
+        }
+      }
+    } catch (e) {}
+
+    return m;
+  }
+
+  function saveManifest() {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LEAGUES_MANIFEST_KEY, JSON.stringify(manifest));
+      }
+    } catch (e) {}
+  }
+
+  let manifest = loadManifest();
   let state = load();
   let ui = {
     posFilter: 'ALL',
@@ -117,12 +186,26 @@
     return s;
   }
 
-  function load() {
+  function applyLoadedState(targetState) {
+    for (const k of Object.keys(state)) {
+      delete state[k];
+    }
+    Object.assign(state, targetState);
+    normalizeState(state);
+    ui.hideTaken = !!(state && state.settings && state.settings.hideTaken);
+    ui.hideOutIR = !!(state && state.settings && state.settings.hideOutIR);
+    return state;
+  }
+
+  function load(leagueId) {
+    const targetId = leagueId || (manifest && manifest.activeLeagueId) || 'league_default';
     try {
-      const raw = localStorage.getItem(STORE_KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        return normalizeState(s);
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(LEAGUE_STORE_PREFIX + targetId);
+        if (raw) {
+          const s = JSON.parse(raw);
+          return normalizeState(s);
+        }
       }
     } catch (e) { /* fallback on error */ }
     return normalizeState({ settings: Object.assign({}, DEFAULTS), keepers: [], log: [], watchlist: [], queue: [], tradedPicks: {} });
@@ -130,7 +213,24 @@
 
   function save() {
     normalizeState(state);
-    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+    const activeId = (manifest && manifest.activeLeagueId) || 'league_default';
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LEAGUE_STORE_PREFIX + activeId, JSON.stringify(state));
+      }
+    } catch (e) {}
+
+    if (manifest && Array.isArray(manifest.leagues)) {
+      const cur = manifest.leagues.find(l => l.id === activeId);
+      if (cur) {
+        const curName = state.settings.leagueName || cur.name || "Ken's Draft Board";
+        if (cur.name !== curName || !cur.updatedAt) {
+          cur.name = curName;
+          cur.updatedAt = new Date().toISOString();
+          saveManifest();
+        }
+      }
+    }
   }
 
   function getTeamName(slot) {
@@ -152,7 +252,7 @@
   const byId = id => {
     if (id == null) return null;
     if (PLAYERS[id]) return PLAYERS[id];
-    if (window.DRAFT_DATA && window.DRAFT_DATA.players && window.DRAFT_DATA.players[id]) {
+    if (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players && window.DRAFT_DATA.players[id]) {
       return Object.assign({ id: id }, window.DRAFT_DATA.players[id]);
     }
     return null;
@@ -502,8 +602,402 @@
     if (typeof renderInspectRoster === 'function') renderInspectRoster();
   }
 
+  // --- Multi-League Management APIs ---
+  function getLeagueList() {
+    if (!manifest || !Array.isArray(manifest.leagues)) return [];
+    return manifest.leagues.map(l => {
+      let draftCount = 0;
+      let teams = 12;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const raw = localStorage.getItem(LEAGUE_STORE_PREFIX + l.id);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            draftCount = Array.isArray(parsed.log) ? parsed.log.length : 0;
+            teams = parsed.settings?.teams || 12;
+          }
+        }
+      } catch (e) {}
+      return {
+        id: l.id,
+        name: l.name,
+        isActive: l.id === manifest.activeLeagueId,
+        draftCount: draftCount,
+        teams: teams,
+        createdAt: l.createdAt,
+        updatedAt: l.updatedAt
+      };
+    });
+  }
+
+  function getActiveLeagueId() {
+    return (manifest && manifest.activeLeagueId) || 'league_default';
+  }
+
+  function switchLeague(leagueId) {
+    if (!leagueId) return { ok: false, error: 'Invalid league ID' };
+    if (!manifest || !Array.isArray(manifest.leagues)) return { ok: false, error: 'No leagues available' };
+    const target = manifest.leagues.find(l => l.id === leagueId);
+    if (!target) return { ok: false, error: 'League not found: ' + leagueId };
+
+    // Save active state before switching
+    save();
+
+    manifest.activeLeagueId = leagueId;
+    saveManifest();
+
+    const loaded = load(leagueId);
+    applyLoadedState(loaded);
+    autoAdvanceKeepers();
+    save();
+
+    if (typeof global.switchSyncContext === 'function') {
+      global.switchSyncContext();
+    }
+    if (typeof global.bindHeaderControls === 'function') {
+      global.bindHeaderControls();
+    }
+    if (typeof document !== 'undefined') {
+      const titleEl = document.getElementById('leaguetitle');
+      if (titleEl) {
+        titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Ken's Draft Board");
+      }
+      document.title = (state.settings.leagueName || "Fantasy Draft Board") + ' — Draft Board';
+    }
+    if (typeof global.render === 'function') {
+      global.render();
+    }
+    sendServerEvent('🔄 Switched to league: ' + (state.settings.leagueName || target.name), 'info');
+    return { ok: true, activeId: leagueId, name: state.settings.leagueName || target.name };
+  }
+
+  function createNewLeague(leagueName) {
+    save();
+    const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const defaultName = 'League ' + (manifest.leagues.length + 1);
+    const finalName = (leagueName && String(leagueName).trim()) ? String(leagueName).trim() : defaultName;
+
+    const freshSettings = Object.assign({}, DEFAULTS, { leagueName: finalName, sleeperDraftId: '' });
+    const freshState = normalizeState({
+      settings: freshSettings,
+      keepers: [],
+      log: [],
+      watchlist: [],
+      queue: [],
+      tradedPicks: {}
+    });
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LEAGUE_STORE_PREFIX + newId, JSON.stringify(freshState));
+      }
+    } catch (e) {}
+
+    manifest.leagues.push({
+      id: newId,
+      name: finalName,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    manifest.activeLeagueId = newId;
+    saveManifest();
+
+    applyLoadedState(freshState);
+    save();
+
+    if (typeof global.switchSyncContext === 'function') global.switchSyncContext();
+    if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
+    if (typeof document !== 'undefined') {
+      const titleEl = document.getElementById('leaguetitle');
+      if (titleEl) titleEl.textContent = '🏈 ' + finalName;
+      document.title = finalName + ' — Draft Board';
+    }
+    if (typeof global.render === 'function') global.render();
+    sendServerEvent('➕ Created new league: ' + finalName, 'info');
+    return { ok: true, id: newId, name: finalName };
+  }
+
+  function duplicateCurrentLeague(newLeagueName) {
+    save();
+    const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const defaultName = (state.settings.leagueName || 'League') + ' (Copy)';
+    const finalName = (newLeagueName && String(newLeagueName).trim()) ? String(newLeagueName).trim() : defaultName;
+
+    let clonedPayload = null;
+    const dupFn = (typeof duplicateLeagueSettings === 'function')
+      ? duplicateLeagueSettings
+      : (typeof global.duplicateLeagueSettings === 'function' ? global.duplicateLeagueSettings : null);
+
+    if (dupFn) {
+      clonedPayload = dupFn(state, finalName, newId);
+    } else {
+      const clonedSettings = JSON.parse(JSON.stringify(state.settings));
+      clonedSettings.leagueName = finalName;
+      clonedSettings.sleeperDraftId = '';
+      clonedPayload = {
+        id: newId,
+        name: finalName,
+        settings: clonedSettings,
+        keepers: [],
+        log: [],
+        watchlist: Array.isArray(state.watchlist) ? state.watchlist.slice() : [],
+        queue: [],
+        tradedPicks: {},
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    const clonedState = normalizeState({
+      settings: clonedPayload.settings,
+      keepers: clonedPayload.keepers,
+      log: clonedPayload.log,
+      watchlist: clonedPayload.watchlist,
+      queue: clonedPayload.queue,
+      tradedPicks: clonedPayload.tradedPicks
+    });
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LEAGUE_STORE_PREFIX + newId, JSON.stringify(clonedState));
+      }
+    } catch (e) {}
+
+    manifest.leagues.push({
+      id: newId,
+      name: finalName,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    manifest.activeLeagueId = newId;
+    saveManifest();
+
+    applyLoadedState(clonedState);
+    save();
+
+    if (typeof global.switchSyncContext === 'function') global.switchSyncContext();
+    if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
+    if (typeof document !== 'undefined') {
+      const titleEl = document.getElementById('leaguetitle');
+      if (titleEl) titleEl.textContent = '🏈 ' + finalName;
+      document.title = finalName + ' — Draft Board';
+    }
+    if (typeof global.render === 'function') global.render();
+    sendServerEvent('📋 Duplicated league settings to: ' + finalName, 'info');
+    return { ok: true, id: newId, name: finalName };
+  }
+
+  function deleteLeague(leagueId) {
+    if (!manifest || !Array.isArray(manifest.leagues)) return { ok: false, error: 'No leagues found' };
+    if (manifest.leagues.length <= 1) {
+      return { ok: false, error: 'Cannot delete the only remaining league. At least one league must exist.' };
+    }
+    const idx = manifest.leagues.findIndex(l => l.id === leagueId);
+    if (idx < 0) return { ok: false, error: 'League not found' };
+
+    const deletedName = manifest.leagues[idx].name;
+    const isCurrent = (manifest.activeLeagueId === leagueId);
+    manifest.leagues.splice(idx, 1);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(LEAGUE_STORE_PREFIX + leagueId);
+      }
+    } catch (e) {}
+
+    if (isCurrent) {
+      const nextLeague = manifest.leagues[0];
+      manifest.activeLeagueId = nextLeague.id;
+      saveManifest();
+      const loaded = load(nextLeague.id);
+      applyLoadedState(loaded);
+      autoAdvanceKeepers();
+      save();
+
+      if (typeof global.switchSyncContext === 'function') global.switchSyncContext();
+      if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
+      if (typeof document !== 'undefined') {
+        const titleEl = document.getElementById('leaguetitle');
+        if (titleEl) titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Ken's Draft Board");
+        document.title = (state.settings.leagueName || "Fantasy Draft Board") + ' — Draft Board';
+      }
+      if (typeof global.render === 'function') global.render();
+    } else {
+      saveManifest();
+    }
+    sendServerEvent('🗑️ Deleted league: ' + deletedName, 'info');
+    return { ok: true };
+  }
+
+  function exportLeagueBackup(mode) {
+    save();
+    let dataToExport = null;
+    let filename = '';
+    const dateStr = new Date().toISOString().slice(0, 10);
+
+    if (mode === 'all') {
+      const leaguesMap = {};
+      for (const l of manifest.leagues) {
+        try {
+          if (typeof localStorage !== 'undefined') {
+            const raw = localStorage.getItem(LEAGUE_STORE_PREFIX + l.id);
+            if (raw) leaguesMap[l.id] = JSON.parse(raw);
+          }
+        } catch (e) {}
+      }
+      const serFn = (typeof serializeLeagueBackup === 'function')
+        ? serializeLeagueBackup
+        : (typeof global.serializeLeagueBackup === 'function' ? global.serializeLeagueBackup : null);
+
+      if (serFn) {
+        dataToExport = serFn(manifest, leaguesMap);
+      } else {
+        dataToExport = {
+          version: 1,
+          backupType: 'fantasy_drafter_multi_league_backup',
+          exportedAt: new Date().toISOString(),
+          manifest: manifest,
+          leagues: leaguesMap
+        };
+      }
+      filename = `fantasy-drafter-all-leagues-${dateStr}.json`;
+    } else {
+      // Export active league
+      const safeName = (state.settings.leagueName || 'league').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const serDraftFn = (typeof serializeDraftState === 'function')
+        ? serializeDraftState
+        : (typeof global.serializeDraftState === 'function' ? global.serializeDraftState : null);
+
+      if (serDraftFn) {
+        dataToExport = serDraftFn(state);
+      } else {
+        dataToExport = {
+          version: 2,
+          exportedAt: new Date().toISOString(),
+          settings: state.settings,
+          keepers: state.keepers,
+          draftLog: state.log,
+          watchlist: state.watchlist,
+          queue: state.queue,
+          tradedPicks: state.tradedPicks
+        };
+      }
+      filename = `draft-board-${safeName}-${dateStr}.json`;
+    }
+
+    if (typeof document !== 'undefined') {
+      const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 200);
+    }
+    return { ok: true, filename: filename, data: dataToExport };
+  }
+
+  function importLeagueBackup(input) {
+    if (!input) return { ok: false, error: 'Empty import payload' };
+    let parsed = null;
+    const desFn = (typeof deserializeLeagueBackup === 'function')
+      ? deserializeLeagueBackup
+      : (typeof global.deserializeLeagueBackup === 'function' ? global.deserializeLeagueBackup : null);
+
+    if (desFn) {
+      parsed = desFn(input);
+    } else {
+      try {
+        const obj = (typeof input === 'string') ? JSON.parse(input) : input;
+        if (obj && obj.backupType === 'fantasy_drafter_multi_league_backup') {
+          parsed = { ok: true, type: 'multi', manifest: obj.manifest, leagues: obj.leagues };
+        } else if (obj) {
+          parsed = { ok: true, type: 'single', league: { id: 'league_import_' + Date.now(), name: obj.settings?.leagueName || 'Imported League', state: obj } };
+        }
+      } catch (err) {
+        return { ok: false, error: 'Invalid JSON format: ' + err.message };
+      }
+    }
+
+    if (!parsed || !parsed.ok) {
+      return { ok: false, error: parsed?.error || 'Unrecognized backup format' };
+    }
+
+    if (parsed.type === 'multi') {
+      const incomingManifest = parsed.manifest;
+      const incomingLeagues = parsed.leagues;
+      if (!incomingManifest || !Array.isArray(incomingManifest.leagues)) {
+        return { ok: false, error: 'Invalid manifest in backup file' };
+      }
+
+      for (const item of incomingManifest.leagues) {
+        const statePayload = incomingLeagues[item.id];
+        if (statePayload) {
+          try {
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem(LEAGUE_STORE_PREFIX + item.id, JSON.stringify(statePayload));
+            }
+          } catch (e) {}
+        }
+        if (!manifest.leagues.some(existing => existing.id === item.id)) {
+          manifest.leagues.push(item);
+        } else {
+          const idx = manifest.leagues.findIndex(existing => existing.id === item.id);
+          manifest.leagues[idx] = item;
+        }
+      }
+      if (incomingManifest.activeLeagueId && manifest.leagues.some(l => l.id === incomingManifest.activeLeagueId)) {
+        manifest.activeLeagueId = incomingManifest.activeLeagueId;
+      }
+      saveManifest();
+      switchLeague(manifest.activeLeagueId);
+      return { ok: true, type: 'multi', count: incomingManifest.leagues.length };
+    } else if (parsed.type === 'single') {
+      const l = parsed.league;
+      const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const name = l.name || 'Imported League';
+      const normalizedState = normalizeState(l.state || {});
+      normalizedState.settings.leagueName = name;
+
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(LEAGUE_STORE_PREFIX + newId, JSON.stringify(normalizedState));
+        }
+      } catch (e) {}
+
+      manifest.leagues.push({
+        id: newId,
+        name: name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      manifest.activeLeagueId = newId;
+      saveManifest();
+
+      applyLoadedState(normalizedState);
+      save();
+
+      if (typeof global.switchSyncContext === 'function') global.switchSyncContext();
+      if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
+      if (typeof document !== 'undefined') {
+        const titleEl = document.getElementById('leaguetitle');
+        if (titleEl) titleEl.textContent = '🏈 ' + name;
+        document.title = name + ' — Draft Board';
+      }
+      if (typeof global.render === 'function') global.render();
+      return { ok: true, type: 'single', id: newId, name: name };
+    }
+
+    return { ok: false, error: 'Unknown import format' };
+  }
+
   // Export properties to global scope
   global.STORE_KEY = STORE_KEY;
+  global.LEGACY_STORE_KEY = LEGACY_STORE_KEY;
+  global.LEAGUES_MANIFEST_KEY = LEAGUES_MANIFEST_KEY;
+  global.LEAGUE_STORE_PREFIX = LEAGUE_STORE_PREFIX;
   global.DEFAULTS = DEFAULTS;
   global.state = state;
   global.ui = ui;
@@ -529,5 +1023,15 @@
   global.jumpTo = jumpTo;
   global.resetDraft = resetDraft;
   global.selectRosterSlot = selectRosterSlot;
+
+  // Multi-League management exports
+  global.getLeagueList = getLeagueList;
+  global.getActiveLeagueId = getActiveLeagueId;
+  global.switchLeague = switchLeague;
+  global.createNewLeague = createNewLeague;
+  global.duplicateCurrentLeague = duplicateCurrentLeague;
+  global.deleteLeague = deleteLeague;
+  global.exportLeagueBackup = exportLeagueBackup;
+  global.importLeagueBackup = importLeagueBackup;
 })(typeof window !== 'undefined' ? window : globalThis);
 

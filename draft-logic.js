@@ -1492,7 +1492,7 @@ function serializeDraftState(state) {
     exportedAt: new Date().toISOString(),
     settings: Object.assign({ maxKeepers: 2 }, s.settings || {}),
     keepers: keepers,
-    draftLog: Array.isArray(s.draftLog) ? s.draftLog.slice() : [],
+    draftLog: Array.isArray(s.draftLog) ? s.draftLog.slice() : (Array.isArray(s.log) ? s.log.slice() : []),
     watchlist: Array.isArray(s.watchlist) ? s.watchlist.slice() : [],
     queue: Array.isArray(s.queue) ? s.queue.slice() : [],
     tradedPicks: Object.assign({}, s.tradedPicks || {}),
@@ -1531,8 +1531,8 @@ function deserializeDraftState(input, currentPlayers) {
     if (!k || typeof k !== 'object') continue;
     validKeepers.push({
       id: k.id || ('k_' + Math.random().toString(36).substr(2, 9)),
-      slot: parseInt(k.slot, 10) || 1,
-      round: parseInt(k.round, 10) || 1,
+      slot: Math.max(1, Math.min(parseInt(settings.teams, 10) || 32, parseInt(k.slot, 10) || 1)),
+      round: Math.max(1, Math.min(settings.rounds || 50, parseInt(k.round, 10) || 1)),
       playerId: k.playerId != null ? parseInt(k.playerId, 10) : null,
       customName: k.customName ? String(k.customName).trim() : null,
       customPos: k.customPos ? String(k.customPos).trim().toUpperCase() : null,
@@ -1577,6 +1577,136 @@ function deserializeDraftState(input, currentPlayers) {
       syncSettings: syncSettings
     }
   };
+}
+
+// --- Multi-League Profiles & Manifest Management ---
+const LEAGUES_MANIFEST_SCHEMA_VERSION = 1;
+
+function createDefaultLeagueManifest(defaultLeagueName, defaultLeagueId) {
+  const id = defaultLeagueId || 'league_default';
+  const name = (defaultLeagueName && String(defaultLeagueName).trim()) ? String(defaultLeagueName).trim() : "Ken's Draft Board";
+  return {
+    version: LEAGUES_MANIFEST_SCHEMA_VERSION,
+    activeLeagueId: id,
+    leagues: [
+      {
+        id: id,
+        name: name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ]
+  };
+}
+
+function createLeagueProfile(name, id, baseState) {
+  const profileId = id || ('league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
+  const leagueName = (name && String(name).trim()) ? String(name).trim() : 'New League';
+  const s = baseState || {};
+  const settings = Object.assign({}, s.settings || {});
+  settings.leagueName = leagueName;
+
+  const rawLog = Array.isArray(s.log) ? s.log : (Array.isArray(s.draftLog) ? s.draftLog : []);
+
+  return {
+    id: profileId,
+    name: leagueName,
+    settings: settings,
+    keepers: Array.isArray(s.keepers) ? s.keepers.slice() : [],
+    log: rawLog.slice(),
+    watchlist: Array.isArray(s.watchlist) ? s.watchlist.slice() : [],
+    queue: Array.isArray(s.queue) ? s.queue.slice() : [],
+    tradedPicks: Object.assign({}, s.tradedPicks || {}),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function duplicateLeagueSettings(sourceState, newName, newId) {
+  const profileId = newId || ('league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
+  const srcName = (sourceState && sourceState.settings && sourceState.settings.leagueName)
+    ? sourceState.settings.leagueName
+    : 'League';
+  const leagueName = (newName && String(newName).trim()) ? String(newName).trim() : (srcName + ' (Copy)');
+
+  const srcSettings = (sourceState && sourceState.settings) ? sourceState.settings : {};
+  const clonedSettings = JSON.parse(JSON.stringify(srcSettings));
+  clonedSettings.leagueName = leagueName;
+  clonedSettings.sleeperDraftId = '';
+
+  return {
+    id: profileId,
+    name: leagueName,
+    settings: clonedSettings,
+    keepers: [],
+    log: [],
+    watchlist: Array.isArray(sourceState && sourceState.watchlist) ? sourceState.watchlist.slice() : [],
+    queue: [],
+    tradedPicks: {},
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function serializeLeagueBackup(manifest, leaguesMap) {
+  return {
+    version: 1,
+    backupType: 'fantasy_drafter_multi_league_backup',
+    exportedAt: new Date().toISOString(),
+    manifest: manifest || null,
+    leagues: leaguesMap || {}
+  };
+}
+
+function deserializeLeagueBackup(payload) {
+  if (!payload) return { ok: false, error: 'Empty backup payload' };
+  let data = payload;
+  if (typeof data === 'string') {
+    try {
+      data = JSON.parse(data);
+    } catch (e) {
+      return { ok: false, error: 'Invalid JSON: ' + e.message };
+    }
+  }
+  if (!data || typeof data !== 'object') {
+    return { ok: false, error: 'Payload must be an object' };
+  }
+
+  // Case 1: Multi-league backup
+  if (data.backupType === 'fantasy_drafter_multi_league_backup' && data.manifest && data.leagues && typeof data.leagues === 'object') {
+    return {
+      ok: true,
+      type: 'multi',
+      manifest: data.manifest,
+      leagues: data.leagues
+    };
+  }
+
+  // Case 2: Single-league serialized draft state (via serializeDraftState / DRAFT_SCHEMA_VERSION = 2)
+  if (data.version || data.settings || data.draftLog || data.keepers) {
+    const singleRes = deserializeDraftState(data);
+    if (singleRes.ok) {
+      const singleState = singleRes.state;
+      const leagueName = (singleState.settings && singleState.settings.leagueName) || 'Imported League';
+      const leagueId = 'league_import_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      return {
+        ok: true,
+        type: 'single',
+        league: {
+          id: leagueId,
+          name: leagueName,
+          state: {
+            settings: singleState.settings,
+            keepers: singleState.keepers || [],
+            log: singleState.draftLog || [],
+            watchlist: singleState.watchlist || [],
+            queue: singleState.queue || [],
+            tradedPicks: singleState.tradedPicks || {}
+          }
+        }
+      };
+    }
+  }
+
+  return { ok: false, error: 'Unrecognized backup or draft format' };
 }
 
 // Generates the 2D grid matrix for the interactive Draft Board (rows = rounds, cols = slots 1..T)
@@ -2279,6 +2409,12 @@ if (typeof module !== 'undefined' && module.exports) {
     computeJenksBreaks: computeJenksBreaks,
     assignTiers: assignTiers,
     getTierScarcity: getTierScarcity,
+    LEAGUES_MANIFEST_SCHEMA_VERSION: LEAGUES_MANIFEST_SCHEMA_VERSION,
+    createDefaultLeagueManifest: createDefaultLeagueManifest,
+    createLeagueProfile: createLeagueProfile,
+    duplicateLeagueSettings: duplicateLeagueSettings,
+    serializeLeagueBackup: serializeLeagueBackup,
+    deserializeLeagueBackup: deserializeLeagueBackup,
   };
 }
 
@@ -2287,5 +2423,10 @@ if (typeof window !== 'undefined') {
   window.assignTiers = assignTiers;
   window.getTierScarcity = getTierScarcity;
   window.reorderWatchlist = reorderWatchlist;
+  window.createDefaultLeagueManifest = createDefaultLeagueManifest;
+  window.createLeagueProfile = createLeagueProfile;
+  window.duplicateLeagueSettings = duplicateLeagueSettings;
+  window.serializeLeagueBackup = serializeLeagueBackup;
+  window.deserializeLeagueBackup = deserializeLeagueBackup;
 }
 

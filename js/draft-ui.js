@@ -5,6 +5,7 @@
   let unlistedSelectedPos = 'WR';
   let setupDraftNames = [];
   let setupMySlot = 1;
+  let setupIsDirty = false;
 
   function renderHeader() {
     const s = global.state.settings;
@@ -845,6 +846,7 @@
   function closeModal() {
     isBoardModalOpen = false;
     returnToBoardOnClose = false;
+    setupIsDirty = false;
     const overlay = $('overlay');
     if (overlay) overlay.classList.remove('show');
     const playerOverlay = $('playerOverlay');
@@ -2154,11 +2156,145 @@
     draftUnlistedPlayer(unlistedSelectedPos, name, team, bye);
   }
 
+  function markSetupDirty() {
+    setupIsDirty = true;
+  }
+
+  function confirmIfDirty() {
+    if (!setupIsDirty) return true;
+    return confirm('You have unsaved changes in this league setup. Discard changes and proceed?');
+  }
+
+  function onLeagueSelectChange(newLeagueId) {
+    const currentId = (typeof global.getActiveLeagueId === 'function') ? global.getActiveLeagueId() : '';
+    if (!newLeagueId || newLeagueId === currentId) return;
+    if (!confirmIfDirty()) {
+      const sel = $('setup_active_league_select');
+      if (sel) sel.value = currentId;
+      return;
+    }
+    setupIsDirty = false;
+    if (typeof global.switchLeague === 'function') {
+      global.switchLeague(newLeagueId);
+    }
+    openLeagueSetup();
+  }
+
+  function handleCreateNewLeagueClick() {
+    if (!confirmIfDirty()) return;
+    const name = prompt('Enter name for the new league:', 'New League');
+    if (!name || !name.trim()) return;
+    setupIsDirty = false;
+    if (typeof global.createNewLeague === 'function') {
+      global.createNewLeague(name.trim());
+    }
+    openLeagueSetup();
+  }
+
+  function handleDuplicateLeagueClick() {
+    if (!confirmIfDirty()) return;
+    const currentName = (global.state && global.state.settings && global.state.settings.leagueName) || 'League';
+    const name = prompt('Enter name for the duplicated league:', currentName + ' (Copy)');
+    if (!name || !name.trim()) return;
+    setupIsDirty = false;
+    if (typeof global.duplicateCurrentLeague === 'function') {
+      global.duplicateCurrentLeague(name.trim());
+    }
+    openLeagueSetup();
+  }
+
+  function handleDeleteLeagueClick() {
+    const leagues = (typeof global.getLeagueList === 'function') ? global.getLeagueList() : [];
+    if (leagues.length <= 1) {
+      alert('Cannot delete the only remaining league. At least one league must exist.');
+      return;
+    }
+    const activeId = (typeof global.getActiveLeagueId === 'function') ? global.getActiveLeagueId() : '';
+    const currentName = (global.state && global.state.settings && global.state.settings.leagueName) || 'this league';
+    if (!confirm(`Are you sure you want to delete "${currentName}" and all of its draft picks? This action cannot be undone.`)) {
+      return;
+    }
+    setupIsDirty = false;
+    if (typeof global.deleteLeague === 'function') {
+      global.deleteLeague(activeId);
+    }
+    openLeagueSetup();
+  }
+
+  function handleExportLeagueClick() {
+    const exportAll = confirm('Export options:\n\n• Click OK to export ALL leagues as a multi-league backup bundle\n• Click Cancel to export ONLY the current active league');
+    if (typeof global.exportLeagueBackup === 'function') {
+      global.exportLeagueBackup(exportAll ? 'all' : 'active');
+    }
+  }
+
+  function triggerLeagueImportFile() {
+    const input = $('league_import_file_input');
+    if (input) {
+      input.value = '';
+      input.click();
+    }
+  }
+
+  function handleLeagueFileImportSelected(event) {
+    const file = event.target && event.target.files && event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const content = e.target.result;
+      if (typeof global.importLeagueBackup === 'function') {
+        const res = global.importLeagueBackup(content);
+        if (res && res.ok) {
+          setupIsDirty = false;
+          alert('✅ Successfully imported ' + (res.type === 'multi' ? (res.count + ' leagues') : ('league: ' + res.name)) + '!');
+          openLeagueSetup();
+        } else {
+          alert('❌ Failed to import league file: ' + (res ? res.error : 'Unknown error'));
+        }
+      }
+    };
+    reader.readAsText(file);
+  }
+
   function openLeagueSetup() {
+    setupIsDirty = false;
     const s = global.state.settings;
     setupDraftNames = s.teamNames.slice();
     setupMySlot = s.slot;
     const rs = Object.assign({}, (typeof DEFAULT_ROSTER_SLOTS !== 'undefined' ? DEFAULT_ROSTER_SLOTS : {}), s.rosterSlots);
+
+    const leagues = (typeof global.getLeagueList === 'function') ? global.getLeagueList() : [];
+    const activeLeagueId = (typeof global.getActiveLeagueId === 'function') ? global.getActiveLeagueId() : 'league_default';
+
+    let leagueOptionsHtml = '';
+    for (const l of leagues) {
+      const isSel = (l.id === activeLeagueId);
+      const picksInfo = l.draftCount > 0 ? ` (${l.draftCount} picks)` : ' (fresh)';
+      leagueOptionsHtml += `<option value="${l.id}"${isSel ? ' selected' : ''}>${l.name.replace(/"/g, '&quot;')}${picksInfo}</option>`;
+    }
+
+    const leagueManagerBarHtml =
+      '<div class="league-manager-bar">'
+      + '<div class="league-manager-title">'
+      + '<span>🏆 <b>Active League:</b></span>'
+      + '<select id="setup_active_league_select" class="league-select" onchange="onLeagueSelectChange(this.value)">'
+      + leagueOptionsHtml
+      + '</select>'
+      + '<span class="league-badge-count">' + leagues.length + ' League' + (leagues.length === 1 ? '' : 's') + '</span>'
+      + '</div>'
+      + '<div class="league-manager-controls">'
+      + '<div class="league-btn-group">'
+      + '<button type="button" class="act primary league-action-btn" onclick="handleCreateNewLeagueClick()" title="Create a fresh league with clean draft board">➕ New</button>'
+      + '<button type="button" class="act league-action-btn" onclick="handleDuplicateLeagueClick()" title="Clone rules & roster slots from this league with an empty board">📋 Duplicate</button>'
+      + '<button type="button" class="act league-action-btn btn-delete" onclick="handleDeleteLeagueClick()"' + (leagues.length <= 1 ? ' disabled title="Cannot delete the only remaining league"' : ' title="Delete this league"') + '>🗑️ Delete</button>'
+      + '</div>'
+      + '<div class="league-btn-group" style="margin-left:auto">'
+      + '<button type="button" class="act league-action-btn" onclick="handleExportLeagueClick()" title="Export league backup as JSON">📤 Export</button>'
+      + '<button type="button" class="act league-action-btn" onclick="triggerLeagueImportFile()" title="Import league from JSON file">📥 Import</button>'
+      + '<input type="file" id="league_import_file_input" accept=".json" style="display:none" onchange="handleLeagueFileImportSelected(event)">'
+      + '</div>'
+      + '</div>'
+      + '</div>';
 
     function renderSetupTable(teamsCount) {
       let rows = '';
@@ -2190,6 +2326,7 @@
     $('modalbox').innerHTML =
       '<h3>⚙️ League Setup & Draft Positions'
       + '<button class="close" onclick="closeModal()">×</button></h3>'
+      + leagueManagerBarHtml
       + '<div class="setup-grid">'
       + '<div class="setup-field" style="grid-column: 1 / -1;"><label>League / Board Name</label><input type="text" id="setup_league_name" value="' + (s.leagueName || "Ken's Draft Board").replace(/"/g, '&quot;') + '"></div>'
       + '<div class="setup-field"><label>Total Teams</label><input type="number" id="setup_team_count" min="2" max="32" value="' + s.teams + '"></div>'
@@ -2288,6 +2425,25 @@
       if (setupMySlot > newCount) setupMySlot = 1;
       $('setup_teams_body').innerHTML = renderSetupTable(newCount);
     });
+
+    const dirtyInputIds = [
+      'setup_league_name', 'setup_team_count', 'setup_rounds_count', 'setup_mode_select',
+      'setup_leaguetype_select', 'setup_scoring_select', 'setup_qb_select', 'setup_max_keepers',
+      'setup_roster_qb', 'setup_roster_rb', 'setup_roster_wr', 'setup_roster_te',
+      'setup_roster_flex', 'setup_roster_superflex', 'setup_roster_k', 'setup_roster_dst',
+      'setup_roster_bench'
+    ];
+    for (const id of dirtyInputIds) {
+      const el = $(id);
+      if (el) {
+        el.addEventListener('input', markSetupDirty);
+        el.addEventListener('change', markSetupDirty);
+      }
+    }
+    const teamsBody = $('setup_teams_body');
+    if (teamsBody) {
+      teamsBody.addEventListener('input', markSetupDirty);
+    }
   }
 
   function syncSetupInputsFromDom() {
@@ -2301,6 +2457,7 @@
   }
 
   function changeSetupMySlot(slot) {
+    markSetupDirty();
     syncSetupInputsFromDom();
     setupMySlot = slot;
     const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
@@ -2311,6 +2468,7 @@
   }
 
   function moveSetupTeam(slot, delta) {
+    markSetupDirty();
     syncSetupInputsFromDom();
     const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     const targetSlot = slot + delta;
@@ -2360,6 +2518,7 @@
   }
 
   function resetSetupDefaults() {
+    markSetupDirty();
     const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     setupDraftNames = [];
     for (let i = 1; i <= count; i++) {
@@ -2372,6 +2531,7 @@
   }
 
   function saveLeagueSetup() {
+    setupIsDirty = false;
     syncSetupInputsFromDom();
     const s = global.state.settings;
     const prevLeagueType = s.leagueType;
@@ -2417,6 +2577,13 @@
     global.save();
     closeModal();
     if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
+    if (typeof document !== 'undefined') {
+      const titleEl = document.getElementById('leaguetitle');
+      if (titleEl) {
+        titleEl.textContent = '🏈 ' + s.leagueName;
+      }
+      document.title = s.leagueName + ' — Draft Board';
+    }
     render();
   }
 
@@ -2947,5 +3114,12 @@
   global.showUnlistedPlayerFromBoard = showUnlistedPlayerFromBoard;
   global.handleClosePlayerModal = handleClosePlayerModal;
   global.getPlayerEdge = getPlayerEdge;
+  global.onLeagueSelectChange = onLeagueSelectChange;
+  global.handleCreateNewLeagueClick = handleCreateNewLeagueClick;
+  global.handleDuplicateLeagueClick = handleDuplicateLeagueClick;
+  global.handleDeleteLeagueClick = handleDeleteLeagueClick;
+  global.handleExportLeagueClick = handleExportLeagueClick;
+  global.triggerLeagueImportFile = triggerLeagueImportFile;
+  global.handleLeagueFileImportSelected = handleLeagueFileImportSelected;
 })(typeof window !== 'undefined' ? window : globalThis);
 
