@@ -778,8 +778,22 @@
     const qbStr = s.qbFormat === '1qb' ? '1-QB' : 'Superflex';
     const scStr = s.scoring === 'ppr' ? 'PPR' : (s.scoring === 'std' ? 'Standard' : 'Half-PPR');
     if ($('databanner')) {
-      $('databanner').innerHTML = d.players && d.players.length ? '' :
-        '<div class="warnbox">⏳ Rankings are still being fetched — the board works, but the player list is empty until the data lands.</div>';
+      let bannerHtml = '';
+      if (!d.players || !d.players.length) {
+        bannerHtml = '<div class="warnbox">⏳ Rankings are still being fetched — the board works, but the player list is empty until the data lands.</div>';
+      } else {
+        try {
+          const toastPending = (typeof sessionStorage !== 'undefined') && sessionStorage.getItem('pendingDataRefreshToast');
+          if (toastPending) {
+            sessionStorage.removeItem('pendingDataRefreshToast');
+            bannerHtml = '<div id="refresh_reconcile_toast" class="warnbox" style="background:#13241b; border:1px solid #16a34a; color:#86efac; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px;">'
+              + '<span>✅ <b>Rankings Refreshed:</b> Consensus rankings updated. Keepers and draft picks were safely reconciled.</span>'
+              + '<button type="button" onclick="const el=document.getElementById(\'refresh_reconcile_toast\'); if(el) el.remove();" style="background:none; border:none; color:#86efac; cursor:pointer; font-size:16px; margin-left:12px;">✕</button>'
+              + '</div>';
+          }
+        } catch (e) {}
+      }
+      $('databanner').innerHTML = bannerHtml;
     }
     if ($('sources')) {
       $('sources').textContent = d.players && d.players.length
@@ -847,6 +861,9 @@
     isBoardModalOpen = false;
     returnToBoardOnClose = false;
     setupIsDirty = false;
+    editingKeeperId = null;
+    selectedKeeperPlayer = null;
+    keeperIsCustom = false;
     const overlay = $('overlay');
     if (overlay) overlay.classList.remove('show');
     const playerOverlay = $('playerOverlay');
@@ -2258,6 +2275,10 @@
 
   function openLeagueSetup() {
     setupIsDirty = false;
+    const modalBox = $('modalbox');
+    if (modalBox) {
+      modalBox.className = 'modal modal-wide';
+    }
     const s = global.state.settings;
     setupDraftNames = s.teamNames.slice();
     setupMySlot = s.slot;
@@ -2367,7 +2388,7 @@
       + '</tbody></table></div>'
       + '<div style="margin-top:10px; padding:10px; background:#141923; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--dim)">'
       + '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">'
-      + '<div>📊 <b style="color:var(--text)">Rankings & Injury Status:</b> ' + (window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' players loaded (Data date: <b style="color:var(--accent)">' + (window.DRAFT_DATA.generated || 'live') + '</b>).</div>'
+      + '<div>📊 <b style="color:var(--text)">Rankings & Injury Status:</b> ' + (window.DRAFT_DATA && window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) + ' players loaded (Data date: <b style="color:var(--accent)">' + ((window.DRAFT_DATA && window.DRAFT_DATA.generated) || 'live') + '</b>).</div>'
       + '<button type="button" class="act primary" id="refresh_data_btn" onclick="triggerDataRefresh(this)" style="font-size:12px; padding:4px 10px">🔄 Refresh Data Now</button>'
       + '</div>'
       + '<div id="refresh_data_status" style="margin-top:6px; font-size:11.5px; color:var(--dim)">Run latest consensus rankings, 32-team depth charts, and injury reports refresh on-demand.</div>'
@@ -2451,7 +2472,7 @@
     for (let i = 1; i <= count; i++) {
       const input = $('team_input_' + i);
       if (input) {
-        setupDraftNames[i - 1] = input.value.trim() || ('Team ' + i);
+        setupDraftNames[i - 1] = (input.value != null ? String(input.value).trim() : '') || ('Team ' + i);
       }
     }
   }
@@ -2598,6 +2619,57 @@
       statusEl.textContent = '⏳ Fetching latest consensus rankings, 32-team depth charts, and NFL injury reports (~10-15s)...';
     }
 
+    // Auto-commit any open league setup inputs so changes aren't lost across refresh
+    if ($('setup_team_count')) {
+      try {
+        syncSetupInputsFromDom();
+        const s = global.state.settings;
+        const prevLeagueType = s.leagueType;
+        if ($('setup_league_name')) s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
+        if ($('setup_team_count')) s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
+        if ($('setup_mode_select')) s.mode = $('setup_mode_select').value;
+        if ($('setup_leaguetype_select')) {
+          s.leagueType = $('setup_leaguetype_select').value;
+          if (s.leagueType !== prevLeagueType) {
+            if (s.leagueType === 'redraft') {
+              s.blend = 0;
+            } else if (s.leagueType === 'dynasty' && s.blend === 0) {
+              s.blend = 60;
+            }
+          }
+        }
+        if ($('setup_scoring_select')) s.scoring = $('setup_scoring_select').value;
+        if ($('setup_qb_select')) s.qbFormat = $('setup_qb_select').value;
+        s.slot = setupMySlot;
+        if (Array.isArray(setupDraftNames)) {
+          s.teamNames = setupDraftNames.slice(0, s.teams);
+          while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
+        }
+        if ($('setup_max_keepers')) {
+          s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
+        }
+        if ($('setup_roster_qb')) {
+          s.rosterSlots = {
+            qb: Math.max(0, parseInt($('setup_roster_qb').value, 10) || 0),
+            rb: Math.max(0, parseInt($('setup_roster_rb').value, 10) || 0),
+            wr: Math.max(0, parseInt($('setup_roster_wr').value, 10) || 0),
+            te: Math.max(0, parseInt($('setup_roster_te').value, 10) || 0),
+            flex: Math.max(0, parseInt($('setup_roster_flex').value, 10) || 0),
+            superflex: Math.max(0, parseInt($('setup_roster_superflex').value, 10) || 0),
+            k: Math.max(0, parseInt($('setup_roster_k').value, 10) || 0),
+            dst: Math.max(0, parseInt($('setup_roster_dst').value, 10) || 0),
+            bench: Math.max(0, parseInt($('setup_roster_bench').value, 10) || 0)
+          };
+          const starters = s.rosterSlots.qb + s.rosterSlots.rb + s.rosterSlots.wr + s.rosterSlots.te +
+            s.rosterSlots.flex + s.rosterSlots.superflex + s.rosterSlots.k + s.rosterSlots.dst;
+          s.rounds = Math.max(1, starters + s.rosterSlots.bench);
+        }
+        global.save();
+      } catch (err) {
+        console.warn('Failed to auto-save setup prior to data refresh:', err);
+      }
+    }
+
     try {
       const res = await fetch('/api/data/refresh', { method: 'POST' });
       const cType = res.headers.get('content-type') || '';
@@ -2614,6 +2686,11 @@
           statusEl.textContent = '✅ ' + (data.message || 'Data updated successfully!') + ' Reloading app...';
         }
         if (btn) btn.textContent = '✅ Done!';
+        try {
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('pendingDataRefreshToast', JSON.stringify({ timestamp: Date.now() }));
+          }
+        } catch (e) {}
         setTimeout(() => {
           window.location.reload();
         }, 1200);
@@ -2667,11 +2744,35 @@
     if ($('setup_team_count')) {
       syncSetupInputsFromDom();
       const s = global.state.settings;
+      if ($('setup_league_name')) s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
       s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
+      if ($('setup_mode_select')) s.mode = $('setup_mode_select').value;
+      if ($('setup_leaguetype_select')) s.leagueType = $('setup_leaguetype_select').value;
+      if ($('setup_scoring_select')) s.scoring = $('setup_scoring_select').value;
+      if ($('setup_qb_select')) s.qbFormat = $('setup_qb_select').value;
       s.slot = setupMySlot;
       s.teamNames = setupDraftNames.slice(0, s.teams);
+      while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
       if ($('setup_max_keepers')) {
         s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
+      }
+      if ($('setup_roster_qb') && $('setup_roster_qb').value !== '') {
+        s.rosterSlots = {
+          qb: Math.max(0, parseInt($('setup_roster_qb').value, 10) || 0),
+          rb: Math.max(0, parseInt($('setup_roster_rb').value, 10) || 0),
+          wr: Math.max(0, parseInt($('setup_roster_wr').value, 10) || 0),
+          te: Math.max(0, parseInt($('setup_roster_te').value, 10) || 0),
+          flex: Math.max(0, parseInt($('setup_roster_flex').value, 10) || 0),
+          superflex: Math.max(0, parseInt($('setup_roster_superflex').value, 10) || 0),
+          k: Math.max(0, parseInt($('setup_roster_k').value, 10) || 0),
+          dst: Math.max(0, parseInt($('setup_roster_dst').value, 10) || 0),
+          bench: Math.max(0, parseInt($('setup_roster_bench').value, 10) || 0)
+        };
+        const starters = s.rosterSlots.qb + s.rosterSlots.rb + s.rosterSlots.wr + s.rosterSlots.te +
+          s.rosterSlots.flex + s.rosterSlots.superflex + s.rosterSlots.k + s.rosterSlots.dst;
+        s.rounds = Math.max(1, starters + s.rosterSlots.bench);
+      } else if ($('setup_rounds_count')) {
+        s.rounds = Math.max(1, Math.min(50, parseInt($('setup_rounds_count').value, 10) || 16));
       }
       global.save();
     }
@@ -2757,20 +2858,23 @@
       const sorted = keepers.slice().sort((a, b) => (a.slot - b.slot) || (a.round - b.round));
       for (const k of sorted) {
         const p = (k.playerId != null) ? (byId(k.playerId) || {}) : {};
-        const name = k.customName || p.name || ('Player #' + k.playerId);
-        const pos = k.customPos || p.pos || '—';
-        const team = k.customTeam || p.team || '—';
+        const name = k.customName || k.playerName || p.name || ('Player #' + k.playerId);
+        const pos = k.customPos || k.playerPos || p.pos || '—';
+        const team = k.customTeam || k.playerTeam || p.team || '—';
         const posClass = ['QB', 'RB', 'WR', 'TE'].includes(pos) ? pos : (['DST', 'DEF', 'D/ST'].includes(pos) ? 'DST' : (pos === 'K' ? 'K' : 'other'));
         const isMe = (k.slot === s.slot);
         const isEditing = (k.id === editingKeeperId);
         const overall = pickForKeeperId[k.id];
         const pickStr = overall ? ('#' + overall + ' (' + fmtPick(overall, s.teams) + ')') : ('Rd ' + k.round);
+        const droppedBadge = k.wasDroppedFromPool
+          ? ' <span class="meta" style="color:var(--warn); font-size:11px" title="Player fell out of consensus rankings pool during refresh; preserved as custom keeper">⚠️ (unranked in pool)</span>'
+          : (k.customName ? ' <span class="meta">(custom)</span>' : '');
 
         rowsHtml += '<tr class="' + (isMe ? 'is-me ' : '') + (isEditing ? 'is-editing' : '') + '">'
           + '<td><b style="color:' + (isMe ? 'var(--good)' : 'var(--text)') + '">' + getTeamName(k.slot) + '</b> <span class="meta">(Slot ' + k.slot + ')</span></td>'
           + '<td><b>Round ' + k.round + '</b></td>'
           + '<td><span class="meta">' + pickStr + '</span></td>'
-          + '<td><span class="pos ' + posClass + '" style="margin-right:4px">' + pos + '</span> <b>' + name + '</b>' + (k.customName ? ' <span class="meta">(custom)</span>' : '') + '</td>'
+          + '<td><span class="pos ' + posClass + '" style="margin-right:4px">' + pos + '</span> <b>' + name + '</b>' + droppedBadge + '</td>'
           + '<td><span class="meta">' + team + '</span></td>'
           + '<td style="text-align:right"><div style="display:inline-flex; gap:6px; justify-content:flex-end">'
           + '<button type="button" class="small" style="color:var(--accent); font-weight:600; cursor:pointer" onclick="startEditKeeper(\'' + k.id + '\')">✏️ Edit</button>'
@@ -3001,7 +3105,11 @@
         id: editingKeeperId || undefined,
         slot: slot,
         round: round,
-        playerId: selectedKeeperPlayer.id
+        playerId: selectedKeeperPlayer.id,
+        playerName: selectedKeeperPlayer.name,
+        playerPos: selectedKeeperPlayer.pos,
+        playerTeam: selectedKeeperPlayer.team,
+        playerBye: selectedKeeperPlayer.bye
       };
     }
 
@@ -3055,11 +3163,82 @@
     }
     global.save();
     closeModal();
+    if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
     render();
+  }
+
+  // ---------- Clipboard Copy Helpers ----------
+  function copyTextToClipboard(text) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+    }
+    return fallbackCopyText(text);
+  }
+
+  function fallbackCopyText(text) {
+    try {
+      if (typeof document === 'undefined') return Promise.resolve(false);
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return Promise.resolve(ok);
+    } catch (e) {
+      return Promise.resolve(false);
+    }
+  }
+
+  function showCopyToast(msg, isWarn) {
+    if (typeof document === 'undefined') return;
+    let toast = $('copy_toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'copy_toast';
+      toast.className = 'copy-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.className = 'copy-toast show' + (isWarn ? ' warn' : '');
+    if (typeof clearTimeout !== 'undefined') clearTimeout(toast._timer);
+    if (typeof setTimeout !== 'undefined') {
+      toast._timer = setTimeout(() => {
+        toast.className = 'copy-toast' + (isWarn ? ' warn' : '');
+      }, 2200);
+    }
+  }
+
+  function copyLastDraftPick() {
+    const log = global.state ? global.state.log : [];
+    if (!log || log.length === 0) {
+      showCopyToast('⚠️ No draft picks in log to copy', true);
+      return null;
+    }
+    const lastEntry = log[log.length - 1];
+    const fmtFn = (typeof formatPickForClipboard === 'function')
+      ? formatPickForClipboard
+      : (typeof window !== 'undefined' && typeof window.formatPickForClipboard === 'function' ? window.formatPickForClipboard : null);
+    const text = (typeof fmtFn === 'function')
+      ? fmtFn(lastEntry, global.state.settings, global.state.tradedPicks, byId)
+      : ('#' + lastEntry.overall + ' pick');
+
+    if (text) {
+      copyTextToClipboard(text);
+      showCopyToast('📋 Copied: ' + text);
+    }
+    return text;
   }
 
   // Export to global scope
   global.$ = $;
+  global.copyTextToClipboard = copyTextToClipboard;
+  global.showCopyToast = showCopyToast;
+  global.copyLastDraftPick = copyLastDraftPick;
   global.renderHeader = renderHeader;
   global.scored = scored;
   global.renderPool = renderPool;
@@ -3099,6 +3278,8 @@
   global.submitKeeperForm = submitKeeperForm;
   global.handleRemoveKeeper = handleRemoveKeeper;
   global.handleKeeperMaxChange = handleKeeperMaxChange;
+  global.saveKeepersAndBackToSetup = saveKeepersAndBackToSetup;
+  global.saveAndCloseKeepersModal = saveAndCloseKeepersModal;
   global.openDraftBoardModal = openDraftBoardModal;
   global.renderDraftBoardModalView = renderDraftBoardModalView;
   global.closeBoardModal = closeBoardModal;

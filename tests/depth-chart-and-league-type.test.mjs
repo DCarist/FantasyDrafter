@@ -12,11 +12,15 @@ printSuiteHeader('League Type Filtering & ESPN Depth Charts');
 // --- 1. State Normalization & Default Settings ---
 await import('../js/draft-state.js');
 
-eq(globalThis.DEFAULTS.leagueType, 'dynasty', 'Default leagueType is dynasty');
+eq(globalThis.DEFAULTS.leagueType, 'redraft', 'Default leagueType is redraft');
 
-const stateDynasty = { settings: {} };
+const stateDefault = { settings: {} };
+globalThis.normalizeState(stateDefault);
+eq(stateDefault.settings.leagueType, 'redraft', 'normalizeState defaults missing leagueType to redraft');
+
+const stateDynasty = { settings: { leagueType: 'dynasty' } };
 globalThis.normalizeState(stateDynasty);
-eq(stateDynasty.settings.leagueType, 'dynasty', 'normalizeState defaults missing leagueType to dynasty');
+eq(stateDynasty.settings.leagueType, 'dynasty', 'normalizeState preserves valid dynasty leagueType');
 
 const stateRedraft = { settings: { leagueType: 'redraft' } };
 globalThis.normalizeState(stateRedraft);
