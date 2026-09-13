@@ -9,7 +9,16 @@
     "serve": "python server.py",
     "test": "node test-runner.mjs",
     "update": "python scripts/update_rankings.py",
-    "update-rankings": "python scripts/update_rankings.py"
+    "update-rankings": "python scripts/update_rankings.py",
+    "check": "node scripts/check-quality.mjs",
+    "check:biome": "biome check .",
+    "lint:biome": "biome lint .",
+    "format:biome": "biome format --write .",
+    "check:ruff": "ruff check .",
+    "format:ruff": "ruff format --check .",
+    "format:ruff:fix": "ruff format .",
+    "check:ty": "ty check .",
+    "check:py": "node scripts/check-quality.mjs --tool=py"
   },
   "keywords": [
     "fantasy-football",
@@ -18,6 +27,8 @@
     "superflex"
   ],
   "author": "Douglas Caristo",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13"
+  }
 }
-

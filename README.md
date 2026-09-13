@@ -193,6 +193,46 @@ npm test
 
 ---
 
+## 🔍 Code Quality & Tooling
+
+Code quality is enforced across all language types using dedicated, fast modern tooling:
+- **JS / HTML / CSS**: [Biome](https://biomejs.dev/) for formatting and linting
+- **Python**: [Ruff](https://astral.sh/ruff) (linter and formatter) & [Ty](https://github.com/astral-sh/ty) (type checker) via `uv`
+
+### Consolidated Quality Runner
+Run all quality tools across the entire project in one step:
+```bash
+npm run check
+# Or native PowerShell:
+.\scripts\check-quality.ps1
+```
+
+To auto-format and fix autofixable linting issues:
+```bash
+npm run check -- --fix
+# Or:
+.\scripts\check-quality.ps1 -Fix
+```
+
+### Independent Tool Execution
+Each tool can also be run independently as needed by developers or AI agents:
+```bash
+# Biome (JS, HTML, CSS)
+npm run check:biome      # Biome format & lint check
+npm run lint:biome       # Biome lint check only
+npm run format:biome     # Biome auto-format
+
+# Python (Ruff + Ty)
+npm run check:py         # Ruff lint + format check + Ty type check
+npm run check:ruff       # Ruff lint check
+npm run format:ruff      # Ruff format check
+npm run format:ruff:fix  # Ruff auto-format
+npm run check:ty         # Ty type check
+```
+
+
+---
+
 ## 🔄 Updating Rankings Data
 
 To fetch the latest consensus rankings, 32-team depth charts, and injury reports before your draft:
