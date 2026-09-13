@@ -19,8 +19,17 @@
   let serverPollTimer = null;
   let lastSyncTimestamp = 0;
 
+  function getServerHost() {
+    try {
+      if (typeof window !== 'undefined' && window.location && typeof window.location.origin === 'string' && window.location.origin.startsWith('http')) {
+        return window.location.origin;
+      }
+    } catch (e) { }
+    return 'http://127.0.0.1:8517';
+  }
+
   function reportServerPick(data) {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = getServerHost();
     try {
       fetch(host + '/api/sync/pick', {
         method: 'POST',
@@ -32,7 +41,7 @@
   }
 
   function reportServerEvent(message, type) {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = getServerHost();
     try {
       fetch(host + '/api/sync/log', {
         method: 'POST',
@@ -44,7 +53,7 @@
   }
 
   function reportServerReset() {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = getServerHost();
     try {
       fetch(host + '/api/sync/reset', {
         method: 'POST',
@@ -411,9 +420,100 @@
     }
   }
 
+  function saveSleeperSyncSettings(showFeedback = false) {
+    const draftIdInput = document.getElementById('sync_sleeper_draft_id');
+    const userInput = document.getElementById('sync_sleeper_username');
+    if (!draftIdInput && !userInput) return;
+
+    const rawId = draftIdInput ? draftIdInput.value : (global.state && global.state.settings && global.state.settings.sleeperDraftId) || '';
+    const draftId = extractSleeperDraftId(rawId);
+    const username = userInput ? userInput.value.trim() : (global.state && global.state.settings && global.state.settings.sleeperUsername) || '';
+
+    if (!global.state) return;
+    if (!global.state.settings) global.state.settings = {};
+
+    const prevId = global.state.settings.sleeperDraftId || '';
+    global.state.settings.sleeperDraftId = draftId;
+    global.state.settings.sleeperUsername = username;
+
+    if (!draftId) {
+      if (syncState.sleeperTimer) {
+        clearInterval(syncState.sleeperTimer);
+        syncState.sleeperTimer = null;
+      }
+      syncState.type = 'off';
+      syncState.sleeperStatus = 'Disconnected / Not Configured';
+      syncState.sleeperPicksCount = 0;
+      syncState.sleeperLastPoll = null;
+      updateSyncBadge();
+      updateSleeperStatusBox();
+    } else if (prevId !== draftId && syncState.sleeperTimer) {
+      clearInterval(syncState.sleeperTimer);
+      pollSleeperPicks();
+      syncState.sleeperTimer = setInterval(pollSleeperPicks, 2000);
+      updateSyncBadge();
+      updateSleeperStatusBox();
+    }
+
+    if (typeof global.save === 'function') global.save();
+
+    const statusEl = document.getElementById('sleeper_import_msg');
+    if (statusEl && showFeedback) {
+      if (!draftId) {
+        statusEl.innerHTML = '<span style="color:var(--good); font-weight:600">✅ Sleeper draft unlinked. Live sync disabled for this league.</span>';
+      } else {
+        statusEl.innerHTML = '<span style="color:var(--good); font-weight:600">✅ Sleeper settings saved!</span>';
+      }
+      setTimeout(() => {
+        if (statusEl && statusEl.innerHTML.includes('saved')) statusEl.innerHTML = '';
+      }, 3500);
+    }
+  }
+
+  function disconnectSleeperDraft() {
+    const draftIdInput = document.getElementById('sync_sleeper_draft_id');
+    const userInput = document.getElementById('sync_sleeper_username');
+    if (draftIdInput) draftIdInput.value = '';
+    if (userInput) userInput.value = '';
+
+    if (syncState.sleeperTimer) {
+      clearInterval(syncState.sleeperTimer);
+      syncState.sleeperTimer = null;
+    }
+    syncState.type = 'off';
+    syncState.sleeperStatus = 'Disconnected / Paused';
+    syncState.sleeperPicksCount = 0;
+    syncState.sleeperLastPoll = null;
+
+    if (global.state && global.state.settings) {
+      global.state.settings.sleeperDraftId = '';
+      global.state.settings.sleeperUsername = '';
+    }
+    if (typeof global.save === 'function') global.save();
+
+    updateSyncBadge();
+    updateSleeperStatusBox();
+
+    const statusEl = document.getElementById('sleeper_import_msg');
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color:var(--good); font-weight:600">✅ Sleeper draft unlinked & cleared. Live sync is disabled for this league.</span>';
+    }
+    reportServerEvent('🔌 Sleeper draft unlinked & live sync disabled', 'info');
+  }
+
   async function pollSleeperPicks() {
-    const draftId = global.state.settings.sleeperDraftId || extractSleeperDraftId(document.getElementById('sync_sleeper_draft_id')?.value);
-    if (!draftId) return;
+    const draftId = global.state && global.state.settings && global.state.settings.sleeperDraftId;
+    if (!draftId) {
+      if (syncState.sleeperTimer) {
+        clearInterval(syncState.sleeperTimer);
+        syncState.sleeperTimer = null;
+        syncState.type = 'off';
+        syncState.sleeperStatus = 'Disconnected / Paused';
+        updateSyncBadge();
+        updateSleeperStatusBox();
+      }
+      return;
+    }
 
     try {
       const res = await fetch('https://api.sleeper.app/v1/draft/' + encodeURIComponent(draftId) + '/picks');
@@ -456,12 +556,13 @@
   function toggleSleeperSync() {
     const draftIdInput = document.getElementById('sync_sleeper_draft_id');
     const userInput = document.getElementById('sync_sleeper_username');
-    const rawId = draftIdInput ? draftIdInput.value : global.state.settings.sleeperDraftId;
+    const rawId = draftIdInput ? draftIdInput.value : (global.state && global.state.settings && global.state.settings.sleeperDraftId);
     const draftId = extractSleeperDraftId(rawId);
-    const username = userInput ? userInput.value.trim() : global.state.settings.sleeperUsername;
+    const username = userInput ? userInput.value.trim() : (global.state && global.state.settings && global.state.settings.sleeperUsername);
 
     if (!draftId) {
-      alert('Please enter a Sleeper Draft ID or League URL first.');
+      disconnectSleeperDraft();
+      alert('Sleeper Draft ID is empty. Live sync has been stopped and unlinked for this league.');
       return;
     }
 
@@ -608,7 +709,7 @@
   }
 
   async function sendEspnPing() {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = getServerHost();
     try {
       await fetch(host + '/api/sync/ping', { method: 'POST', mode: 'cors' });
     } catch (e) { }
@@ -635,12 +736,14 @@
       // --- Sleeper Tab ---
       + '<div id="sync_sec_sleeper" style="display:' + (syncState.activeTab === 'sleeper' ? 'block' : 'none') + '">'
       + '<div class="setup-grid" style="grid-template-columns: 1fr 1fr; gap:10px">'
-      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Sleeper Draft ID or League URL</label><input type="text" id="sync_sleeper_draft_id" placeholder="e.g. 10492850284 or https://sleeper.com/draft/nfl/1049..." value="' + sleeperIdVal.replace(/"/g, '&quot;') + '"></div>'
-      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Your Sleeper Username (Optional for Auto-Slot Matching)</label><input type="text" id="sync_sleeper_username" placeholder="e.g. You" value="' + sleeperUserVal.replace(/"/g, '&quot;') + '"></div>'
+      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Sleeper Draft ID or League URL</label><input type="text" id="sync_sleeper_draft_id" placeholder="e.g. 10492850284 or https://sleeper.com/draft/nfl/1049..." value="' + sleeperIdVal.replace(/"/g, '&quot;') + '" oninput="saveSleeperSyncSettings(false)" onchange="saveSleeperSyncSettings(false)"></div>'
+      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Your Sleeper Username (Optional for Auto-Slot Matching)</label><input type="text" id="sync_sleeper_username" placeholder="e.g. You" value="' + sleeperUserVal.replace(/"/g, '&quot;') + '" oninput="saveSleeperSyncSettings(false)" onchange="saveSleeperSyncSettings(false)"></div>'
       + '</div>'
-      + '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px">'
+      + '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; align-items:center">'
       + '<button type="button" class="act" onclick="importSleeperLeague()">📥 Import League & Order</button>'
       + '<button type="button" class="act primary" id="sleeper_toggle_btn" onclick="toggleSleeperSync()">' + (syncState.sleeperTimer ? '⏸ Pause Live Polling' : '▶ Start Live Sync (2s Polling)') + '</button>'
+      + '<button type="button" class="act" id="sleeper_save_btn" onclick="saveSleeperSyncSettings(true)" title="Save changes to draft ID and username">💾 Save</button>'
+      + '<button type="button" class="act" id="sleeper_disconnect_btn" onclick="disconnectSleeperDraft()" style="color:var(--bad); border-color:rgba(255,100,112,0.35); margin-left:auto" title="Clear Sleeper draft link and disable syncing for this league">🔌 Unlink Draft / Stop Sync</button>'
       + '</div>'
       + '<div id="sleeper_import_msg" style="margin-top:10px; font-size:12.5px"></div>'
       + '<div class="sync-status-box" id="sleeper_status_box"></div>'
@@ -725,6 +828,8 @@
   global.sendEspnPing = sendEspnPing;
   global.openSyncModal = openSyncModal;
   global.saveSyncSettings = saveSyncSettings;
+  global.saveSleeperSyncSettings = saveSleeperSyncSettings;
+  global.disconnectSleeperDraft = disconnectSleeperDraft;
   global.applyEspnLeagueSetup = applyEspnLeagueSetup;
   global.switchSyncContext = switchSyncContext;
 })(typeof window !== 'undefined' ? window : globalThis);

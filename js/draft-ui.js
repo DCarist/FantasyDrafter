@@ -858,6 +858,9 @@
   }
 
   function closeModal() {
+    if (typeof global.saveSleeperSyncSettings === 'function' && document.getElementById('sync_sleeper_draft_id')) {
+      global.saveSleeperSyncSettings(false);
+    }
     isBoardModalOpen = false;
     returnToBoardOnClose = false;
     setupIsDirty = false;

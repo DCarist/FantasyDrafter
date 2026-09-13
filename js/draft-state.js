@@ -809,7 +809,7 @@
     const defaultName = 'League ' + (manifest.leagues.length + 1);
     const finalName = (leagueName && String(leagueName).trim()) ? String(leagueName).trim() : defaultName;
 
-    const freshSettings = Object.assign({}, DEFAULTS, { leagueName: finalName, sleeperDraftId: '' });
+    const freshSettings = Object.assign({}, DEFAULTS, { leagueName: finalName, sleeperDraftId: '', sleeperUsername: '' });
     const freshState = normalizeState({
       settings: freshSettings,
       keepers: [],
@@ -866,6 +866,7 @@
       const clonedSettings = JSON.parse(JSON.stringify(state.settings));
       clonedSettings.leagueName = finalName;
       clonedSettings.sleeperDraftId = '';
+      clonedSettings.sleeperUsername = '';
       clonedPayload = {
         id: newId,
         name: finalName,
