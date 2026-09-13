@@ -6,14 +6,14 @@
   const STORE_KEY = LEAGUES_MANIFEST_KEY;
 
   const DEFAULTS = {
-    leagueName: "Ken's Draft Board",
+    leagueName: "Your Draft Board",
     teams: 12,
     slot: 2,
     rounds: 25,
-    mode: '3rr',
+    mode: 'snake',
     scoring: 'half',
     qbFormat: 'sf',
-    leagueType: 'dynasty',
+    leagueType: 'redraft',
     teprem: false,
     blend: 60,
     maxKeepers: 2,
@@ -24,7 +24,7 @@
     sleeperDraftId: '',
     sleeperUsername: '',
     teamNames: [
-      "Team 1", "Ken", "Team 3", "Team 4", "Team 5", "Team 6",
+      "Team 1", "You", "Team 3", "Team 4", "Team 5", "Team 6",
       "Team 7", "Team 8", "Team 9", "Team 10", "Team 11", "Team 12"
     ],
     rosterSlots: Object.assign({}, (typeof DEFAULT_ROSTER_SLOTS !== 'undefined' ? DEFAULT_ROSTER_SLOTS : {
@@ -64,7 +64,7 @@
     const defaultLeagueId = 'league_default';
     const defaultLeagueName = (legacyState && legacyState.settings && legacyState.settings.leagueName)
       ? legacyState.settings.leagueName
-      : "Ken's Draft Board";
+      : "Your Draft Board";
 
     const m = (typeof createDefaultLeagueManifest === 'function')
       ? createDefaultLeagueManifest(defaultLeagueName, defaultLeagueId)
@@ -112,7 +112,7 @@
 
   function normalizeState(s) {
     s.settings = Object.assign({}, DEFAULTS, s.settings);
-    if (!s.settings.leagueName) s.settings.leagueName = "Ken's Draft Board";
+    if (!s.settings.leagueName) s.settings.leagueName = "Your Draft Board";
     const tCount = Math.max(2, Math.min(32, parseInt(s.settings.teams, 10) || 12));
     s.settings.teams = tCount;
     if (!s.settings.slot || s.settings.slot < 1 || s.settings.slot > tCount) s.settings.slot = 1;
@@ -223,7 +223,7 @@
     if (manifest && Array.isArray(manifest.leagues)) {
       const cur = manifest.leagues.find(l => l.id === activeId);
       if (cur) {
-        const curName = state.settings.leagueName || cur.name || "Ken's Draft Board";
+        const curName = state.settings.leagueName || cur.name || "Your Draft Board";
         if (cur.name !== curName || !cur.updatedAt) {
           cur.name = curName;
           cur.updatedAt = new Date().toISOString();
@@ -660,7 +660,7 @@
     if (typeof document !== 'undefined') {
       const titleEl = document.getElementById('leaguetitle');
       if (titleEl) {
-        titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Ken's Draft Board");
+        titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Your Draft Board");
       }
       document.title = (state.settings.leagueName || "Fantasy Draft Board") + ' — Draft Board';
     }
@@ -816,7 +816,7 @@
       if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
       if (typeof document !== 'undefined') {
         const titleEl = document.getElementById('leaguetitle');
-        if (titleEl) titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Ken's Draft Board");
+        if (titleEl) titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Your Draft Board");
         document.title = (state.settings.leagueName || "Fantasy Draft Board") + ' — Draft Board';
       }
       if (typeof global.render === 'function') global.render();

@@ -135,7 +135,7 @@
     // Auto-apply if the local draft has not started yet (empty log) AND teamNames are still generic/default
     if (global.state && global.state.log && global.state.log.length === 0 && global.state.settings) {
       const s = global.state.settings;
-      const isDefaultNames = !s.teamNames || s.teamNames.length === 0 || s.teamNames.every((n, i) => n === ('Team ' + (i + 1)) || n === 'My Team' || n === 'Ken');
+      const isDefaultNames = !s.teamNames || s.teamNames.length === 0 || s.teamNames.every((n, i) => n === ('Team ' + (i + 1)) || n === 'My Team' || n === 'You');
       if (isDefaultNames || s.teams !== info.teams) {
         return true;
       }
@@ -636,7 +636,7 @@
       + '<div id="sync_sec_sleeper" style="display:' + (syncState.activeTab === 'sleeper' ? 'block' : 'none') + '">'
       + '<div class="setup-grid" style="grid-template-columns: 1fr 1fr; gap:10px">'
       + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Sleeper Draft ID or League URL</label><input type="text" id="sync_sleeper_draft_id" placeholder="e.g. 10492850284 or https://sleeper.com/draft/nfl/1049..." value="' + sleeperIdVal.replace(/"/g, '&quot;') + '"></div>'
-      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Your Sleeper Username (Optional for Auto-Slot Matching)</label><input type="text" id="sync_sleeper_username" placeholder="e.g. Ken" value="' + sleeperUserVal.replace(/"/g, '&quot;') + '"></div>'
+      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Your Sleeper Username (Optional for Auto-Slot Matching)</label><input type="text" id="sync_sleeper_username" placeholder="e.g. You" value="' + sleeperUserVal.replace(/"/g, '&quot;') + '"></div>'
       + '</div>'
       + '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px">'
       + '<button type="button" class="act" onclick="importSleeperLeague()">📥 Import League & Order</button>'

@@ -10,8 +10,8 @@
   function renderHeader() {
     const s = global.state.settings;
     const titleEl = $('leaguetitle');
-    if (titleEl) titleEl.textContent = '🏈 ' + (s.leagueName || "Ken's Draft Board");
-    document.title = (s.leagueName || "Ken's Draft Board") + ' — Superflex Dynasty';
+    if (titleEl) titleEl.textContent = '🏈 ' + (s.leagueName || "Your Draft Board");
+    document.title = (s.leagueName || "Your Draft Board") + ' — Superflex Dynasty';
     if ($('hdrteams')) $('hdrteams').textContent = s.teams;
 
     // Header slot dropdown
@@ -1782,7 +1782,7 @@
     // 4. Modal Template Shell
     $('modalbox').innerHTML =
       '<div class="board-modal-header">'
-      + '<h3>📊 ' + (s.leagueName || "Ken's Draft Board") + ' <span class="meta" style="font-size:13px; font-weight:normal">(' + s.teams + ' Teams · ' + s.rounds + ' Rounds · ' + (s.mode === '3rr' ? '3RR' : 'Snake') + ')</span></h3>'
+      + '<h3>📊 ' + (s.leagueName || "Your Draft Board") + ' <span class="meta" style="font-size:13px; font-weight:normal">(' + s.teams + ' Teams · ' + s.rounds + ' Rounds · ' + (s.mode === '3rr' ? '3RR' : 'Snake') + ')</span></h3>'
       + '<button class="close" onclick="closeBoardModal()">×</button>'
       + '</div>'
       + '<div class="board-toolbar">'
@@ -2328,7 +2328,7 @@
       + '<button class="close" onclick="closeModal()">×</button></h3>'
       + leagueManagerBarHtml
       + '<div class="setup-grid">'
-      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>League / Board Name</label><input type="text" id="setup_league_name" value="' + (s.leagueName || "Ken's Draft Board").replace(/"/g, '&quot;') + '"></div>'
+      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>League / Board Name</label><input type="text" id="setup_league_name" value="' + (s.leagueName || "Your Draft Board").replace(/"/g, '&quot;') + '"></div>'
       + '<div class="setup-field"><label>Total Teams</label><input type="number" id="setup_team_count" min="2" max="32" value="' + s.teams + '"></div>'
       + '<div class="setup-field"><label>Total Draft Rounds</label><input type="number" id="setup_rounds_count" min="1" max="50" value="' + s.rounds + '"></div>'
       + '<div class="setup-field"><label>Draft Order</label><select id="setup_mode_select"><option value="3rr"' + (s.mode === '3rr' ? ' selected' : '') + '>3rd-Round Reversal (3RR)</option><option value="snake"' + (s.mode === 'snake' ? ' selected' : '') + '>Normal Snake</option></select></div>'
@@ -2522,7 +2522,7 @@
     const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     setupDraftNames = [];
     for (let i = 1; i <= count; i++) {
-      setupDraftNames.push(i === setupMySlot ? 'Ken' : ('Team ' + i));
+      setupDraftNames.push(i === setupMySlot ? 'You' : ('Team ' + i));
     }
     for (let i = 1; i <= count; i++) {
       const inp = $('team_input_' + i);
@@ -2535,7 +2535,7 @@
     syncSetupInputsFromDom();
     const s = global.state.settings;
     const prevLeagueType = s.leagueType;
-    s.leagueName = ($('setup_league_name').value || "Ken's Draft Board").trim();
+    s.leagueName = ($('setup_league_name').value || "Your Draft Board").trim();
     s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     s.mode = $('setup_mode_select').value;
     if ($('setup_leaguetype_select')) {
