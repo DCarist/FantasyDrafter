@@ -1,6 +1,6 @@
 // Test suite for Sleeper Sync Disconnect, Key/Username Removal, and Auto-Save
 import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const logic = require('../draft-logic.js');
@@ -15,11 +15,11 @@ const sourceState = {
     sleeperDraftId: '1398522574945710080',
     sleeperUsername: 'DougC95',
     teams: 12,
-    mode: 'snake'
+    mode: 'snake',
   },
   keepers: [],
   log: [],
-  watchlist: [1, 2]
+  watchlist: [1, 2],
 };
 
 const duplicated = logic.duplicateLeagueSettings(sourceState, 'Cloned League');
@@ -36,14 +36,20 @@ global.document = {
   activeElement: null,
   addEventListener: () => {},
   removeEventListener: () => {},
-  title: ''
+  title: '',
 };
 global.window = global;
 global.localStorage = {
   _store: {},
-  getItem(k) { return this._store[k] || null; },
-  setItem(k, v) { this._store[k] = String(v); },
-  removeItem(k) { delete this._store[k]; }
+  getItem(k) {
+    return this._store[k] || null;
+  },
+  setItem(k, v) {
+    this._store[k] = String(v);
+  },
+  removeItem(k) {
+    delete this._store[k];
+  },
 };
 
 // Import draft-state and draft-sync-client into this environment
@@ -75,11 +81,22 @@ domElements['sync_sleeper_username'].value = '';
 
 global.saveSleeperSyncSettings(true);
 
-eq(global.state.settings.sleeperDraftId, '', 'saveSleeperSyncSettings clears sleeperDraftId in state');
-eq(global.state.settings.sleeperUsername, '', 'saveSleeperSyncSettings clears sleeperUsername in state');
+eq(
+  global.state.settings.sleeperDraftId,
+  '',
+  'saveSleeperSyncSettings clears sleeperDraftId in state',
+);
+eq(
+  global.state.settings.sleeperUsername,
+  '',
+  'saveSleeperSyncSettings clears sleeperUsername in state',
+);
 eq(global.syncState.sleeperTimer, null, 'saveSleeperSyncSettings stops active polling timer');
 eq(global.syncState.type, 'off', 'saveSleeperSyncSettings resets syncState.type to off');
-assert(domElements['sleeper_import_msg'].innerHTML.includes('unlinked'), 'Displays unlinked feedback message');
+assert(
+  domElements['sleeper_import_msg'].innerHTML.includes('unlinked'),
+  'Displays unlinked feedback message',
+);
 
 // Verify saved in localStorage
 const savedState = global.load();
@@ -97,10 +114,26 @@ global.syncState.sleeperTimer = 99999;
 
 global.disconnectSleeperDraft();
 
-eq(domElements['sync_sleeper_draft_id'].value, '', 'disconnectSleeperDraft clears DOM draftId input');
-eq(domElements['sync_sleeper_username'].value, '', 'disconnectSleeperDraft clears DOM username input');
-eq(global.state.settings.sleeperDraftId, '', 'disconnectSleeperDraft clears sleeperDraftId in state');
-eq(global.state.settings.sleeperUsername, '', 'disconnectSleeperDraft clears sleeperUsername in state');
+eq(
+  domElements['sync_sleeper_draft_id'].value,
+  '',
+  'disconnectSleeperDraft clears DOM draftId input',
+);
+eq(
+  domElements['sync_sleeper_username'].value,
+  '',
+  'disconnectSleeperDraft clears DOM username input',
+);
+eq(
+  global.state.settings.sleeperDraftId,
+  '',
+  'disconnectSleeperDraft clears sleeperDraftId in state',
+);
+eq(
+  global.state.settings.sleeperUsername,
+  '',
+  'disconnectSleeperDraft clears sleeperUsername in state',
+);
 eq(global.syncState.sleeperTimer, null, 'disconnectSleeperDraft clears polling timer');
 eq(global.syncState.type, 'off', 'disconnectSleeperDraft sets syncState.type to off');
 
@@ -111,8 +144,16 @@ global.state.settings.sleeperDraftId = '';
 
 await global.pollSleeperPicks();
 
-eq(global.syncState.sleeperTimer, null, 'pollSleeperPicks halts and clears timer when draftId is empty');
-eq(global.syncState.type, 'off', 'pollSleeperPicks sets syncState.type to off when draftId is empty');
+eq(
+  global.syncState.sleeperTimer,
+  null,
+  'pollSleeperPicks halts and clears timer when draftId is empty',
+);
+eq(
+  global.syncState.type,
+  'off',
+  'pollSleeperPicks sets syncState.type to off when draftId is empty',
+);
 
 // --- 6. toggleSleeperSync with empty draftId unlinks cleanly ---
 domElements['sync_sleeper_draft_id'].value = '';
@@ -121,7 +162,9 @@ global.state.settings.sleeperDraftId = '';
 global.syncState.sleeperTimer = 77777;
 
 let alerted = false;
-global.alert = (msg) => { alerted = true; };
+global.alert = (msg) => {
+  alerted = true;
+};
 
 global.toggleSleeperSync();
 
@@ -130,6 +173,4 @@ eq(global.syncState.sleeperTimer, null, 'toggleSleeperSync halts timer');
 eq(global.state.settings.sleeperDraftId, '', 'toggleSleeperSync maintains empty draftId');
 
 const success = finishSuite('Sleeper Sync Disconnect & Key Removal');
-if (!success) {
-  process.exit(1);
-}
+process.exit(success ? 0 : 1);

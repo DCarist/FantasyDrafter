@@ -1,6 +1,6 @@
 // Test suite for Draft Tier Methodology, Natural Breaks Clustering, and Scarcity Alerts
 import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -45,16 +45,19 @@ const samplePlayers = [
 ];
 
 // Test Redraft 1QB mode with 1D Natural Breaks
-const redraftTiers = L.assignTiers(samplePlayers.map(p => ({ ...p })), {
-  leagueType: 'redraft',
-  qbFormat: '1qb',
-  scoring: 'half'
-});
+const redraftTiers = L.assignTiers(
+  samplePlayers.map((p) => ({ ...p })),
+  {
+    leagueType: 'redraft',
+    qbFormat: '1qb',
+    scoring: 'half',
+  },
+);
 
-const qbAlpha = redraftTiers.find(p => p.name === 'QB Alpha');
-const qbBeta = redraftTiers.find(p => p.name === 'QB Beta');
-const qbGamma = redraftTiers.find(p => p.name === 'QB Gamma');
-const qbZeta = redraftTiers.find(p => p.name === 'QB Zeta');
+const qbAlpha = redraftTiers.find((p) => p.name === 'QB Alpha');
+const qbBeta = redraftTiers.find((p) => p.name === 'QB Beta');
+const qbGamma = redraftTiers.find((p) => p.name === 'QB Gamma');
+const qbZeta = redraftTiers.find((p) => p.name === 'QB Zeta');
 
 eq(qbAlpha.posTier, 1, 'QB Alpha assigned posTier 1');
 eq(qbBeta.posTier, 1, 'QB Beta shares posTier 1 with QB Alpha');
@@ -62,21 +65,24 @@ eq(qbGamma.posTier, 2, 'QB Gamma mapped to posTier 2');
 assert(qbZeta.posTier > qbGamma.posTier, 'QB Zeta placed in lower tier');
 
 // Verify strict monotonicity (tiers never jump backwards)
-const qbList = redraftTiers.filter(p => p.pos === 'QB').sort((a, b) => b.score - a.score);
+const qbList = redraftTiers.filter((p) => p.pos === 'QB').sort((a, b) => b.score - a.score);
 for (let i = 0; i < qbList.length - 1; i++) {
   assert(qbList[i + 1].posTier >= qbList[i].posTier, 'Positional tiers are strictly monotonic');
 }
 
 // Test Dynasty Superflex mode with 1D Natural Breaks
-const dynastyTiers = L.assignTiers(samplePlayers.map(p => ({ ...p })), {
-  leagueType: 'dynasty',
-  qbFormat: 'sf',
-  scoring: 'half'
-});
+const dynastyTiers = L.assignTiers(
+  samplePlayers.map((p) => ({ ...p })),
+  {
+    leagueType: 'dynasty',
+    qbFormat: 'sf',
+    scoring: 'half',
+  },
+);
 
-const dynAlpha = dynastyTiers.find(p => p.name === 'QB Alpha');
-const dynBeta = dynastyTiers.find(p => p.name === 'QB Beta');
-const dynGamma = dynastyTiers.find(p => p.name === 'QB Gamma');
+const dynAlpha = dynastyTiers.find((p) => p.name === 'QB Alpha');
+const dynBeta = dynastyTiers.find((p) => p.name === 'QB Beta');
+const dynGamma = dynastyTiers.find((p) => p.name === 'QB Gamma');
 
 eq(dynAlpha.posTier, 1, 'Dynasty QB Alpha in Tier 1 via 1D Natural Breaks');
 eq(dynBeta.posTier, 1, 'Dynasty QB Beta in Tier 1 via 1D Natural Breaks');
@@ -87,20 +93,24 @@ assert(dynAlpha.overallTier != null, 'Dynasty QB Alpha has overallTier');
 eq(dynAlpha.overallTier, 1, 'Highest scoring player gets overallTier 1');
 
 // --- 3. Stability Test (Tiers do not mutate when players are drafted) ---
-const pList = samplePlayers.map(p => ({ ...p }));
+const pList = samplePlayers.map((p) => ({ ...p }));
 L.assignTiers(pList, { leagueType: 'dynasty', qbFormat: 'sf', scoring: 'half' });
-const initialGammaTier = pList.find(p => p.name === 'QB Gamma').posTier;
+const initialGammaTier = pList.find((p) => p.name === 'QB Gamma').posTier;
 
 // Simulate drafting QB Alpha and QB Beta
 const takenSet = new Set([1, 2]);
 // The intrinsic posTier remains identical
-eq(pList.find(p => p.name === 'QB Gamma').posTier, initialGammaTier, 'Player tier remains stable when earlier players are drafted');
+eq(
+  pList.find((p) => p.name === 'QB Gamma').posTier,
+  initialGammaTier,
+  'Player tier remains stable when earlier players are drafted',
+);
 
 // --- 4. getTierScarcity and Cliff Alerts Tests ---
 const scarcityCheck = L.getTierScarcity(pList, takenSet, 'QB');
 eq(scarcityCheck.isAll, false, 'getTierScarcity recognizes positional filter QB');
 
-const t1Info = scarcityCheck.tiers.find(t => t.tier === 1);
+const t1Info = scarcityCheck.tiers.find((t) => t.tier === 1);
 eq(t1Info.total, 2, 'Tier 1 has total 2 QBs');
 eq(t1Info.taken, 2, 'Tier 1 has 2 taken QBs');
 eq(t1Info.remaining, 0, 'Tier 1 has 0 remaining QBs');

@@ -1,6 +1,6 @@
 // Test suite for Draft Target Queue Management
 import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -63,14 +63,17 @@ eq(cleaned2, [1, 8, 15], 'cleanQueue works with Set container');
 const mockPlayers = {
   1: { id: 1, name: 'Josh Allen', pos: 'QB' },
   8: { id: 8, name: 'Bijan Robinson', pos: 'RB' },
-  15: { id: 15, name: 'CeeDee Lamb', pos: 'WR' }
+  15: { id: 15, name: 'CeeDee Lamb', pos: 'WR' },
 };
 
 const avail = L.getAvailableQueue([1, 8, 15], [8], mockPlayers);
-eq(avail.map(p => p.name), ['Josh Allen', 'CeeDee Lamb'], 'getAvailableQueue returns player objects for untaken items');
+eq(
+  avail.map((p) => p.name),
+  ['Josh Allen', 'CeeDee Lamb'],
+  'getAvailableQueue returns player objects for untaken items',
+);
 
 const success = finishSuite('Draft Queue & Target Shortlist Management');
 if (!success) {
   process.exit(1);
 }
-

@@ -355,7 +355,7 @@ function compositeScore(player, blend, tePremium) {
 function rankToScore(rank, depth) {
   if (rank == null) return null;
   const frac = Math.min(1, Math.max(0, (rank - 1) / depth));
-  return 100 * Math.pow(1 - frac, 1.5);
+  return 100 * (1 - frac) ** 1.5;
 }
 
 // 1D Natural Breaks (Fisher-Jenks Algorithm)
@@ -1309,7 +1309,7 @@ function resolveRemotePick(remotePick, playersList, options) {
 
     // Tier 3: Abbreviated First Initial Match (e.g. 'D. Samuel Sr.', 'J. Herbert', 'D. Metcalf', 'D. Swift', 'M. Golden')
     const initMatch = cleanRaw.match(
-      /^([a-zA-Z])\.?\s+([a-zA-Z'\-]+(?:\s+(?:jr|sr|ii|iii|iv|v)\.?)?)$/i,
+      /^([a-zA-Z])\.?\s+([a-zA-Z'-]+(?:\s+(?:jr|sr|ii|iii|iv|v)\.?)?)$/i,
     );
     if (initMatch) {
       const firstInit = initMatch[1].toLowerCase();
@@ -1791,7 +1791,7 @@ function findPlayerInPool(identity, playersList, lookupIndex) {
 
   const normN = normalizeName(rawName);
   let normP = (identity.pos || identity.playerPos || identity.customPos || '').trim().toUpperCase();
-  let normT = (identity.team || identity.playerTeam || identity.customTeam || '')
+  const normT = (identity.team || identity.playerTeam || identity.customTeam || '')
     .trim()
     .toUpperCase();
 

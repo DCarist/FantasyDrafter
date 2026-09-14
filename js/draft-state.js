@@ -1,5 +1,5 @@
 // 📦 Reactive State & Data Container for Fantasy Drafter
-(function (global) {
+((global) => {
   const LEGACY_STORE_KEY = 'kenDraftBoard-v1';
   const LEAGUES_MANIFEST_KEY = 'fantasy_drafter_leagues_manifest';
   const LEAGUE_STORE_PREFIX = 'fantasy_drafter_league_';
@@ -126,7 +126,7 @@
     } catch (e) {}
   }
 
-  let manifest = loadManifest();
+  const manifest = loadManifest();
 
   // Raw players dataset reference
   const getPlayersList = () => {
@@ -165,15 +165,15 @@
     return null;
   };
 
-  let state = load();
-  let ui = {
+  const state = load();
+  const ui = {
     posFilter: 'ALL',
     search: '',
     sort: 'score',
     hideTaken: !!(state && state.settings && state.settings.hideTaken),
     hideOutIR: !!(state && state.settings && state.settings.hideOutIR),
   };
-  let viewingRosterSlot = null; // null = follow on-the-clock slot
+  const viewingRosterSlot = null; // null = follow on-the-clock slot
 
   function normalizeState(s) {
     s.settings = Object.assign({}, DEFAULTS, s.settings);

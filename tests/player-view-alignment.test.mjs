@@ -1,6 +1,6 @@
 // Test suite for Player Pool Table View Alignment & Filter Persistence
-import { readFileSync, existsSync } from 'fs';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { existsSync, readFileSync } from 'fs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('Player Pool Table Alignment & Filter Persistence');
@@ -15,8 +15,8 @@ assert(theadMatch, 'draft-board.html contains <thead><tr> block');
 const thMatches = [...theadMatch[1].matchAll(/<th([^>]*)>([\s\S]*?)<\/th>/g)];
 eq(thMatches.length, 11, 'Table thead contains exactly 11 column headers');
 
-const thTexts = thMatches.map(m => m[2].trim());
-const thAttrs = thMatches.map(m => m[1]);
+const thTexts = thMatches.map((m) => m[2].trim());
+const thAttrs = thMatches.map((m) => m[1]);
 
 // Validate individual header text & semantic roles
 eq(thTexts[0], '#', 'Header 1 is # rank/priority');
@@ -51,7 +51,11 @@ const rowHtmlBlock = draftUiCode.match(
 assert(rowHtmlBlock, 'draft-ui.js defines row template block');
 
 const staticTdMatches = (rowHtmlBlock[1].match(/<td/g) || []).length;
-eq(staticTdMatches, 7, 'Template string directly contains 7 static <td> elements (plus rankCell, byeCell, edgeCell, actionCell = 11 total)');
+eq(
+  staticTdMatches,
+  7,
+  'Template string directly contains 7 static <td> elements (plus rankCell, byeCell, edgeCell, actionCell = 11 total)',
+);
 
 assert(rowHtmlBlock[1].includes('rankCell'), 'Row includes rankCell (#1)');
 assert(rowHtmlBlock[1].includes('clickname'), 'Row includes clickname / Player (#2)');
@@ -70,31 +74,37 @@ assert(draftUiCode.includes('colspan="11"'), 'Empty pool message spans all 11 co
 
 // --- 3. Dynamic League-Type Header & Rank Selection Logic ---
 function simulateHeaders(settings) {
-  const isRedraft = (settings.leagueType === 'redraft');
-  const scTag = settings.scoring === 'ppr' ? 'PPR' : (settings.scoring === 'std' ? 'STD' : 'Half');
+  const isRedraft = settings.leagueType === 'redraft';
+  const scTag = settings.scoring === 'ppr' ? 'PPR' : settings.scoring === 'std' ? 'STD' : 'Half';
   const redLabel = 'Red (' + (settings.qbFormat === '1qb' ? scTag : 'SF ' + scTag) + ')';
 
-  let rank1Title = '', rank2Title = '';
+  let rank1Title = '',
+    rank2Title = '';
   if (isRedraft) {
     rank1Title = redLabel;
     rank2Title = 'ESPN (' + (settings.scoring === 'std' ? 'STD' : 'PPR') + ')';
   } else {
-    rank1Title = (settings.qbFormat === '1qb') ? 'Dyn 1QB' : 'Dyn SF';
+    rank1Title = settings.qbFormat === '1qb' ? 'Dyn 1QB' : 'Dyn SF';
     rank2Title = redLabel;
   }
   return { rank1Title, rank2Title };
 }
 
 function simulateRowRanks(player, settings) {
-  const isRedraft = (settings.leagueType === 'redraft');
+  const isRedraft = settings.leagueType === 'redraft';
   let rank1Val, rank2Val;
   if (isRedraft) {
-    rank1Val = (player.activeRed ?? '—');
-    const espnRank = (settings.scoring === 'std' ? (player.espn_std ?? player.espn_ppr) : (player.espn_ppr ?? player.espn_std)) ?? player.yahoo ?? null;
+    rank1Val = player.activeRed ?? '—';
+    const espnRank =
+      (settings.scoring === 'std'
+        ? (player.espn_std ?? player.espn_ppr)
+        : (player.espn_ppr ?? player.espn_std)) ??
+      player.yahoo ??
+      null;
     rank2Val = espnRank != null ? espnRank : '—';
   } else {
-    rank1Val = (player.activeDyn ?? '—');
-    rank2Val = (player.activeRed ?? '—');
+    rank1Val = player.activeDyn ?? '—';
+    rank2Val = player.activeRed ?? '—';
   }
   return { rank1Val, rank2Val };
 }
@@ -110,7 +120,11 @@ eq(dyn1qbHeaders.rank1Title, 'Dyn 1QB', 'Dynasty 1QB header 1 is Dyn 1QB');
 eq(dyn1qbHeaders.rank2Title, 'Red (PPR)', 'Dynasty 1QB header 2 is Red (PPR)');
 
 // Redraft 1QB STD
-const red1qbStdHeaders = simulateHeaders({ leagueType: 'redraft', qbFormat: '1qb', scoring: 'std' });
+const red1qbStdHeaders = simulateHeaders({
+  leagueType: 'redraft',
+  qbFormat: '1qb',
+  scoring: 'std',
+});
 eq(red1qbStdHeaders.rank1Title, 'Red (STD)', 'Redraft STD header 1 is Red (STD)');
 eq(red1qbStdHeaders.rank2Title, 'ESPN (STD)', 'Redraft STD header 2 is ESPN (STD)');
 
@@ -125,7 +139,7 @@ const samplePlayer = {
   activeRed: 12,
   espn_ppr: 15,
   espn_std: 18,
-  yahoo: 14
+  yahoo: 14,
 };
 
 const dynRowRanks = simulateRowRanks(samplePlayer, { leagueType: 'dynasty', scoring: 'half' });
@@ -145,18 +159,42 @@ eq(redRowRanksStd.rank2Val, 18, 'Redraft row rank2 is espn_std');
 assert(draftUiCode.includes('getPlayerEdge'), 'draft-ui.js defines getPlayerEdge function');
 
 function simulatePlayerEdge(p, settings) {
-  const isRedraft = (settings && settings.leagueType === 'redraft');
+  const isRedraft = settings && settings.leagueType === 'redraft';
   const consensus = isRedraft ? p.activeRed : (p.activeDyn ?? p.activeRed);
-  const espnRank = (settings && settings.scoring === 'std' ? (p.espn_std ?? p.espn_ppr) : (p.espn_ppr ?? p.espn_std)) ?? p.yahoo ?? null;
+  const espnRank =
+    (settings && settings.scoring === 'std'
+      ? (p.espn_std ?? p.espn_ppr)
+      : (p.espn_ppr ?? p.espn_std)) ??
+    p.yahoo ??
+    null;
   if (consensus == null || espnRank == null) return null;
   const edge = Math.round(espnRank - consensus);
   let tip;
   if (edge > 0) {
-    tip = 'Market Steal: ESPN ranks at #' + Math.round(espnRank) + ' vs Consensus #' + Math.round(consensus) + ' (+' + edge + ' edge).\nOpponents following ESPN\'s queue will let this player slide!';
+    tip =
+      'Market Steal: ESPN ranks at #' +
+      Math.round(espnRank) +
+      ' vs Consensus #' +
+      Math.round(consensus) +
+      ' (+' +
+      edge +
+      " edge).\nOpponents following ESPN's queue will let this player slide!";
   } else if (edge < 0) {
-    tip = 'Overdraft Risk: ESPN ranks at #' + Math.round(espnRank) + ' vs Consensus #' + Math.round(consensus) + ' (' + edge + ' reach).\nOpponents following ESPN\'s queue may draft this player early.';
+    tip =
+      'Overdraft Risk: ESPN ranks at #' +
+      Math.round(espnRank) +
+      ' vs Consensus #' +
+      Math.round(consensus) +
+      ' (' +
+      edge +
+      " reach).\nOpponents following ESPN's queue may draft this player early.";
   } else {
-    tip = 'Market Neutral: ESPN rank (#' + Math.round(espnRank) + ') matches Consensus (#' + Math.round(consensus) + ').';
+    tip =
+      'Market Neutral: ESPN rank (#' +
+      Math.round(espnRank) +
+      ') matches Consensus (#' +
+      Math.round(consensus) +
+      ').';
   }
   return { edge, tip };
 }
@@ -165,14 +203,20 @@ function simulatePlayerEdge(p, settings) {
 const stealPlayer = { activeRed: 42, espn_ppr: 65 };
 const stealRes = simulatePlayerEdge(stealPlayer, { leagueType: 'redraft', scoring: 'ppr' });
 eq(stealRes.edge, 23, 'Calculates positive steal edge of +23');
-assert(stealRes.tip.includes('Market Steal: ESPN ranks at #65 vs Consensus #42 (+23 edge)'), 'Steal tooltip explains positive edge');
+assert(
+  stealRes.tip.includes('Market Steal: ESPN ranks at #65 vs Consensus #42 (+23 edge)'),
+  'Steal tooltip explains positive edge',
+);
 assert(stealRes.tip.includes('let this player slide'), 'Steal tooltip gives actionable guidance');
 
 // Negative edge (Overdraft Risk): Consensus #86, ESPN #66 -> -20
 const reachPlayer = { activeRed: 86, espn_ppr: 66 };
 const reachRes = simulatePlayerEdge(reachPlayer, { leagueType: 'redraft', scoring: 'ppr' });
 eq(reachRes.edge, -20, 'Calculates negative reach edge of -20');
-assert(reachRes.tip.includes('Overdraft Risk: ESPN ranks at #66 vs Consensus #86 (-20 reach)'), 'Reach tooltip explains overdraft risk');
+assert(
+  reachRes.tip.includes('Overdraft Risk: ESPN ranks at #66 vs Consensus #86 (-20 reach)'),
+  'Reach tooltip explains overdraft risk',
+);
 assert(reachRes.tip.includes('draft this player early'), 'Reach tooltip gives actionable warning');
 
 // Neutral edge: Consensus #50, ESPN #50 -> 0
@@ -200,16 +244,37 @@ const stateCode = readFileSync('js/draft-state.js', 'utf-8');
 
 assert(stateCode.includes('hideTaken: false'), 'draft-state.js defines hideTaken in DEFAULTS');
 assert(stateCode.includes('hideOutIR: false'), 'draft-state.js defines hideOutIR in DEFAULTS');
-assert(stateCode.includes('s.settings.hideTaken = !!s.settings.hideTaken;'), 'normalizeState normalizes hideTaken');
-assert(stateCode.includes('s.settings.hideOutIR = !!s.settings.hideOutIR;'), 'normalizeState normalizes hideOutIR');
-assert(stateCode.includes('hideTaken: !!(state && state.settings && state.settings.hideTaken)'), 'ui initializes hideTaken from persisted settings');
+assert(
+  stateCode.includes('s.settings.hideTaken = !!s.settings.hideTaken;'),
+  'normalizeState normalizes hideTaken',
+);
+assert(
+  stateCode.includes('s.settings.hideOutIR = !!s.settings.hideOutIR;'),
+  'normalizeState normalizes hideOutIR',
+);
+assert(
+  stateCode.includes('hideTaken: !!(state && state.settings && state.settings.hideTaken)'),
+  'ui initializes hideTaken from persisted settings',
+);
 
 assert(existsSync('js/app.js'), 'js/app.js exists');
 const appCode = readFileSync('js/app.js', 'utf-8');
 
-assert(appCode.includes("$('hidetaken').checked = !!s.hideTaken;"), 'bindHeaderControls restores hidetaken state');
-assert(appCode.includes("$('hideoutir').checked = !!s.hideOutIR;"), 'bindHeaderControls restores hideoutir state');
-assert(appCode.includes('global.state.settings.hideTaken = val;'), 'hidetaken change event writes to settings');
-assert(appCode.includes('global.state.settings.hideOutIR = val;'), 'hideoutir change event writes to settings');
+assert(
+  appCode.includes("$('hidetaken').checked = !!s.hideTaken;"),
+  'bindHeaderControls restores hidetaken state',
+);
+assert(
+  appCode.includes("$('hideoutir').checked = !!s.hideOutIR;"),
+  'bindHeaderControls restores hideoutir state',
+);
+assert(
+  appCode.includes('global.state.settings.hideTaken = val;'),
+  'hidetaken change event writes to settings',
+);
+assert(
+  appCode.includes('global.state.settings.hideOutIR = val;'),
+  'hideoutir change event writes to settings',
+);
 
 finishSuite('Player Pool Table Alignment & Filter Persistence');

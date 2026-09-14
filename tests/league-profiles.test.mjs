@@ -1,6 +1,6 @@
 // Test suite for Multi-League Profiles, Manifest Management, and Workspace Switching
 import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -17,7 +17,11 @@ eq(defaultManifest.leagues[0].name, "Ken's Draft Board", 'Initial league name is
 
 const customManifest = L.createDefaultLeagueManifest('Dynasty Superflex 2026', 'league_custom_1');
 eq(customManifest.activeLeagueId, 'league_custom_1', 'Custom manifest sets active league id');
-eq(customManifest.leagues[0].name, 'Dynasty Superflex 2026', 'Custom manifest sets custom league name');
+eq(
+  customManifest.leagues[0].name,
+  'Dynasty Superflex 2026',
+  'Custom manifest sets custom league name',
+);
 
 // 2. League Profile Creation
 const sampleState = {
@@ -28,19 +32,17 @@ const sampleState = {
     mode: 'snake',
     scoring: 'ppr',
     qbFormat: '1qb',
-    rosterSlots: { qb: 1, rb: 2, wr: 2, te: 1, flex: 2, superflex: 0, k: 1, dst: 1, bench: 10 }
+    rosterSlots: { qb: 1, rb: 2, wr: 2, te: 1, flex: 2, superflex: 0, k: 1, dst: 1, bench: 10 },
   },
-  keepers: [
-    { id: 'k1', slot: 3, round: 5, playerId: 10, customName: null, customPos: 'WR' }
-  ],
+  keepers: [{ id: 'k1', slot: 3, round: 5, playerId: 10, customName: null, customPos: 'WR' }],
   log: [
     { overall: 1, playerId: 0, mine: false },
     { overall: 2, playerId: 4, mine: false },
-    { overall: 3, playerId: 10, mine: true, isKeeper: true }
+    { overall: 3, playerId: 10, mine: true, isKeeper: true },
   ],
   watchlist: [20, 25, 30],
   queue: [25, 30],
-  tradedPicks: { 5: 2 }
+  tradedPicks: { 5: 2 },
 };
 
 const profile = L.createLeagueProfile('Work Redraft League', 'league_work_1', sampleState);
@@ -73,10 +75,14 @@ assert(autoNamedCopy.name.includes('(Copy)'), 'Generates (Copy) suffix when name
 // 4. Multi-League Backup Serialization & Deserialization
 const multiLeaguesMap = {
   [defaultManifest.activeLeagueId]: profile,
-  [cloned.id]: cloned
+  [cloned.id]: cloned,
 };
 const backupPayload = L.serializeLeagueBackup(defaultManifest, multiLeaguesMap);
-eq(backupPayload.backupType, 'fantasy_drafter_multi_league_backup', 'Backup has correct type identifier');
+eq(
+  backupPayload.backupType,
+  'fantasy_drafter_multi_league_backup',
+  'Backup has correct type identifier',
+);
 eq(backupPayload.manifest.activeLeagueId, 'league_default', 'Backup preserves manifest active ID');
 assert(backupPayload.leagues[cloned.id] != null, 'Backup includes cloned league profile');
 
@@ -90,44 +96,62 @@ assert(deserializedMulti.leagues[cloned.id] != null, 'Restored cloned league in 
 const singleSerialized = L.serializeDraftState({
   settings: { leagueName: 'Standalone League', teams: 12, mySlot: 1 },
   draftLog: [{ overall: 1, playerId: 5, mine: true }],
-  watchlist: [12]
+  watchlist: [12],
 });
 const deserializedSingle = L.deserializeLeagueBackup(singleSerialized);
 eq(deserializedSingle.ok, true, 'Successfully deserializes single-league draft payload');
 eq(deserializedSingle.type, 'single', 'Reports single-league type');
 eq(deserializedSingle.league.name, 'Standalone League', 'Extracts name from single-league payload');
-eq(deserializedSingle.league.state.settings.teams, 12, 'Extracts settings from single-league payload');
+eq(
+  deserializedSingle.league.state.settings.teams,
+  12,
+  'Extracts settings from single-league payload',
+);
 eq(deserializedSingle.league.state.log.length, 1, 'Extracts draft log from single-league payload');
 
 // 6. Error & Malformed Input Handling
 eq(L.deserializeLeagueBackup(null).ok, false, 'Rejects null backup payload');
 eq(L.deserializeLeagueBackup('{ broken json').ok, false, 'Rejects malformed JSON string');
-eq(L.deserializeLeagueBackup({ someRandom: 'object' }).ok, false, 'Rejects unrecognized object format');
+eq(
+  L.deserializeLeagueBackup({ someRandom: 'object' }).ok,
+  false,
+  'Rejects unrecognized object format',
+);
 
 // 7. Mock Storage & draft-state.js Lifecycle Integration
 const mockStorage = new Map();
 globalThis.localStorage = {
-  getItem: k => mockStorage.has(k) ? mockStorage.get(k) : null,
+  getItem: (k) => (mockStorage.has(k) ? mockStorage.get(k) : null),
   setItem: (k, v) => mockStorage.set(k, String(v)),
-  removeItem: k => mockStorage.delete(k),
-  clear: () => mockStorage.clear()
+  removeItem: (k) => mockStorage.delete(k),
+  clear: () => mockStorage.clear(),
 };
 
 // Seed legacy storage
-mockStorage.set('kenDraftBoard-v1', JSON.stringify({
-  settings: { leagueName: 'My Old Dynasty League', teams: 10, slot: 2 },
-  log: [{ overall: 1, playerId: 5, mine: false }, { overall: 2, playerId: 12, mine: true }]
-}));
+mockStorage.set(
+  'kenDraftBoard-v1',
+  JSON.stringify({
+    settings: { leagueName: 'My Old Dynasty League', teams: 10, slot: 2 },
+    log: [
+      { overall: 1, playerId: 5, mine: false },
+      { overall: 2, playerId: 12, mine: true },
+    ],
+  }),
+);
 
 // Load draft-state.js in mock environment
 Object.assign(globalThis, L);
 const fs = require('fs');
 const stateCode = fs.readFileSync('./js/draft-state.js', 'utf8');
+// biome-ignore lint/security/noGlobalEval: test environment evaluation of draft-state.js
 eval(stateCode);
 
 // Verify legacy migration on first load
 assert(mockStorage.has('fantasy_drafter_leagues_manifest'), 'Manifest created on migration');
-assert(mockStorage.has('fantasy_drafter_league_league_default'), 'Default league storage created from legacy data');
+assert(
+  mockStorage.has('fantasy_drafter_league_league_default'),
+  'Default league storage created from legacy data',
+);
 const initialList = globalThis.getLeagueList();
 eq(initialList.length, 1, 'One league migrated in list');
 eq(initialList[0].name, 'My Old Dynasty League', 'Migrated legacy league name preserved');
@@ -149,14 +173,22 @@ eq(globalThis.state.log.length, 0, 'New league has clean draft board');
 // Switch back to original migrated league
 const switchRes = globalThis.switchLeague('league_default');
 eq(switchRes.ok, true, 'Switched back to default league');
-eq(globalThis.state.settings.leagueName, 'My Old Dynasty League', 'Restored original league settings');
+eq(
+  globalThis.state.settings.leagueName,
+  'My Old Dynasty League',
+  'Restored original league settings',
+);
 eq(globalThis.state.log.length, 3, 'Restored all original draft picks intact');
 
 // Duplicate league
 const dupRes = globalThis.duplicateCurrentLeague('Dynasty Clone 2027');
 eq(dupRes.ok, true, 'Duplicated league successfully');
 eq(globalThis.getLeagueList().length, 3, 'Three leagues now in manifest');
-eq(globalThis.state.settings.leagueName, 'Dynasty Clone 2027', 'Active league is now cloned league');
+eq(
+  globalThis.state.settings.leagueName,
+  'Dynasty Clone 2027',
+  'Active league is now cloned league',
+);
 eq(globalThis.state.settings.teams, 10, 'Cloned league preserves team count');
 eq(globalThis.state.log.length, 0, 'Cloned league starts with clean board');
 
@@ -164,7 +196,10 @@ eq(globalThis.state.log.length, 0, 'Cloned league starts with clean board');
 const deleteRes = globalThis.deleteLeague(dupRes.id);
 eq(deleteRes.ok, true, 'Deleted cloned league');
 eq(globalThis.getLeagueList().length, 2, 'Two leagues remain in manifest');
-assert(mockStorage.get('fantasy_drafter_league_' + dupRes.id) == null, 'Deleted league storage removed');
+assert(
+  mockStorage.get('fantasy_drafter_league_' + dupRes.id) == null,
+  'Deleted league storage removed',
+);
 
 // Prevent deleting when only 1 league left
 const remaining = globalThis.getLeagueList();

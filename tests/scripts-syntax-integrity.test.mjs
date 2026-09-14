@@ -1,8 +1,8 @@
 // Test Suite: Scripts Syntax & Browser Loading Integrity
-import { readFileSync, existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import vm from 'vm';
-import { assert, eq, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 printSuiteHeader('Scripts Syntax & Browser Startup Integrity');
 resetFailures();
@@ -14,7 +14,7 @@ const scriptsToVerify = [
   'js/draft-state.js',
   'js/draft-sync-client.js',
   'js/draft-ui.js',
-  'js/app.js'
+  'js/app.js',
 ];
 
 // 1. Verify all script files parse cleanly with no SyntaxErrors
@@ -41,7 +41,10 @@ const mockWindow = {
   removeEventListener: () => {},
   setInterval: () => 1,
   clearInterval: () => {},
-  setTimeout: (fn) => { fn(); return 1; },
+  setTimeout: (fn) => {
+    fn();
+    return 1;
+  },
   clearTimeout: () => {},
   console: console,
   location: { origin: 'http://localhost:8517' },
@@ -58,20 +61,26 @@ const mockWindow = {
         classList: {
           contains: () => false,
           add: () => {},
-          remove: () => {}
+          remove: () => {},
         },
-        addEventListener: () => {}
+        addEventListener: () => {},
       };
     },
     addEventListener: () => {},
-    title: ''
+    title: '',
   },
   localStorage: {
     _data: {},
-    getItem(k) { return this._data[k] || null; },
-    setItem(k, v) { this._data[k] = String(v); },
-    removeItem(k) { delete this._data[k]; }
-  }
+    getItem(k) {
+      return this._data[k] || null;
+    },
+    setItem(k, v) {
+      this._data[k] = String(v);
+    },
+    removeItem(k) {
+      delete this._data[k];
+    },
+  },
 };
 mockWindow.window = mockWindow;
 mockWindow.globalThis = mockWindow;
@@ -92,7 +101,10 @@ try {
 }
 
 assert(evalSuccess, 'All browser scripts evaluate sequentially without runtime errors');
-assert(typeof mockWindow.state === 'object' && mockWindow.state !== null, 'mockWindow.state is initialized');
+assert(
+  typeof mockWindow.state === 'object' && mockWindow.state !== null,
+  'mockWindow.state is initialized',
+);
 assert(typeof mockWindow.openLeagueSetup === 'function', 'mockWindow.openLeagueSetup is defined');
 assert(typeof mockWindow.render === 'function', 'mockWindow.render is defined');
 assert(typeof mockWindow.initApp === 'function', 'mockWindow.initApp is defined');

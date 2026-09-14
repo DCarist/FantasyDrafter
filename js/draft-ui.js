@@ -1,5 +1,5 @@
 // 🎨 UI Component Renderers and Interactive Modals for Fantasy Drafter
-(function (global) {
+((global) => {
   const $ = (id) => document.getElementById(id);
   let lastOnClockPickNotified = null;
   let unlistedSelectedPos = 'WR';
@@ -2228,9 +2228,9 @@
           // User Needs Grid
           const needsCardsHtml = (strat.userNeeds || [])
             .map((n) => {
-              let statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
-              let barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
-              let barColor =
+              const statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
+              const barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
+              const barColor =
                 n.urgency === 'CRITICAL'
                   ? 'var(--qb)'
                   : n.urgency === 'NEEDED'
@@ -2429,7 +2429,7 @@
                     .join('');
                 }
 
-                let statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
+                const statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
 
                 return (
                   '<div class="' +
@@ -2774,8 +2774,8 @@
 
       // Power Rankings Table
       const sortedTeams = summary.teams.slice().sort((a, b) => {
-        let valA = a[summarySortKey];
-        let valB = b[summarySortKey];
+        const valA = a[summarySortKey];
+        const valB = b[summarySortKey];
         if (summarySortKey === 'rank') {
           return summarySortAsc ? a.rank - b.rank : b.rank - a.rank;
         }
@@ -3720,7 +3720,7 @@
     const file = event.target && event.target.files && event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = function (e) {
+    reader.onload = (e) => {
       const content = e.target.result;
       if (typeof global.importLeagueBackup === 'function') {
         const res = global.importLeagueBackup(content);
@@ -4122,7 +4122,7 @@
 
     // Re-render table
     const countVal = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
-    $('setup_teams_body').innerHTML = (function () {
+    $('setup_teams_body').innerHTML = (() => {
       let rows = '';
       for (let i = 1; i <= countVal; i++) {
         const name = setupDraftNames[i - 1] || 'Team ' + i;

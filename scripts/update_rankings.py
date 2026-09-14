@@ -337,8 +337,14 @@ def update_rankings(
     out_js=DEFAULT_OUT_JS,
     out_json=DEFAULT_OUT_JSON,
     dry_run=False,
+    offline=False,
 ):
     print("=== Fantasy Drafter Live Rankings Updater ===")
+
+    is_local_source = (ecr_source and not str(ecr_source).startswith(("http://", "https://"))) or (
+        values_source and not str(values_source).startswith(("http://", "https://"))
+    )
+    is_offline = offline or is_local_source
 
     # 0. Resolve sources
     ecr_url = (
@@ -778,17 +784,21 @@ def update_rankings(
 
     # 8b. Refresh 32-team depth charts from ESPN or re-link existing
     depth_charts = existing_depth_charts
-    try:
-        from fetch_depth_charts import build_player_lookup, fetch_all_depth_charts
-
-        print("Refreshing 32-team depth charts from ESPN...")
-        depth_charts = fetch_all_depth_charts(
-            out, verbose=False, existing_depth_charts=existing_depth_charts
+    if is_offline:
+        print(
+            "Offline mode: skipping live ESPN depth chart refresh, using mock/existing depth charts."
         )
-        print(f"Successfully synced depth charts for {len(depth_charts)} teams.")
-    except Exception as e:
-        print(f"Note: Live depth chart refresh skipped ({e}), re-linking existing depth charts...")
-        if depth_charts:
+        if not depth_charts:
+            depth_charts = {
+                "KC": {
+                    "qb": [{"name": "Patrick Mahomes", "rank": 1}],
+                    "rb": [],
+                    "wr": {},
+                    "te": [],
+                    "pk": [],
+                }
+            }
+        else:
             try:
                 from fetch_depth_charts import build_player_lookup
 
@@ -808,6 +818,39 @@ def update_rankings(
                             )
             except Exception as le:
                 print(f"Note: Depth chart re-link skipped: {le}")
+    else:
+        try:
+            from fetch_depth_charts import build_player_lookup, fetch_all_depth_charts
+
+            print("Refreshing 32-team depth charts from ESPN...")
+            depth_charts = fetch_all_depth_charts(
+                out, verbose=False, existing_depth_charts=existing_depth_charts
+            )
+            print(f"Successfully synced depth charts for {len(depth_charts)} teams.")
+        except Exception as e:
+            print(
+                f"Note: Live depth chart refresh skipped ({e}), re-linking existing depth charts..."
+            )
+            if depth_charts:
+                try:
+                    from fetch_depth_charts import build_player_lookup
+
+                    lookup_exact, lookup_name = build_player_lookup(out)
+                    for team_abbr, tdata in depth_charts.items():
+                        for group_key in ["qb", "rb", "te", "pk"]:
+                            for ath in tdata.get(group_key, []):
+                                nn = norm_name(ath.get("name", ""))
+                                ath["playerId"] = lookup_exact.get(
+                                    (nn, team_abbr)
+                                ) or lookup_name.get(nn)
+                        for _role_key, wr_list in tdata.get("wr", {}).items():
+                            for ath in wr_list:
+                                nn = norm_name(ath.get("name", ""))
+                                ath["playerId"] = lookup_exact.get(
+                                    (nn, team_abbr)
+                                ) or lookup_name.get(nn)
+                except Exception as le:
+                    print(f"Note: Depth chart re-link skipped: {le}")
 
     payload = {
         "generated": date.today().isoformat(),
@@ -826,14 +869,17 @@ def update_rankings(
     }
 
     # 8c. Refresh official NFL injury report from ESPN
-    try:
-        from fetch_injuries import sync_injuries_into_data
+    if is_offline:
+        print("Offline mode: skipping live ESPN injury refresh.")
+    else:
+        try:
+            from fetch_injuries import sync_injuries_into_data
 
-        print("Refreshing official NFL injury report from ESPN...")
-        sync_injuries_into_data(payload, verbose=False)
-        print("Successfully synced injury data.")
-    except Exception as e:
-        print(f"Note: Live injury refresh skipped ({e}).")
+            print("Refreshing official NFL injury report from ESPN...")
+            sync_injuries_into_data(payload, verbose=False)
+            print("Successfully synced injury data.")
+        except Exception as e:
+            print(f"Note: Live injury refresh skipped ({e}).")
 
     # 9. Write updated players-data.js & json if not dry_run
     if not dry_run:
@@ -910,6 +956,11 @@ def main():
         action="store_true",
         help="Process data and print summary without writing output files",
     )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Use offline mock/fallback responses instead of live network scraping",
+    )
     args = parser.parse_args()
 
     update_rankings(
@@ -919,6 +970,7 @@ def main():
         out_js=args.out_js,
         out_json=args.out_json,
         dry_run=args.dry_run,
+        offline=args.offline,
     )
 
 

@@ -1,8 +1,8 @@
 // Test suite for Data Pipeline & Ingestion
 import { spawnSync } from 'child_process';
-import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('Data Pipeline & Ingestion');
@@ -16,6 +16,7 @@ assert(helpResult.stdout.includes('--values-source'), 'CLI supports --values-sou
 assert(helpResult.stdout.includes('--sheet-source'), 'CLI supports --sheet-source');
 assert(helpResult.stdout.includes('--dry-run'), 'CLI supports --dry-run');
 assert(helpResult.stdout.includes('--out-js'), 'CLI supports --out-js');
+assert(helpResult.stdout.includes('--offline'), 'CLI supports --offline');
 
 // --- Test 2: Local Fixture Ingestion (Offline Testing) ---
 const testFixtureDir = join('tests', 'fixtures');
@@ -55,17 +56,30 @@ writeFileSync(ecrPath, mockEcrCsv, 'utf-8');
 writeFileSync(valPath, mockValuesCsv, 'utf-8');
 writeFileSync(sheetPath, mockSheetCsv, 'utf-8');
 
-const runResult = spawnSync('python', [
-  updateScript,
-  '--ecr-source', ecrPath,
-  '--values-source', valPath,
-  '--sheet-source', sheetPath,
-  '--out-js', outJsPath,
-  '--out-json', outJsonPath
-], { encoding: 'utf-8' });
+const runResult = spawnSync(
+  'python',
+  [
+    updateScript,
+    '--offline',
+    '--ecr-source',
+    ecrPath,
+    '--values-source',
+    valPath,
+    '--sheet-source',
+    sheetPath,
+    '--out-js',
+    outJsPath,
+    '--out-json',
+    outJsonPath,
+  ],
+  { encoding: 'utf-8' },
+);
 
 eq(runResult.status, 0, 'Local fixture update completes successfully');
-assert(runResult.stdout.includes('Total active players merged: 3'), 'Correctly merges 3 fixture players');
+assert(
+  runResult.stdout.includes('Total active players merged: 3'),
+  'Correctly merges 3 fixture players',
+);
 
 assert(existsSync(outJsPath), 'Generated mock_players.js exists');
 assert(existsSync(outJsonPath), 'Generated mock_players.json exists');
@@ -73,7 +87,7 @@ assert(existsSync(outJsonPath), 'Generated mock_players.json exists');
 const generatedJson = JSON.parse(readFileSync(outJsonPath, 'utf-8'));
 eq(generatedJson.players.length, 3, 'Payload contains exactly 3 players');
 
-const jjeff = generatedJson.players.find(p => p.name === 'Justin Jefferson');
+const jjeff = generatedJson.players.find((p) => p.name === 'Justin Jefferson');
 assert(jjeff !== undefined, 'Justin Jefferson is present in output');
 eq(jjeff.pos, 'WR', 'Justin Jefferson pos is WR');
 eq(jjeff.team, 'MIN', 'Justin Jefferson team is MIN');
@@ -89,10 +103,7 @@ try {
   unlinkSync(sheetPath);
   unlinkSync(outJsPath);
   unlinkSync(outJsonPath);
-} catch (e) { }
+} catch (e) {}
 
 const success = finishSuite('Data Pipeline & Ingestion');
-if (!success) {
-  process.exit(1);
-}
-
+process.exit(success ? 0 : 1);

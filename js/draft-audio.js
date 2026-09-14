@@ -1,5 +1,5 @@
 // 🔔 Web Audio API Synthesizer for Fantasy Drafter Turn Chimes
-(function (global) {
+((global) => {
   let audioCtx = null;
 
   function getAudioContext() {

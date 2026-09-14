@@ -1,6 +1,6 @@
 // Test suite for Draft State Serialization, Schema Versioning, and Export/Import
 import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -18,17 +18,41 @@ const sampleState = {
     rounds: 25,
     mySlot: 2,
     mode: '3rr',
-    teamNames: ['Team 1', 'Ken', 'Team 3']
+    teamNames: ['Team 1', 'Ken', 'Team 3'],
   },
   draftLog: [
-    { overall: 1, playerId: 0, customName: null, customPos: null, customTeam: null, customBye: null, mine: false },
-    { overall: 2, playerId: 3, customName: null, customPos: null, customTeam: null, customBye: null, mine: true },
-    { overall: 3, playerId: null, customName: 'Caleb Downs', customPos: 'DB', customTeam: 'OSU', customBye: null, mine: false }
+    {
+      overall: 1,
+      playerId: 0,
+      customName: null,
+      customPos: null,
+      customTeam: null,
+      customBye: null,
+      mine: false,
+    },
+    {
+      overall: 2,
+      playerId: 3,
+      customName: null,
+      customPos: null,
+      customTeam: null,
+      customBye: null,
+      mine: true,
+    },
+    {
+      overall: 3,
+      playerId: null,
+      customName: 'Caleb Downs',
+      customPos: 'DB',
+      customTeam: 'OSU',
+      customBye: null,
+      mine: false,
+    },
   ],
   watchlist: [5, 12, 18],
   queue: [3, 10, 25],
   tradedPicks: { 7: 4, 1: 2 },
-  syncSettings: { sleeperDraftId: '12345678', espnAutoSync: true }
+  syncSettings: { sleeperDraftId: '12345678', espnAutoSync: true },
 };
 
 const serialized = L.serializeDraftState(sampleState);
@@ -58,9 +82,7 @@ eq(desRes.state.tradedPicks, { 7: 4, 1: 2 }, 'Deserialized tradedPicks');
 // 4. deserializeDraftState (Legacy V1 payload migration)
 const legacyV1Payload = {
   settings: { teams: 10, mySlot: 1, mode: 'snake' },
-  draftLog: [
-    { overall: 1, playerId: 5, mine: true }
-  ],
+  draftLog: [{ overall: 1, playerId: 5, mine: true }],
   watchlist: ['5', '10', '15'], // Strings in legacy format
   // queue and tradedPicks were absent in V1
 };
@@ -82,4 +104,3 @@ const success = finishSuite('Draft State Serialization & Schema Versioning');
 if (!success) {
   process.exit(1);
 }
-

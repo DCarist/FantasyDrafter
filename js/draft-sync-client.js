@@ -1,8 +1,8 @@
 // ⚡ Live Draft Synchronization Client for Fantasy Drafter (Sleeper & ESPN)
-(function (global) {
+((global) => {
   const SYNC_CHANNEL_NAME = 'fantasy_drafter_sync';
 
-  let syncState = {
+  const syncState = {
     type: 'off', // 'off' | 'sleeper' | 'espn'
     sleeperTimer: null,
     sleeperStatus: 'Disconnected',
@@ -74,7 +74,7 @@
     initServerSyncRelay();
 
     // 2. Window postMessage Listener (in case opened via window.opener)
-    window.addEventListener('message', function (e) {
+    window.addEventListener('message', (e) => {
       if (e.data && typeof e.data === 'object' && e.data.source === 'espn') {
         handleIncomingSyncEvent(e.data);
       }
@@ -85,7 +85,7 @@
       try {
         if (syncState.channel) syncState.channel.close();
         syncState.channel = new BroadcastChannel(SYNC_CHANNEL_NAME);
-        syncState.channel.onmessage = function (e) {
+        syncState.channel.onmessage = (e) => {
           if (!e.data) return;
           handleIncomingSyncEvent(e.data);
         };
@@ -123,12 +123,12 @@
       }
       serverRelaySource = new EventSource(host + '/api/sync/events');
 
-      serverRelaySource.onopen = function () {
+      serverRelaySource.onopen = () => {
         // SSE connected! Shut down any fallback polling timer
         stopFallbackPolling();
       };
 
-      serverRelaySource.onmessage = function (e) {
+      serverRelaySource.onmessage = (e) => {
         if (!e.data) return;
         stopFallbackPolling();
         try {
@@ -137,7 +137,7 @@
         } catch (err) {}
       };
 
-      serverRelaySource.onerror = function () {
+      serverRelaySource.onerror = () => {
         // SSE disconnected or unavailable: activate fallback polling
         startFallbackPolling();
       };

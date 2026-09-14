@@ -1,7 +1,7 @@
 // ⚡ Fantasy Drafter — ESPN Live Sync Content Script (Manifest V3)
 // Automatically monitors ESPN Live & Mock Draft Rooms and relays picks to Fantasy Drafter on http://127.0.0.1:8517
 
-(function () {
+(() => {
   const RELAY_HOSTS = ['http://127.0.0.1:8517', 'http://localhost:8517'];
   const NFL_TEAMS = new Set([
     'ARI',
@@ -248,7 +248,7 @@
     if (!rawText) return null;
     if (isPlaceholderName(rawText, detectedTeamNames)) return null;
     let clean = rawText
-      .replace(/[\(\)\,\-\/]/g, ' ')
+      .replace(/[(),\-/]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
 
@@ -264,7 +264,7 @@
 
     let pos = '';
     let team = '';
-    let nameParts = [];
+    const nameParts = [];
 
     for (const t of tokens) {
       const u = t.toUpperCase();
@@ -441,7 +441,7 @@
         if (pickM) {
           const pNum = parseInt(pickM[1], 10);
           if (pNum >= 1 && pNum <= 16) {
-            let tName = txt
+            const tName = txt
               .replace(/(?:pick|pk|#)\s*[0-9]{1,2}\b/gi, '')
               .replace(/\b1\.[0-9]{1,2}\b/g, '')
               .replace(

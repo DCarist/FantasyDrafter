@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!tests", "!test-runner.mjs", "!test-draft-logic.mjs"]
+    "includes": ["**"]
   },
   "formatter": {
     "enabled": true,

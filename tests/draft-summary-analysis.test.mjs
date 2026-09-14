@@ -1,6 +1,6 @@
 // Test suite for Post-Draft Summary, Positional Value Rankings, and Superlatives
 import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -10,16 +10,24 @@ printSuiteHeader('Post-Draft Summary, Positional Value & League Rankings');
 
 const mockPlayers = {
   101: { id: 101, name: 'Josh Allen', pos: 'QB', team: 'BUF', bye: 12, adp: 22, score: 95 },
-  102: { id: 102, name: 'Ja\'Marr Chase', pos: 'WR', team: 'CIN', bye: 12, adp: 3, score: 98 },
+  102: { id: 102, name: "Ja'Marr Chase", pos: 'WR', team: 'CIN', bye: 12, adp: 3, score: 98 },
   103: { id: 103, name: 'Bijan Robinson', pos: 'RB', team: 'ATL', bye: 12, adp: 5, score: 96 },
   104: { id: 104, name: 'Brock Bowers', pos: 'TE', team: 'LV', bye: 10, adp: 28, score: 88 },
   105: { id: 105, name: 'Justin Tucker', pos: 'K', team: 'BAL', bye: 14, adp: 140, score: 60 },
-  106: { id: 106, name: 'San Francisco 49ers', pos: 'DST', team: 'SF', bye: 9, adp: 130, score: 65 },
+  106: {
+    id: 106,
+    name: 'San Francisco 49ers',
+    pos: 'DST',
+    team: 'SF',
+    bye: 9,
+    adp: 130,
+    score: 65,
+  },
   107: { id: 107, name: 'CeeDee Lamb', pos: 'WR', team: 'DAL', bye: 7, adp: 2, score: 99 },
-  108: { id: 108, name: 'Breece Hall', pos: 'RB', team: 'NYJ', bye: 12, adp: 6, score: 94 }
+  108: { id: 108, name: 'Breece Hall', pos: 'RB', team: 'NYJ', bye: 12, adp: 6, score: 94 },
 };
 
-const byIdLookup = id => mockPlayers[id] || null;
+const byIdLookup = (id) => mockPlayers[id] || null;
 
 // Scenario: 4 teams, 2 rounds (8 picks total)
 const summary = L.generateDraftSummaryAnalysis({
@@ -34,14 +42,14 @@ const summary = L.generateDraftSummaryAnalysis({
     { overall: 5, playerId: 104 }, // Team 4 (R2 slot 4): Brock Bowers (TE, 88 pts, adp 28 vs pick 5 = steal +23)
     { overall: 6, playerId: 108 }, // Team 3 (R2 slot 3): Breece Hall (RB, 94 pts, adp 6 vs pick 6 = 0)
     { overall: 7, playerId: 105 }, // Team 2 (R2 slot 2): Justin Tucker (K, 60 pts, adp 140 vs pick 7 = steal +133)
-    { overall: 8, playerId: 106 }  // Team 1 (R2 slot 1): 49ers (DST, 65 pts, adp 130 vs pick 8 = steal +122)
+    { overall: 8, playerId: 106 }, // Team 1 (R2 slot 1): 49ers (DST, 65 pts, adp 130 vs pick 8 = steal +122)
   ],
   keepers: [],
   tradedPicks: {},
   teamNames: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
   mySlot: 1,
   playersLookup: byIdLookup,
-  rosterSlots: { qb: 1, rb: 1, wr: 1, te: 1, flex: 0, superflex: 0, k: 1, dst: 1, bench: 0 }
+  rosterSlots: { qb: 1, rb: 1, wr: 1, te: 1, flex: 0, superflex: 0, k: 1, dst: 1, bench: 0 },
 });
 
 assert(summary != null, 'Summary analysis generated');
@@ -61,12 +69,12 @@ eq(tRank1.rank, 1, 'Charlie is rank #1');
 eq(tRank1.totalScore, 192, 'Charlie total score is 192');
 
 // Check positional rankings
-const teamAlpha = summary.teams.find(t => t.teamName === 'Alpha');
+const teamAlpha = summary.teams.find((t) => t.teamName === 'Alpha');
 assert(teamAlpha != null, 'Alpha found in summary');
 eq(teamAlpha.qbRank, 1, 'Alpha is #1 in QB score');
 eq(teamAlpha.qbScore, 95, 'Alpha QB score is 95');
 
-const teamDelta = summary.teams.find(t => t.teamName === 'Delta');
+const teamDelta = summary.teams.find((t) => t.teamName === 'Delta');
 eq(teamDelta.teRank, 1, 'Delta is #1 in TE score');
 eq(teamDelta.teScore, 88, 'Delta TE score is 88');
 
@@ -84,4 +92,3 @@ const success = finishSuite('Post-Draft Summary, Positional Value & League Ranki
 if (!success) {
   process.exit(1);
 }
-

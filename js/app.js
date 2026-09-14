@@ -1,5 +1,5 @@
 // 🚀 Application Entry Point & Event Wiring for Fantasy Drafter
-(function (global) {
+((global) => {
   function bindHeaderControls() {
     const s = global.state.settings;
     if ($('rounds')) $('rounds').value = s.rounds;

@@ -49,4 +49,3 @@ export function finishSuite(suiteName) {
     return true;
   }
 }
-
