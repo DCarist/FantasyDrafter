@@ -9,7 +9,7 @@
     if ($('hdrqb')) $('hdrqb').value = s.qbFormat;
     if ($('teprem')) $('teprem').checked = s.teprem;
     if ($('blend')) $('blend').value = s.blend;
-    if ($('blendval')) $('blendval').textContent = s.blend + '%';
+    if ($('blendval')) $('blendval').textContent = `${s.blend}%`;
     if ($('hidetaken')) $('hidetaken').checked = !!s.hideTaken;
     if ($('hideoutir')) $('hideoutir').checked = !!s.hideOutIR;
   }
@@ -36,7 +36,7 @@
         if (global.state.settings.blend === 0) global.state.settings.blend = 60;
       }
       if ($('blend')) $('blend').value = global.state.settings.blend;
-      if ($('blendval')) $('blendval').textContent = global.state.settings.blend + '%';
+      if ($('blendval')) $('blendval').textContent = `${global.state.settings.blend}%`;
       save();
       render();
     });
@@ -87,7 +87,7 @@
 
     on('blend', 'input', () => {
       global.state.settings.blend = +$('blend').value;
-      if ($('blendval')) $('blendval').textContent = global.state.settings.blend + '%';
+      if ($('blendval')) $('blendval').textContent = `${global.state.settings.blend}%`;
       save();
       renderPool();
     });
@@ -143,7 +143,7 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         const playerOverlay = $('playerOverlay');
-        if (playerOverlay && playerOverlay.classList.contains('show')) {
+        if (playerOverlay?.classList.contains('show')) {
           if (typeof closePlayerModal === 'function') closePlayerModal();
           else closeModal();
         } else {
@@ -211,12 +211,7 @@
         e.preventDefault();
         const modalBox = $('modalbox');
         const overlay = $('overlay');
-        if (
-          overlay &&
-          overlay.classList.contains('show') &&
-          modalBox &&
-          modalBox.classList.contains('modal-board')
-        ) {
+        if (overlay?.classList.contains('show') && modalBox?.classList.contains('modal-board')) {
           closeModal();
         } else {
           openDraftBoardModal();

@@ -92,8 +92,7 @@
   function isExcludedContainer(el) {
     if (!el) return false;
     if (
-      el.closest &&
-      el.closest(
+      el.closest?.(
         '.pickTrain, .picklist, .pick-queue, .roster-limits, .roster-module, [data-testid="clock"], [data-testid="current-pick"], .upcomingPick, .onTheClockPick, .makePickButton, .toastAlertWrapper',
       )
     ) {
@@ -150,19 +149,18 @@
     if (status === 'connected') {
       pill.style.color = '#3ddc84';
       pill.style.borderColor = '#3ddc84';
-      pill.innerHTML = '⚡ <b>Fantasy Drafter:</b> ' + (text || 'Connected & Synced' + countTag);
+      pill.innerHTML = `⚡ <b>Fantasy Drafter:</b> ${text || `Connected & Synced${countTag}`}`;
     } else if (status === 'pick') {
       pill.style.color = '#58a6ff';
       pill.style.borderColor = '#58a6ff';
-      pill.innerHTML = '⚡ <b>Fantasy Drafter:</b> ' + text;
+      pill.innerHTML = `⚡ <b>Fantasy Drafter:</b> ${text}`;
       setTimeout(() => {
         setPillStatus('connected');
       }, 2500);
     } else {
       pill.style.color = '#ffb454';
       pill.style.borderColor = '#ffb454';
-      pill.innerHTML =
-        '⚡ <b>Fantasy Drafter:</b> ' + (text || 'Looking for Fantasy Drafter (127.0.0.1:8517)...');
+      pill.innerHTML = `⚡ <b>Fantasy Drafter:</b> ${text || 'Looking for Fantasy Drafter (127.0.0.1:8517)...'}`;
     }
   }
 
@@ -290,17 +288,17 @@
     const linkEl = el.querySelector(
       'a[href*="/player/"], .player-name, [class*="playerName" i], [class*="athlete" i], .AnchorLink',
     );
-    if (linkEl && linkEl.innerText && linkEl.innerText.trim().length >= 3) {
+    if (linkEl?.innerText && linkEl.innerText.trim().length >= 3) {
       const linkName = linkEl.innerText.trim();
       if (!isPlaceholderName(linkName, detectedTeamNames)) {
         const parsed = parsePlayerText(linkName);
-        if (parsed && parsed.name) {
+        if (parsed?.name) {
           const posEl = el.querySelector('[class*="position" i], [class*="pos" i]');
           const teamEl = el.querySelector('[class*="proTeam" i], [class*="team" i]');
-          if (posEl && posEl.innerText && POS_LIST.includes(posEl.innerText.trim().toUpperCase())) {
+          if (posEl?.innerText && POS_LIST.includes(posEl.innerText.trim().toUpperCase())) {
             parsed.pos = posEl.innerText.trim().toUpperCase();
           }
-          if (teamEl && teamEl.innerText) {
+          if (teamEl?.innerText) {
             const rawT = teamEl.innerText.trim().toUpperCase();
             if (NFL_TEAMS.has(rawT)) {
               parsed.team = TEAM_NORM[rawT] || rawT;
@@ -332,14 +330,14 @@
     const explicitMatch = str.match(/(?:pick|pk|#|p)\s*([0-9]{1,3})\b/i);
     if (explicitMatch) {
       const num = parseInt(explicitMatch[1], 10);
-      if (!isNaN(num) && num > 0 && num <= 600) return num;
+      if (!Number.isNaN(num) && num > 0 && num <= 600) return num;
     }
 
     // 3. Standalone integer
     const directMatch = str.match(/^([0-9]{1,3})\.?$/);
     if (directMatch) {
       const num = parseInt(directMatch[1], 10);
-      if (!isNaN(num) && num > 0 && num <= 600) return num;
+      if (!Number.isNaN(num) && num > 0 && num <= 600) return num;
     }
 
     return null;
@@ -470,7 +468,7 @@
         if (maxSlot >= 8 && maxSlot <= 16) {
           const ptNames = [];
           for (let i = 1; i <= maxSlot; i++) {
-            ptNames.push(round1Map.get(i) || 'Team ' + i);
+            ptNames.push(round1Map.get(i) || `Team ${i}`);
           }
           names = ptNames;
         }
@@ -524,23 +522,21 @@
     if (names.length === 0) {
       try {
         const nextScript = document.getElementById('__NEXT_DATA__');
-        if (nextScript && nextScript.textContent) {
+        if (nextScript?.textContent) {
           const nextJson = JSON.parse(nextScript.textContent);
-          const props = nextJson.props && nextJson.props.pageProps;
+          const props = nextJson.props?.pageProps;
           if (props) {
             const league = props.league || props.draftDetail;
             if (league && Array.isArray(league.teams) && league.teams.length >= 8) {
               names = league.teams.map(
                 (t, idx) =>
                   t.name ||
-                  (t.location
-                    ? (t.location + ' ' + (t.nickname || '')).trim()
-                    : 'Team ' + (idx + 1)),
+                  (t.location ? `${t.location} ${t.nickname || ''}`.trim() : `Team ${idx + 1}`),
               );
             }
           }
         }
-      } catch (e) {}
+      } catch (_e) {}
     }
 
     // If we have detected team names, try matching user's team name if slot was not found yet
@@ -586,7 +582,7 @@
         if (tId && tId >= 1 && tId <= detectedLeagueTeams) {
           mySlot = tId;
         }
-      } catch (e) {}
+      } catch (_e) {}
     }
 
     if (mySlot !== null) {
@@ -615,7 +611,7 @@
             (response) => {
               if (chrome.runtime.lastError) {
                 directFetch(endpoint, payload).then(resolve);
-              } else if (response && response.success) {
+              } else if (response?.success) {
                 if (response.host) activeHost = response.host;
                 resolve(true);
               } else {
@@ -624,7 +620,7 @@
             },
           );
           return;
-        } catch (e) {
+        } catch (_e) {
           directFetch(endpoint, payload).then(resolve);
           return;
         }
@@ -646,7 +642,7 @@
           activeHost = host;
           return true;
         }
-      } catch (err) {}
+      } catch (_err) {}
     }
     return false;
   }
@@ -654,7 +650,7 @@
   function sendPick(pickData) {
     createPill();
     postRelay('/api/sync/pick', pickData);
-    setPillStatus('pick', 'Drafted #' + (pickData.overall || '') + ' ' + pickData.name);
+    setPillStatus('pick', `Drafted #${pickData.overall || ''} ${pickData.name}`);
     console.log('⚡ [Fantasy Drafter ESPN Sync] Pick sent:', pickData);
   }
 
@@ -705,7 +701,7 @@
       const lastEl = cell.querySelector('.playerLastName, [class*="LastName" i]');
       let name = '';
       if (firstEl && lastEl) {
-        name = (firstEl.innerText.trim() + ' ' + lastEl.innerText.trim()).trim();
+        name = `${firstEl.innerText.trim()} ${lastEl.innerText.trim()}`.trim();
       } else {
         const mid = cell.querySelector('.pickCellMiddle, [class*="pickCellMiddle" i]');
         name = mid ? mid.innerText.trim() : '';
@@ -767,7 +763,7 @@
       historyRows.forEach((r) => {
         if (isAvailablePlayerRow(r) || isExcludedContainer(r)) return;
         const parsed = extractPlayerFromElement(r);
-        if (!parsed || !parsed.name || isPlaceholderName(parsed.name, detectedTeamNames)) return;
+        if (!parsed?.name || isPlaceholderName(parsed.name, detectedTeamNames)) return;
 
         const pickEl = r.querySelector(
           '.pick-number, .col-pick, td:first-child, [class*="pickNumber" i], [class*="pick" i], [data-testid*="pick" i]',
@@ -797,7 +793,7 @@
 
     // Send individual events for newly seen picks
     sortedPicks.forEach((p) => {
-      const pickKey = p.overall + '_' + p.name;
+      const pickKey = `${p.overall}_${p.name}`;
       if (!seenPicks.has(pickKey)) {
         seenPicks.add(pickKey);
         sendPick(p);

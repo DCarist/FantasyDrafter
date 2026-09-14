@@ -1,5 +1,5 @@
 // Test suite for Draft Board Grid matrix generation and pick resolution
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);

@@ -29,44 +29,44 @@
       ) {
         return window.location.origin;
       }
-    } catch (e) {}
+    } catch (_e) {}
     return 'http://127.0.0.1:8517';
   }
 
   function reportServerPick(data) {
     const host = getServerHost();
     try {
-      fetch(host + '/api/sync/pick', {
+      fetch(`${host}/api/sync/pick`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
         mode: 'cors',
       }).catch(() => {});
-    } catch (e) {}
+    } catch (_e) {}
   }
 
   function reportServerEvent(message, type) {
     const host = getServerHost();
     try {
-      fetch(host + '/api/sync/log', {
+      fetch(`${host}/api/sync/log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: message, type: type || 'info' }),
         mode: 'cors',
       }).catch(() => {});
-    } catch (e) {}
+    } catch (_e) {}
   }
 
   function reportServerReset() {
     const host = getServerHost();
     try {
-      fetch(host + '/api/sync/reset', {
+      fetch(`${host}/api/sync/reset`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: 'drafter', timestamp: Date.now() }),
         mode: 'cors',
       }).catch(() => {});
-    } catch (e) {}
+    } catch (_e) {}
   }
 
   function initBroadcastSync() {
@@ -121,7 +121,7 @@
         serverRelaySource.close();
         serverRelaySource = null;
       }
-      serverRelaySource = new EventSource(host + '/api/sync/events');
+      serverRelaySource = new EventSource(`${host}/api/sync/events`);
 
       serverRelaySource.onopen = () => {
         // SSE connected! Shut down any fallback polling timer
@@ -134,33 +134,33 @@
         try {
           const data = JSON.parse(e.data);
           handleIncomingSyncEvent(data);
-        } catch (err) {}
+        } catch (_err) {
+          console.warn('[Sync Relay] Malformed SSE message payload:', _err, e.data);
+          reportServerEvent(
+            `⚠️ [Sync Relay] Malformed SSE message: ${_err?.message || _err}`,
+            'warn',
+          );
+        }
       };
 
       serverRelaySource.onerror = () => {
         // SSE disconnected or unavailable: activate fallback polling
         startFallbackPolling();
       };
-    } catch (e) {
+    } catch (_e) {
       startFallbackPolling();
     }
   }
 
   function shouldAutoApplyLeagueInfo(info) {
-    if (!info || !info.teams || !Array.isArray(info.teamNames) || info.teamNames.length === 0)
-      return false;
+    if (!info?.teams || !Array.isArray(info.teamNames) || info.teamNames.length === 0) return false;
     // Auto-apply if the local draft has not started yet (empty log) AND teamNames are still generic/default
-    if (
-      global.state &&
-      global.state.log &&
-      global.state.log.length === 0 &&
-      global.state.settings
-    ) {
+    if (global.state?.log && global.state.log.length === 0 && global.state.settings) {
       const s = global.state.settings;
       const isDefaultNames =
         !s.teamNames ||
         s.teamNames.length === 0 ||
-        s.teamNames.every((n, i) => n === 'Team ' + (i + 1) || n === 'My Team' || n === 'You');
+        s.teamNames.every((n, i) => n === `Team ${i + 1}` || n === 'My Team' || n === 'You');
       if (isDefaultNames || s.teams !== info.teams) {
         return true;
       }
@@ -172,42 +172,50 @@
     const host = window.location.origin.startsWith('http')
       ? window.location.origin
       : 'http://127.0.0.1:8517';
+    let data;
     try {
-      const res = await fetch(host + '/api/sync/poll?since=' + lastSyncTimestamp, {
+      const res = await fetch(`${host}/api/sync/poll?since=${lastSyncTimestamp}`, {
         cache: 'no-store',
       });
       if (!res.ok) return;
-      const data = await res.json();
-      if (data.serverTime) lastSyncTimestamp = data.serverTime;
+      data = await res.json();
+    } catch (_err) {
+      // Server might be running on file:// without local backend or offline
+      return;
+    }
 
-      if (data.leagueInfo && data.leagueInfo.teams) {
-        const wasNew =
-          !syncState.espnLeagueInfo ||
-          syncState.espnLeagueInfo.teams !== data.leagueInfo.teams ||
-          syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
-        syncState.espnLeagueInfo = data.leagueInfo;
-        if (wasNew && shouldAutoApplyLeagueInfo(data.leagueInfo)) {
-          applyEspnLeagueSetup(true);
-        }
+    if (!data) return;
+    if (data.serverTime) lastSyncTimestamp = data.serverTime;
+
+    if (data.leagueInfo?.teams) {
+      const wasNew =
+        !syncState.espnLeagueInfo ||
+        syncState.espnLeagueInfo.teams !== data.leagueInfo.teams ||
+        syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
+      syncState.espnLeagueInfo = data.leagueInfo;
+      if (wasNew && shouldAutoApplyLeagueInfo(data.leagueInfo)) {
+        applyEspnLeagueSetup(true);
       }
+    }
 
-      if (data.espnConnected) {
-        syncState.espnConnected = true;
-        syncState.espnLastSeen = data.lastSeen || Date.now();
-        if (syncState.type !== 'sleeper') {
-          syncState.type = 'espn';
-        }
+    if (data.espnConnected) {
+      syncState.espnConnected = true;
+      syncState.espnLastSeen = data.lastSeen || Date.now();
+      if (syncState.type !== 'sleeper') {
+        syncState.type = 'espn';
+      }
+      updateSyncBadge();
+      updateEspnStatusBox();
+    } else {
+      if (syncState.type === 'espn' && Date.now() - (syncState.espnLastSeen || 0) > 30000) {
+        syncState.espnConnected = false;
+        syncState.type = 'off';
         updateSyncBadge();
         updateEspnStatusBox();
-      } else {
-        if (syncState.type === 'espn' && Date.now() - (syncState.espnLastSeen || 0) > 30000) {
-          syncState.espnConnected = false;
-          syncState.type = 'off';
-          updateSyncBadge();
-          updateEspnStatusBox();
-        }
       }
+    }
 
+    try {
       if (Array.isArray(data.snapshot) && data.snapshot.length > 0) {
         handleSnapshotPicksEvent(data.snapshot, data.leagueInfo);
       } else if (Array.isArray(data.picks)) {
@@ -215,14 +223,18 @@
           handleRemotePickEvent(p);
         }
       }
-    } catch (err) {
-      // Server might be running on file:// without local backend or offline
+    } catch (_err) {
+      console.error('[Sync Client] Failed to process remote picks:', _err);
+      reportServerEvent(
+        `❌ [Sync Client] Remote pick handling failed: ${_err?.message || _err}`,
+        'error',
+      );
     }
   }
 
   function handleIncomingSyncEvent(data) {
     if (!data) return;
-    if (data.leagueInfo && data.leagueInfo.teams) {
+    if (data.leagueInfo?.teams) {
       const wasNew =
         !syncState.espnLeagueInfo ||
         syncState.espnLeagueInfo.teams !== data.leagueInfo.teams ||
@@ -268,10 +280,10 @@
     if (!global.state || !Array.isArray(global.state.log)) return;
 
     const draftContext = {
-      teams: (leagueInfo && leagueInfo.teams) || global.state.settings.teams || 12,
-      slot: (leagueInfo && leagueInfo.mySlot) || global.state.settings.slot || 1,
+      teams: leagueInfo?.teams || global.state.settings.teams || 12,
+      slot: leagueInfo?.mySlot || global.state.settings.slot || 1,
       mode: global.state.settings.mode || '3rr',
-      teamNames: (leagueInfo && leagueInfo.teamNames) || global.state.settings.teamNames || null,
+      teamNames: leagueInfo?.teamNames || global.state.settings.teamNames || null,
     };
 
     const result = reconcileDraftLog(global.state.log, remotePicks, global.PLAYERS, draftContext);
@@ -303,7 +315,7 @@
   }
 
   function handleRemotePickEvent(pickData) {
-    if (!pickData || !pickData.name) return;
+    if (!pickData?.name) return;
     const current = currentPick();
     let overall = pickData.overall;
 
@@ -382,8 +394,7 @@
 
     if (syncState.type === 'sleeper' && syncState.sleeperTimer) {
       badge.className = 'sync-badge sleeper';
-      badge.innerHTML =
-        '<span class="dot-pulse"></span> Sleeper (#' + global.state.log.length + ')';
+      badge.innerHTML = `<span class="dot-pulse"></span> Sleeper (#${global.state.log.length})`;
     } else if (syncState.type === 'espn' && syncState.espnConnected) {
       badge.className = 'sync-badge espn';
       badge.innerHTML = '<span class="dot-pulse"></span> ESPN Live';
@@ -400,7 +411,7 @@
     if (!input) return '';
     const str = String(input).trim();
     const urlMatch = str.match(/drafts?(?:\/nfl)?\/([a-zA-Z0-9_-]+)/i);
-    if (urlMatch && urlMatch[1]) return urlMatch[1];
+    if (urlMatch?.[1]) return urlMatch[1];
     return str;
   }
 
@@ -427,9 +438,9 @@
 
     try {
       const draftRes = await fetch(
-        'https://api.sleeper.app/v1/draft/' + encodeURIComponent(draftId),
+        `https://api.sleeper.app/v1/draft/${encodeURIComponent(draftId)}`,
       );
-      if (!draftRes.ok) throw new Error('Sleeper draft not found (Status ' + draftRes.status + ')');
+      if (!draftRes.ok) throw new Error(`Sleeper draft not found (Status ${draftRes.status})`);
       const draftData = await draftRes.json();
 
       let usersData = [];
@@ -441,7 +452,7 @@
               '/users',
           );
           if (usersRes.ok) usersData = await usersRes.json();
-        } catch (uErr) {
+        } catch (_uErr) {
           /* users fetch optional */
         }
       }
@@ -499,13 +510,11 @@
     const userInput = document.getElementById('sync_sleeper_username');
     if (!draftIdInput && !userInput) return;
 
-    const rawId = draftIdInput
-      ? draftIdInput.value
-      : (global.state && global.state.settings && global.state.settings.sleeperDraftId) || '';
+    const rawId = draftIdInput ? draftIdInput.value : global.state?.settings?.sleeperDraftId || '';
     const draftId = extractSleeperDraftId(rawId);
     const username = userInput
       ? userInput.value.trim()
-      : (global.state && global.state.settings && global.state.settings.sleeperUsername) || '';
+      : global.state?.settings?.sleeperUsername || '';
 
     if (!global.state) return;
     if (!global.state.settings) global.state.settings = {};
@@ -545,7 +554,7 @@
           '<span style="color:var(--good); font-weight:600">✅ Sleeper settings saved!</span>';
       }
       setTimeout(() => {
-        if (statusEl && statusEl.innerHTML.includes('saved')) statusEl.innerHTML = '';
+        if (statusEl?.innerHTML.includes('saved')) statusEl.innerHTML = '';
       }, 3500);
     }
   }
@@ -565,7 +574,7 @@
     syncState.sleeperPicksCount = 0;
     syncState.sleeperLastPoll = null;
 
-    if (global.state && global.state.settings) {
+    if (global.state?.settings) {
       global.state.settings.sleeperDraftId = '';
       global.state.settings.sleeperUsername = '';
     }
@@ -598,17 +607,17 @@
 
     try {
       const res = await fetch(
-        'https://api.sleeper.app/v1/draft/' + encodeURIComponent(draftId) + '/picks',
+        `https://api.sleeper.app/v1/draft/${encodeURIComponent(draftId)}/picks`,
       );
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const picks = await res.json();
 
       if (Array.isArray(picks)) {
         syncState.sleeperPicksCount = picks.length;
         syncState.sleeperLastPoll = new Date().toLocaleTimeString();
-        syncState.sleeperStatus = 'Active (' + picks.length + ' picks)';
+        syncState.sleeperStatus = `Active (${picks.length} picks)`;
 
-        const prevLen = global.state.log.length;
+        const _prevLen = global.state.log.length;
         const rec = reconcileDraftLog(
           global.state.log,
           picks,
@@ -650,7 +659,7 @@
       updateSyncBadge();
       updateSleeperStatusBox();
     } catch (err) {
-      syncState.sleeperStatus = 'Polling error: ' + err.message;
+      syncState.sleeperStatus = `Polling error: ${err.message}`;
       updateSleeperStatusBox();
     }
   }
@@ -658,13 +667,9 @@
   function toggleSleeperSync() {
     const draftIdInput = document.getElementById('sync_sleeper_draft_id');
     const userInput = document.getElementById('sync_sleeper_username');
-    const rawId = draftIdInput
-      ? draftIdInput.value
-      : global.state && global.state.settings && global.state.settings.sleeperDraftId;
+    const rawId = draftIdInput ? draftIdInput.value : global.state?.settings?.sleeperDraftId;
     const draftId = extractSleeperDraftId(rawId);
-    const username = userInput
-      ? userInput.value.trim()
-      : global.state && global.state.settings && global.state.settings.sleeperUsername;
+    const username = userInput ? userInput.value.trim() : global.state?.settings?.sleeperUsername;
 
     if (!draftId) {
       disconnectSleeperDraft();
@@ -703,8 +708,7 @@
     syncState.sleeperPicksCount = 0;
     syncState.sleeperLastPoll = null;
 
-    const sleeperDraftId =
-      global.state && global.state.settings && global.state.settings.sleeperDraftId;
+    const sleeperDraftId = global.state?.settings?.sleeperDraftId;
     if (sleeperDraftId) {
       syncState.type = 'sleeper';
       syncState.sleeperStatus = 'Connecting...';
@@ -751,7 +755,7 @@
     if (box) {
       const isConn = syncState.espnConnected && Date.now() - (syncState.espnLastSeen || 0) < 30000;
       let leagueInfoHtml = '';
-      if (syncState.espnLeagueInfo && syncState.espnLeagueInfo.teams) {
+      if (syncState.espnLeagueInfo?.teams) {
         const info = syncState.espnLeagueInfo;
         const mySlotTxt = info.mySlot ? ` · Your Slot: <b>#${info.mySlot}</b>` : '';
         leagueInfoHtml =
@@ -765,7 +769,7 @@
           '<button type="button" class="act primary" onclick="applyEspnLeagueSetup()" style="font-size:12px; padding:4px 10px">📥 Apply ESPN League Setup (' +
           info.teams +
           ' Teams' +
-          (info.mySlot ? ' & Slot #' + info.mySlot : '') +
+          (info.mySlot ? ` & Slot #${info.mySlot}` : '') +
           ')</button>' +
           '</div>' +
           '</div>';
@@ -787,7 +791,7 @@
 
   function applyEspnLeagueSetup(silent = false) {
     const info = syncState.espnLeagueInfo;
-    if (!info || !info.teams) {
+    if (!info?.teams) {
       if (!silent)
         alert('No ESPN league info received yet. Open or re-sync your ESPN draft room tab first.');
       return;
@@ -817,9 +821,9 @@
   function switchSyncTab(tabName) {
     syncState.activeTab = tabName;
     for (const t of ['sleeper', 'espn', 'settings']) {
-      const btn = document.getElementById('sync_tab_' + t);
-      const sec = document.getElementById('sync_sec_' + t);
-      if (btn) btn.className = 'tab' + (t === tabName ? ' on' : '');
+      const btn = document.getElementById(`sync_tab_${t}`);
+      const sec = document.getElementById(`sync_sec_${t}`);
+      if (btn) btn.className = `tab${t === tabName ? ' on' : ''}`;
       if (sec) sec.style.display = t === tabName ? 'block' : 'none';
     }
   }
@@ -852,12 +856,12 @@
   async function sendEspnPing() {
     const host = getServerHost();
     try {
-      await fetch(host + '/api/sync/ping', { method: 'POST', mode: 'cors' });
-    } catch (e) {}
+      await fetch(`${host}/api/sync/ping`, { method: 'POST', mode: 'cors' });
+    } catch (_e) {}
     if (syncState.channel) {
       try {
         syncState.channel.postMessage({ type: 'PING', source: 'drafter' });
-      } catch (e) {}
+      } catch (_e) {}
     }
     setTimeout(pollServerSync, 200);
   }

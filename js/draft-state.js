@@ -71,7 +71,7 @@
           }
         }
       }
-    } catch (e) {}
+    } catch (_e) {}
 
     // Clean migration from legacy single-league STORE_KEY
     let legacyState = null;
@@ -82,13 +82,12 @@
           legacyState = JSON.parse(legacyRaw);
         }
       }
-    } catch (e) {}
+    } catch (_e) {}
 
     const defaultLeagueId = 'league_default';
-    const defaultLeagueName =
-      legacyState && legacyState.settings && legacyState.settings.leagueName
-        ? legacyState.settings.leagueName
-        : 'Your Draft Board';
+    const defaultLeagueName = legacyState?.settings?.leagueName
+      ? legacyState.settings.leagueName
+      : 'Your Draft Board';
 
     const m =
       typeof createDefaultLeagueManifest === 'function'
@@ -113,7 +112,7 @@
           localStorage.setItem(LEAGUE_STORE_PREFIX + defaultLeagueId, JSON.stringify(legacyState));
         }
       }
-    } catch (e) {}
+    } catch (_e) {}
 
     return m;
   }
@@ -123,19 +122,14 @@
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(LEAGUES_MANIFEST_KEY, JSON.stringify(manifest));
       }
-    } catch (e) {}
+    } catch (_e) {
+      if (_e?.name === 'QuotaExceededError') {
+        console.error('[DraftState] LocalStorage quota exceeded when saving leagues manifest:', _e);
+      }
+    }
   }
 
   const manifest = loadManifest();
-
-  // Raw players dataset reference
-  const getPlayersList = () => {
-    const raw =
-      typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players
-        ? window.DRAFT_DATA.players
-        : [];
-    return raw.map((p, i) => Object.assign({ id: i }, p));
-  };
 
   const PLAYERS =
     typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players
@@ -153,12 +147,7 @@
     ) {
       return Object.assign({ id: id }, window.DRAFT_DATA.players[id]);
     }
-    if (
-      typeof state !== 'undefined' &&
-      state &&
-      state.playerSnapshots &&
-      state.playerSnapshots[id]
-    ) {
+    if (state?.playerSnapshots?.[id]) {
       const snap = state.playerSnapshots[id];
       return Object.assign({ id: id }, snap);
     }
@@ -170,8 +159,8 @@
     posFilter: 'ALL',
     search: '',
     sort: 'score',
-    hideTaken: !!(state && state.settings && state.settings.hideTaken),
-    hideOutIR: !!(state && state.settings && state.settings.hideOutIR),
+    hideTaken: !!state?.settings?.hideTaken,
+    hideOutIR: !!state?.settings?.hideOutIR,
   };
   const viewingRosterSlot = null; // null = follow on-the-clock slot
 
@@ -207,7 +196,7 @@
       if (existing && String(existing).trim()) {
         names.push(String(existing).trim());
       } else {
-        names.push(i === s.settings.slot ? 'My Team' : 'Team ' + i);
+        names.push(i === s.settings.slot ? 'My Team' : `Team ${i}`);
       }
     }
     s.settings.teamNames = names;
@@ -267,7 +256,7 @@
         pBye = PLAYERS[pId].bye != null ? PLAYERS[pId].bye : null;
       }
       validKeepers.push({
-        id: k.id || 'k_' + Math.random().toString(36).substr(2, 9),
+        id: k.id || `k_${Math.random().toString(36).substr(2, 9)}`,
         slot: Math.max(1, Math.min(tCount, parseInt(k.slot, 10) || 1)),
         round: Math.max(1, Math.min(s.settings.rounds || 50, parseInt(k.round, 10) || 1)),
         playerId: pId,
@@ -353,13 +342,13 @@
     }
     Object.assign(state, targetState);
     normalizeState(state);
-    ui.hideTaken = !!(state && state.settings && state.settings.hideTaken);
-    ui.hideOutIR = !!(state && state.settings && state.settings.hideOutIR);
+    ui.hideTaken = !!state?.settings?.hideTaken;
+    ui.hideOutIR = !!state?.settings?.hideOutIR;
     return state;
   }
 
   function load(leagueId) {
-    const targetId = leagueId || (manifest && manifest.activeLeagueId) || 'league_default';
+    const targetId = leagueId || manifest?.activeLeagueId || 'league_default';
     let s = null;
     try {
       if (typeof localStorage !== 'undefined') {
@@ -368,7 +357,7 @@
           s = JSON.parse(raw);
         }
       }
-    } catch (e) {
+    } catch (_e) {
       /* fallback on error */
     }
     const norm = normalizeState(
@@ -402,7 +391,7 @@
           if (typeof localStorage !== 'undefined') {
             localStorage.setItem(LEAGUE_STORE_PREFIX + targetId, JSON.stringify(norm));
           }
-        } catch (e) {}
+        } catch (_e) {}
       }
     }
     return norm;
@@ -410,12 +399,19 @@
 
   function save() {
     normalizeState(state);
-    const activeId = (manifest && manifest.activeLeagueId) || 'league_default';
+    const activeId = manifest?.activeLeagueId || 'league_default';
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(LEAGUE_STORE_PREFIX + activeId, JSON.stringify(state));
       }
-    } catch (e) {}
+    } catch (_e) {
+      if (_e?.name === 'QuotaExceededError') {
+        console.error(
+          `[DraftState] Browser localStorage quota exceeded. State changes could not be saved to disk (${activeId}):`,
+          _e,
+        );
+      }
+    }
 
     if (manifest && Array.isArray(manifest.leagues)) {
       const cur = manifest.leagues.find((l) => l.id === activeId);
@@ -432,8 +428,8 @@
 
   function getTeamName(slot) {
     const s = state.settings;
-    const name = s.teamNames && s.teamNames[slot - 1];
-    return name && name.trim() ? name.trim() : slot === s.slot ? 'My Team' : 'Team ' + slot;
+    const name = s.teamNames?.[slot - 1];
+    return name?.trim() ? name.trim() : slot === s.slot ? 'My Team' : `Team ${slot}`;
   }
 
   function takenMap() {
@@ -511,7 +507,7 @@
       );
       const p = keeper.playerId != null ? byId(keeper.playerId) || {} : {};
       const posVal = keeper.customPos || keeper.playerPos || p.pos || 'WR';
-      const nameVal = keeper.customName || keeper.playerName || p.name || 'Keeper ' + posVal;
+      const nameVal = keeper.customName || keeper.playerName || p.name || `Keeper ${posVal}`;
       const teamVal = keeper.customTeam || keeper.playerTeam || p.team || '';
       const byeVal =
         keeper.customBye != null
@@ -544,7 +540,7 @@
       sendServerPick({
         source: 'keeper',
         overall: pick,
-        name: nameVal + ' [Keeper]',
+        name: `${nameVal} [Keeper]`,
         pos: posVal,
         team: teamVal,
         by: who.name + (who.isMe ? ' (You)' : ''),
@@ -574,7 +570,7 @@
 
     const p = candidate.playerId != null ? byId(candidate.playerId) : null;
     const newKeeper = {
-      id: candidate.id || 'k_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id: candidate.id || `k_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       slot: parseInt(candidate.slot, 10) || 1,
       round: parseInt(candidate.round, 10) || 1,
       playerId: candidate.playerId != null ? parseInt(candidate.playerId, 10) : null,
@@ -672,7 +668,7 @@
     sendServerPick({
       source: 'manual',
       overall: pick,
-      name: p.name || 'Player #' + id,
+      name: p.name || `Player #${id}`,
       pos: p.pos || '',
       team: p.team || '',
       by: who.name + (who.isMe ? ' (You)' : ''),
@@ -682,11 +678,11 @@
   function rerenderBoardModalIfOpen() {
     if (typeof document !== 'undefined') {
       const modal = document.getElementById('modalbox');
-      if (modal && modal.classList.contains('modal-board')) {
+      if (modal?.classList.contains('modal-board')) {
         const fn =
           typeof renderDraftBoardModalView === 'function'
             ? renderDraftBoardModalView
-            : typeof global !== 'undefined' && global.renderDraftBoardModalView;
+            : global?.renderDraftBoardModalView;
         if (typeof fn === 'function') fn();
       }
     }
@@ -699,7 +695,7 @@
     }
     if (id != null) {
       const p = byId(id);
-      if (p && p.name) {
+      if (p?.name) {
         state.playerSnapshots = state.playerSnapshots || {};
         state.playerSnapshots[id] = { name: p.name, pos: p.pos, team: p.team, bye: p.bye };
       }
@@ -778,14 +774,15 @@
       state.tradedPicks,
     );
     const posVal = (pos || 'WR').toUpperCase();
-    const nameVal =
-      name && name.trim() ? name.trim() : 'Unlisted ' + (posVal !== 'OTHER' ? posVal : 'Player');
+    const nameVal = name?.trim()
+      ? name.trim()
+      : `Unlisted ${posVal !== 'OTHER' ? posVal : 'Player'}`;
     state.log.push({
       overall: pick,
       playerId: null,
       customName: nameVal,
       customPos: posVal,
-      customTeam: team && team.trim() ? team.trim().toUpperCase() : null,
+      customTeam: team?.trim() ? team.trim().toUpperCase() : null,
       customBye: bye && bye >= 1 && bye <= 18 ? bye : null,
       mine: who.isMe,
     });
@@ -799,7 +796,7 @@
       overall: pick,
       name: nameVal,
       pos: posVal,
-      team: team && team.trim() ? team.trim().toUpperCase() : '',
+      team: team?.trim() ? team.trim().toUpperCase() : '',
       by: who.name + (who.isMe ? ' (You)' : ''),
     });
   }
@@ -846,7 +843,7 @@
         );
         const p = keeper.playerId != null ? byId(keeper.playerId) || {} : {};
         const posVal = keeper.customPos || keeper.playerPos || p.pos || 'WR';
-        const nameVal = keeper.customName || keeper.playerName || p.name || 'Keeper ' + posVal;
+        const nameVal = keeper.customName || keeper.playerName || p.name || `Keeper ${posVal}`;
         const teamVal = keeper.customTeam || keeper.playerTeam || p.team || null;
         const byeVal =
           keeper.customBye != null
@@ -935,7 +932,7 @@
             teams = parsed.settings?.teams || 12;
           }
         }
-      } catch (e) {}
+      } catch (_e) {}
       return {
         id: l.id,
         name: l.name,
@@ -949,7 +946,7 @@
   }
 
   function getActiveLeagueId() {
-    return (manifest && manifest.activeLeagueId) || 'league_default';
+    return manifest?.activeLeagueId || 'league_default';
   }
 
   function switchLeague(leagueId) {
@@ -957,7 +954,7 @@
     if (!manifest || !Array.isArray(manifest.leagues))
       return { ok: false, error: 'No leagues available' };
     const target = manifest.leagues.find((l) => l.id === leagueId);
-    if (!target) return { ok: false, error: 'League not found: ' + leagueId };
+    if (!target) return { ok: false, error: `League not found: ${leagueId}` };
 
     // Save active state before switching
     save();
@@ -979,21 +976,21 @@
     if (typeof document !== 'undefined') {
       const titleEl = document.getElementById('leaguetitle');
       if (titleEl) {
-        titleEl.textContent = '🏈 ' + (state.settings.leagueName || 'Your Draft Board');
+        titleEl.textContent = `🏈 ${state.settings.leagueName || 'Your Draft Board'}`;
       }
-      document.title = (state.settings.leagueName || 'Fantasy Draft Board') + ' — Draft Board';
+      document.title = `${state.settings.leagueName || 'Fantasy Draft Board'} — Draft Board`;
     }
     if (typeof global.render === 'function') {
       global.render();
     }
-    sendServerEvent('🔄 Switched to league: ' + (state.settings.leagueName || target.name), 'info');
+    sendServerEvent(`🔄 Switched to league: ${state.settings.leagueName || target.name}`, 'info');
     return { ok: true, activeId: leagueId, name: state.settings.leagueName || target.name };
   }
 
   function createNewLeague(leagueName) {
     save();
-    const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-    const defaultName = 'League ' + (manifest.leagues.length + 1);
+    const newId = `league_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const defaultName = `League ${manifest.leagues.length + 1}`;
     const finalName =
       leagueName && String(leagueName).trim() ? String(leagueName).trim() : defaultName;
 
@@ -1015,7 +1012,7 @@
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(LEAGUE_STORE_PREFIX + newId, JSON.stringify(freshState));
       }
-    } catch (e) {}
+    } catch (_e) {}
 
     manifest.leagues.push({
       id: newId,
@@ -1033,18 +1030,18 @@
     if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
     if (typeof document !== 'undefined') {
       const titleEl = document.getElementById('leaguetitle');
-      if (titleEl) titleEl.textContent = '🏈 ' + finalName;
-      document.title = finalName + ' — Draft Board';
+      if (titleEl) titleEl.textContent = `🏈 ${finalName}`;
+      document.title = `${finalName} — Draft Board`;
     }
     if (typeof global.render === 'function') global.render();
-    sendServerEvent('➕ Created new league: ' + finalName, 'info');
+    sendServerEvent(`➕ Created new league: ${finalName}`, 'info');
     return { ok: true, id: newId, name: finalName };
   }
 
   function duplicateCurrentLeague(newLeagueName) {
     save();
-    const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-    const defaultName = (state.settings.leagueName || 'League') + ' (Copy)';
+    const newId = `league_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    const defaultName = `${state.settings.leagueName || 'League'} (Copy)`;
     const finalName =
       newLeagueName && String(newLeagueName).trim() ? String(newLeagueName).trim() : defaultName;
 
@@ -1089,7 +1086,7 @@
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(LEAGUE_STORE_PREFIX + newId, JSON.stringify(clonedState));
       }
-    } catch (e) {}
+    } catch (_e) {}
 
     manifest.leagues.push({
       id: newId,
@@ -1107,11 +1104,11 @@
     if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
     if (typeof document !== 'undefined') {
       const titleEl = document.getElementById('leaguetitle');
-      if (titleEl) titleEl.textContent = '🏈 ' + finalName;
-      document.title = finalName + ' — Draft Board';
+      if (titleEl) titleEl.textContent = `🏈 ${finalName}`;
+      document.title = `${finalName} — Draft Board`;
     }
     if (typeof global.render === 'function') global.render();
-    sendServerEvent('📋 Duplicated league settings to: ' + finalName, 'info');
+    sendServerEvent(`📋 Duplicated league settings to: ${finalName}`, 'info');
     return { ok: true, id: newId, name: finalName };
   }
 
@@ -1134,7 +1131,7 @@
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem(LEAGUE_STORE_PREFIX + leagueId);
       }
-    } catch (e) {}
+    } catch (_e) {}
 
     if (isCurrent) {
       const nextLeague = manifest.leagues[0];
@@ -1149,15 +1146,14 @@
       if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
       if (typeof document !== 'undefined') {
         const titleEl = document.getElementById('leaguetitle');
-        if (titleEl)
-          titleEl.textContent = '🏈 ' + (state.settings.leagueName || 'Your Draft Board');
-        document.title = (state.settings.leagueName || 'Fantasy Draft Board') + ' — Draft Board';
+        if (titleEl) titleEl.textContent = `🏈 ${state.settings.leagueName || 'Your Draft Board'}`;
+        document.title = `${state.settings.leagueName || 'Fantasy Draft Board'} — Draft Board`;
       }
       if (typeof global.render === 'function') global.render();
     } else {
       saveManifest();
     }
-    sendServerEvent('🗑️ Deleted league: ' + deletedName, 'info');
+    sendServerEvent(`🗑️ Deleted league: ${deletedName}`, 'info');
     return { ok: true };
   }
 
@@ -1175,7 +1171,7 @@
             const raw = localStorage.getItem(LEAGUE_STORE_PREFIX + l.id);
             if (raw) leaguesMap[l.id] = JSON.parse(raw);
           }
-        } catch (e) {}
+        } catch (_e) {}
       }
       const serFn =
         typeof serializeLeagueBackup === 'function'
@@ -1263,18 +1259,18 @@
             ok: true,
             type: 'single',
             league: {
-              id: 'league_import_' + Date.now(),
+              id: `league_import_${Date.now()}`,
               name: obj.settings?.leagueName || 'Imported League',
               state: obj,
             },
           };
         }
       } catch (err) {
-        return { ok: false, error: 'Invalid JSON format: ' + err.message };
+        return { ok: false, error: `Invalid JSON format: ${err.message}` };
       }
     }
 
-    if (!parsed || !parsed.ok) {
+    if (!parsed?.ok) {
       return { ok: false, error: parsed?.error || 'Unrecognized backup format' };
     }
 
@@ -1292,7 +1288,7 @@
             if (typeof localStorage !== 'undefined') {
               localStorage.setItem(LEAGUE_STORE_PREFIX + item.id, JSON.stringify(statePayload));
             }
-          } catch (e) {}
+          } catch (_e) {}
         }
         if (!manifest.leagues.some((existing) => existing.id === item.id)) {
           manifest.leagues.push(item);
@@ -1312,7 +1308,7 @@
       return { ok: true, type: 'multi', count: incomingManifest.leagues.length };
     } else if (parsed.type === 'single') {
       const l = parsed.league;
-      const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const newId = `league_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const name = l.name || 'Imported League';
       const normalizedState = normalizeState(l.state || {});
       normalizedState.settings.leagueName = name;
@@ -1321,7 +1317,7 @@
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(LEAGUE_STORE_PREFIX + newId, JSON.stringify(normalizedState));
         }
-      } catch (e) {}
+      } catch (_e) {}
 
       manifest.leagues.push({
         id: newId,
@@ -1339,8 +1335,8 @@
       if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
       if (typeof document !== 'undefined') {
         const titleEl = document.getElementById('leaguetitle');
-        if (titleEl) titleEl.textContent = '🏈 ' + name;
-        document.title = name + ' — Draft Board';
+        if (titleEl) titleEl.textContent = `🏈 ${name}`;
+        document.title = `${name} — Draft Board`;
       }
       if (typeof global.render === 'function') global.render();
       return { ok: true, type: 'single', id: newId, name: name };

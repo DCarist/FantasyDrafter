@@ -1,5 +1,5 @@
 // Test suite for Player Pool Table View Alignment & Filter Persistence
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -76,13 +76,13 @@ assert(draftUiCode.includes('colspan="11"'), 'Empty pool message spans all 11 co
 function simulateHeaders(settings) {
   const isRedraft = settings.leagueType === 'redraft';
   const scTag = settings.scoring === 'ppr' ? 'PPR' : settings.scoring === 'std' ? 'STD' : 'Half';
-  const redLabel = 'Red (' + (settings.qbFormat === '1qb' ? scTag : 'SF ' + scTag) + ')';
+  const redLabel = `Red (${settings.qbFormat === '1qb' ? scTag : `SF ${scTag}`})`;
 
   let rank1Title = '',
     rank2Title = '';
   if (isRedraft) {
     rank1Title = redLabel;
-    rank2Title = 'ESPN (' + (settings.scoring === 'std' ? 'STD' : 'PPR') + ')';
+    rank2Title = `ESPN (${settings.scoring === 'std' ? 'STD' : 'PPR'})`;
   } else {
     rank1Title = settings.qbFormat === '1qb' ? 'Dyn 1QB' : 'Dyn SF';
     rank2Title = redLabel;
@@ -253,7 +253,8 @@ assert(
   'normalizeState normalizes hideOutIR',
 );
 assert(
-  stateCode.includes('hideTaken: !!(state && state.settings && state.settings.hideTaken)'),
+  stateCode.includes('hideTaken: !!state?.settings?.hideTaken') ||
+    stateCode.includes('hideTaken: !!(state && state.settings && state.settings.hideTaken)'),
   'ui initializes hideTaken from persisted settings',
 );
 

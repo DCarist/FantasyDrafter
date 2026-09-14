@@ -617,7 +617,7 @@ h2 {
   padding-left: 4px;
 }
 
-.rosteritem .pname {
+div.rosteritem .pname {
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -787,11 +787,11 @@ tr.watch-drag-row:active {
 
 tr.watch-drag-row.dragging {
   opacity: 0.35;
-  background: rgba(79, 143, 247, 0.18) !important;
+  background: rgba(79, 143, 247, 0.18);
 }
 
-tr.watch-drag-row.drag-over td {
-  border-top: 2px solid var(--accent) !important;
+.watch-drag-row.drag-over td {
+  border-top: 2px solid var(--accent);
   box-shadow: inset 0 2px 0 0 var(--accent);
 }
 
@@ -890,11 +890,7 @@ td.clickname:hover .pname {
   color: var(--accent);
 }
 
-.rosteritem .pname {
-  cursor: pointer;
-}
-
-.rosteritem .pname:hover {
+div.rosteritem .pname:hover {
   text-decoration: underline;
   color: var(--accent);
 }
@@ -992,7 +988,7 @@ td.clickname:hover .pname {
   color: var(--dim);
 }
 
-.stat b {
+.modal-panel .stat b {
   display: block;
   color: var(--text);
   font-size: 14px;
@@ -1030,7 +1026,7 @@ td.clickname:hover .pname {
   white-space: nowrap;
 }
 
-.g b {
+.modal-panel .g b {
   color: var(--dim);
   font-weight: 600;
   margin-right: 3px;
@@ -1217,7 +1213,7 @@ td.clickname:hover .pname {
 }
 
 .dc-player.active-player {
-  opacity: 1 !important;
+  opacity: 1;
   border: 1.5px solid var(--accent);
   background: rgba(79, 143, 247, 0.2);
   box-shadow: 0 0 10px rgba(79, 143, 247, 0.35);
@@ -1225,7 +1221,7 @@ td.clickname:hover .pname {
 }
 
 .dc-player.active-player .dc-name {
-  text-decoration: none !important;
+  text-decoration: none;
   color: #fff;
 }
 
@@ -1369,7 +1365,7 @@ td.clickname:hover .pname {
   border-left: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.inj-returndate b {
+.modal-panel .inj-returndate b {
   color: var(--fg);
 }
 
@@ -1421,7 +1417,7 @@ td.clickname:hover .pname {
 }
 
 .setup-field input,
-.setup-field select {
+div.setup-field select {
   background: var(--panel2);
   color: var(--text);
   border: 1px solid var(--border);
@@ -1456,7 +1452,7 @@ td.clickname:hover .pname {
   border: 1px solid var(--good);
 }
 
-.team-table td {
+.modal-panel .team-table td {
   padding: 5px 8px;
   border: none;
   font-size: 13px;
@@ -1691,7 +1687,7 @@ td.clickname:hover .pname {
   border-bottom: 1px solid var(--border);
 }
 
-.keeper-table td {
+.modal-panel .keeper-table td {
   padding: 8px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   vertical-align: middle;
@@ -1702,7 +1698,7 @@ td.clickname:hover .pname {
 }
 
 .keeper-table tr.is-editing {
-  background: rgba(88, 166, 255, 0.12) !important;
+  background: rgba(88, 166, 255, 0.12);
   outline: 1px solid var(--accent);
 }
 
@@ -2290,9 +2286,9 @@ td.clickname:hover .pname {
 }
 
 /* Filter Dimming */
-.board-dimmed {
-  opacity: 0.18 !important;
-  filter: grayscale(85%) !important;
+.board-cell.board-dimmed {
+  opacity: 0.18;
+  filter: grayscale(85%);
   pointer-events: none;
 }
 
@@ -2700,7 +2696,7 @@ td.clickname:hover .pname {
 }
 
 .strategy-watch-card.drag-over {
-  border-top: 2px solid var(--accent) !important;
+  border-top: 2px solid var(--accent);
   box-shadow: inset 0 2px 0 0 var(--accent);
 }
 
@@ -2860,7 +2856,7 @@ td.clickname:hover .pname {
   color: var(--accent);
 }
 
-.summary-table td {
+.modal-panel .summary-table td {
   padding: 8px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   color: var(--text);

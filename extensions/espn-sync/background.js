@@ -4,8 +4,8 @@
 
 const RELAY_HOSTS = ['http://127.0.0.1:8517', 'http://localhost:8517'];
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!message || message.type !== 'RELAY_REQUEST') {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== 'RELAY_REQUEST') {
     return false;
   }
 
@@ -39,7 +39,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (contentType.includes('application/json')) {
             try {
               data = await response.json();
-            } catch (e) {
+            } catch (_e) {
               data = { ok: true };
             }
           } else {

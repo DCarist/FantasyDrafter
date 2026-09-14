@@ -1,5 +1,5 @@
 // Tests for the 3rd-round-reversal pick math. Run: node test-draft-logic.mjs
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const L = require('./draft-logic.js');

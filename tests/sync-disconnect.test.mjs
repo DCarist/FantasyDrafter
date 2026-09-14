@@ -1,5 +1,5 @@
 // Test suite for Sleeper Sync Disconnect, Key/Username Removal, and Auto-Save
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
@@ -67,17 +67,17 @@ global.syncState.type = 'sleeper';
 global.syncState.sleeperTimer = 12345;
 
 // Mock input elements in DOM
-domElements['sync_sleeper_draft_id'] = { value: '1398522574945710080' };
-domElements['sync_sleeper_username'] = { value: 'DougC95' };
-domElements['sleeper_status_box'] = { innerHTML: '' };
-domElements['sleeper_import_msg'] = { innerHTML: '' };
-domElements['sync_badge'] = { className: '', innerHTML: '' };
-domElements['sleeper_toggle_btn'] = { textContent: '', className: '' };
+domElements.sync_sleeper_draft_id = { value: '1398522574945710080' };
+domElements.sync_sleeper_username = { value: 'DougC95' };
+domElements.sleeper_status_box = { innerHTML: '' };
+domElements.sleeper_import_msg = { innerHTML: '' };
+domElements.sync_badge = { className: '', innerHTML: '' };
+domElements.sleeper_toggle_btn = { textContent: '', className: '' };
 
 // --- 3. Removing draft ID and username via saveSleeperSyncSettings() ---
 // User clears out draft ID and username inputs
-domElements['sync_sleeper_draft_id'].value = '';
-domElements['sync_sleeper_username'].value = '';
+domElements.sync_sleeper_draft_id.value = '';
+domElements.sync_sleeper_username.value = '';
 
 global.saveSleeperSyncSettings(true);
 
@@ -94,7 +94,7 @@ eq(
 eq(global.syncState.sleeperTimer, null, 'saveSleeperSyncSettings stops active polling timer');
 eq(global.syncState.type, 'off', 'saveSleeperSyncSettings resets syncState.type to off');
 assert(
-  domElements['sleeper_import_msg'].innerHTML.includes('unlinked'),
+  domElements.sleeper_import_msg.innerHTML.includes('unlinked'),
   'Displays unlinked feedback message',
 );
 
@@ -107,23 +107,15 @@ eq(savedState.settings.sleeperUsername, '', 'Empty sleeperUsername is persisted 
 // Re-populate and activate
 global.state.settings.sleeperDraftId = '987654321';
 global.state.settings.sleeperUsername = 'TestUser';
-domElements['sync_sleeper_draft_id'].value = '987654321';
-domElements['sync_sleeper_username'].value = 'TestUser';
+domElements.sync_sleeper_draft_id.value = '987654321';
+domElements.sync_sleeper_username.value = 'TestUser';
 global.syncState.type = 'sleeper';
 global.syncState.sleeperTimer = 99999;
 
 global.disconnectSleeperDraft();
 
-eq(
-  domElements['sync_sleeper_draft_id'].value,
-  '',
-  'disconnectSleeperDraft clears DOM draftId input',
-);
-eq(
-  domElements['sync_sleeper_username'].value,
-  '',
-  'disconnectSleeperDraft clears DOM username input',
-);
+eq(domElements.sync_sleeper_draft_id.value, '', 'disconnectSleeperDraft clears DOM draftId input');
+eq(domElements.sync_sleeper_username.value, '', 'disconnectSleeperDraft clears DOM username input');
 eq(
   global.state.settings.sleeperDraftId,
   '',
@@ -156,13 +148,13 @@ eq(
 );
 
 // --- 6. toggleSleeperSync with empty draftId unlinks cleanly ---
-domElements['sync_sleeper_draft_id'].value = '';
-domElements['sync_sleeper_username'].value = '';
+domElements.sync_sleeper_draft_id.value = '';
+domElements.sync_sleeper_username.value = '';
 global.state.settings.sleeperDraftId = '';
 global.syncState.sleeperTimer = 77777;
 
 let alerted = false;
-global.alert = (msg) => {
+global.alert = (_msg) => {
   alerted = true;
 };
 

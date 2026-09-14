@@ -1,7 +1,7 @@
 // Test suite for Server Startup & 1-Click Opener
 
-import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -78,7 +78,7 @@ const htmlContent = readFileSync('draft-board.html', 'utf-8');
 const syncClientContent = existsSync('js/draft-sync-client.js')
   ? readFileSync('js/draft-sync-client.js', 'utf-8')
   : '';
-const combinedClient = htmlContent + '\n' + syncClientContent;
+const combinedClient = `${htmlContent}\n${syncClientContent}`;
 assert(htmlContent.includes('rel="icon"'), 'draft-board.html defines favicon link tag');
 assert(
   combinedClient.includes('stopFallbackPolling()'),

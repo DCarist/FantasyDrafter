@@ -1,5 +1,5 @@
 // Test suite validating player data integrity, schemas, byes, and positions
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -71,7 +71,7 @@ assert(
 );
 
 // Verify draft-logic resolver
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');

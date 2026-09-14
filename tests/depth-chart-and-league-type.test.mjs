@@ -1,7 +1,7 @@
 // Test suite for League Type Configuration, Ranking Filtering, and ESPN Depth Charts
 
-import { existsSync, readFileSync } from 'fs';
-import { createRequire } from 'module';
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
@@ -215,7 +215,7 @@ for (const t of nfl32Teams) {
 }
 
 // Sample team inspection: CIN Bengals
-const cin = depthCharts['CIN'];
+const cin = depthCharts.CIN;
 assert(cin.qb.length >= 2, 'CIN has at least 2 QBs');
 eq(cin.qb[0].name, 'Joe Burrow', 'CIN QB1 is Joe Burrow');
 eq(cin.qb[0].rank, 1, 'Joe Burrow rank is 1');
@@ -235,12 +235,12 @@ const chasePlayer = data.players[cin.wr.wr1[0].playerId];
 eq(chasePlayer.name, "Ja'Marr Chase", "CIN WR1 playerId resolves to Ja'Marr Chase player record");
 
 // Sample team inspection: KC Chiefs
-const kc = depthCharts['KC'];
+const kc = depthCharts.KC;
 eq(kc.qb[0].name, 'Patrick Mahomes', 'KC QB1 is Patrick Mahomes');
 assert(kc.qb[0].playerId != null, 'Patrick Mahomes has linked playerId');
 
 // Sample team inspection: SF 49ers
-const sf = depthCharts['SF'];
+const sf = depthCharts.SF;
 eq(sf.qb[0].name, 'Brock Purdy', 'SF QB1 is Brock Purdy');
 
 // --- 4. Availability & Active Player Matching ---

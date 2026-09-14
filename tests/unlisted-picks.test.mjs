@@ -1,6 +1,6 @@
 // Test suite for Unlisted Picks, Custom Positions, and Team Roster Statistics
-import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
@@ -47,15 +47,6 @@ const fallbackPick = {
 const resolvedFallback = L.resolvePickPlayer(fallbackPick, mockPlayers);
 eq(resolvedFallback.name, 'Unlisted TE', 'Generates clean fallback name based on position');
 eq(resolvedFallback.pos, 'TE', 'Preserves position on fallback');
-
-// 4. Roster counting simulation with mixed listed and unlisted picks
-const draftLog = [
-  { overall: 1, playerId: 0, mine: true }, // Slot 1 (Josh Allen, QB)
-  { overall: 2, playerId: 1, mine: false }, // Slot 2 (Bijan Robinson, RB)
-  { overall: 3, playerId: null, customName: 'Carnell Tate', customPos: 'WR' }, // Slot 3 (Unlisted WR)
-  { overall: 4, playerId: null, customPos: 'QB' }, // Slot 4 (Unlisted QB)
-  { overall: 5, playerId: null, customPos: 'TE' }, // Slot 5 (Unlisted TE)
-];
 
 // Verify slot assignments and team pick counts in a 10-team league
 // Verify team field is resolved
@@ -154,9 +145,9 @@ eq(L.formatPickForClipboard(null), '', 'formatPickForClipboard on null returns e
 eq(L.formatPickForClipboard({}), '', 'formatPickForClipboard on empty object returns clean string');
 
 // 6. copyLastDraftPick integration and keyboard shortcut test
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -193,7 +184,7 @@ const mockWindow = {
   document: {
     activeElement: { tagName: 'BODY' },
     createElement: () => ({ style: {}, appendChild: () => {}, removeChild: () => {} }),
-    getElementById: (id) => null,
+    getElementById: (_id) => null,
     body: { appendChild: () => {}, removeChild: () => {} },
   },
   formatPickForClipboard: L.formatPickForClipboard,

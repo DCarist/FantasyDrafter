@@ -1,5 +1,5 @@
 // Test suite for Draft Tier Methodology, Natural Breaks Clustering, and Scarcity Alerts
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);

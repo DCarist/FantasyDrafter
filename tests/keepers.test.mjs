@@ -1,5 +1,5 @@
 // Test suite for Keepers & Pre-Drafted Players feature
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
@@ -328,11 +328,11 @@ const dougAllocation = L.assignRosterSlots(
 const qbStarter = dougAllocation.starters.find((s) => s.slotType === 'QB');
 const teStarter = dougAllocation.starters.find((s) => s.slotType === 'TE');
 assert(
-  qbStarter && qbStarter.player && qbStarter.player.name === 'Josh Allen',
+  qbStarter?.player && qbStarter.player.name === 'Josh Allen',
   'Josh Allen occupies starter QB slot inline',
 );
 assert(
-  teStarter && teStarter.player && teStarter.player.name === 'Brock Bowers',
+  teStarter?.player && teStarter.player.name === 'Brock Bowers',
   'Brock Bowers occupies starter TE slot inline',
 );
 
@@ -345,10 +345,6 @@ assert(
 // --- 12. Next Draft Picks & Countdown with Pending Keepers ---
 // In 12-team snake, Slot 9 picks in rounds 8, 9, 10, 11:
 // Round 8: #88. Round 9: #89 (or #105 depending on direction/traded picks).
-// Let's test with a keeper at pick #89:
-const keeperAt89 = [
-  { id: 'k_josh', slot: 9, round: 8, customName: 'Josh Allen' }, // maps to pick #88
-];
 // Or specifically test getKeeperPicksMap mapping and getNextDraftPicks:
 // In 12-team snake:
 // Slot 9 picks:
@@ -379,7 +375,7 @@ eq(nextDataAt103.distanceToNextDraftPick, 2, 'Distance is 2');
 assert(nextDataAt103.isSoon, 'isSoon becomes true when actual draft selection is within 3 turns');
 
 // --- 13. Keeper Modal UI & Navigation Action Handlers ---
-const fs = require('fs');
+const fs = require('node:fs');
 const draftUiCode = fs.readFileSync('js/draft-ui.js', 'utf-8');
 
 // A. Verify global exports in draft-ui.js
@@ -410,7 +406,6 @@ assert(
 // C. Verify behavioral execution of keeper modal exit handlers in simulated environment
 let maxKeepersUpdated = null;
 let savedCalled = false;
-let renderCalled = false;
 
 const mockElements = {
   keeper_modal_max: { value: '4' },
@@ -448,23 +443,12 @@ const mockGlobal = {
   save: () => {
     savedCalled = true;
   },
-  render: () => {
-    renderCalled = true;
-  },
+  render: () => {},
   ui: { posFilter: 'ALL', search: '', sort: 'score' },
   PLAYERS: [],
 };
 
-const dummyEl = {
-  value: '',
-  textContent: '',
-  innerHTML: '',
-  classList: { add: () => {}, remove: () => {}, contains: () => false },
-  style: {},
-  addEventListener: () => {},
-};
-
-const vm = require('vm');
+const vm = require('node:vm');
 const context = vm.createContext(
   Object.assign({}, L, {
     window: mockGlobal,
@@ -473,9 +457,7 @@ const context = vm.createContext(
     fmtPick: () => '1.01',
     roundForOverall: () => 1,
     teamForOverall: () => ({ slot: 1, name: 'Ken', isMe: true }),
-    getTeamName: (slot) =>
-      (mockGlobal.state.settings.teamNames && mockGlobal.state.settings.teamNames[slot - 1]) ||
-      'Team ' + slot,
+    getTeamName: (slot) => mockGlobal.state.settings.teamNames?.[slot - 1] || `Team ${slot}`,
     picksForSlot: () => [],
     scored: () => [],
     takenMap: () => new Map(),
@@ -535,7 +517,6 @@ assert(
 
 // Test 1: saveAndCloseKeepersModal execution
 savedCalled = false;
-renderCalled = false;
 maxKeepersUpdated = null;
 mockElements.modalbox.className = 'modal modal-wide keepers-modal-box';
 
@@ -606,7 +587,7 @@ const samplePool = [
 ];
 
 const lookup = L.buildPlayerLookupIndex(samplePool);
-assert(lookup && lookup.exactMap, 'buildPlayerLookupIndex builds lookup maps');
+assert(lookup?.exactMap, 'buildPlayerLookupIndex builds lookup maps');
 
 // Exact match
 const matchExact = L.findPlayerInPool(

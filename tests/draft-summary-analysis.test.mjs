@@ -1,5 +1,5 @@
 // Test suite for Post-Draft Summary, Positional Value Rankings, and Superlatives
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);

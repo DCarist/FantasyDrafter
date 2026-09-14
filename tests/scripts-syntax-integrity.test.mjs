@@ -1,8 +1,8 @@
 // Test Suite: Scripts Syntax & Browser Loading Integrity
-import { existsSync, readFileSync } from 'fs';
-import { resolve } from 'path';
-import vm from 'vm';
-import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import vm from 'node:vm';
+import { assert, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 printSuiteHeader('Scripts Syntax & Browser Startup Integrity');
 resetFailures();

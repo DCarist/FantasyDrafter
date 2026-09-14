@@ -280,8 +280,8 @@ function computeFormatScore(player, options) {
 }
 
 // Format-adjusted Prospect / Rookie rank calculation
-function getProspectRank(player, qbFormat, scoringFormat) {
-  if (!player || !player.rookie) return null;
+function getProspectRank(player, qbFormat, _scoringFormat) {
+  if (!player?.rookie) return null;
   const is1QB = qbFormat === '1qb' || qbFormat === '1QB';
   if (is1QB && player.rookieRank != null) {
     return player.rookieRank;
@@ -304,12 +304,12 @@ function formatPlayerStats(p, settings, activeScore) {
   if (isRedraft) {
     rawStats = [
       [
-        'Active Mode (' + qbTag + ' ' + scTag + ')',
-        activeScore != null ? Number(activeScore).toFixed(1) + ' pts' : null,
+        `Active Mode (${qbTag} ${scTag})`,
+        activeScore != null ? `${Number(activeScore).toFixed(1)} pts` : null,
       ],
-      ['Redraft (' + qbTag + ' ' + scTag + ')', activeRed],
+      [`Redraft (${qbTag} ${scTag})`, activeRed],
       ['ADP', p.adp ? Number(p.adp).toFixed(0) : null],
-      ['Age', p.age ? p.age + 'y' : null],
+      ['Age', p.age ? `${p.age}y` : null],
       ['ESPN', p.espn_ppr || p.espn_std],
       ['Yahoo', p.yahoo],
       ['Boris Chen', p.boris_half || p.boris_ppr || p.boris_std],
@@ -318,12 +318,12 @@ function formatPlayerStats(p, settings, activeScore) {
     // Dynasty
     rawStats = [
       [
-        'Active Mode (' + qbTag + ' ' + scTag + ')',
-        activeScore != null ? Number(activeScore).toFixed(1) + ' pts' : null,
+        `Active Mode (${qbTag} ${scTag})`,
+        activeScore != null ? `${Number(activeScore).toFixed(1)} pts` : null,
       ],
-      ['Dynasty ' + qbTag, activeDyn],
-      ['Rookie Draft Rank', p.rookieRank ? '#' + p.rookieRank : p.rookie ? 'Rookie' : null],
-      ['Age', p.age ? p.age + 'y' : null],
+      [`Dynasty ${qbTag}`, activeDyn],
+      ['Rookie Draft Rank', p.rookieRank ? `#${p.rookieRank}` : p.rookie ? 'Rookie' : null],
+      ['Age', p.age ? `${p.age}y` : null],
       ['ADP', p.adp ? Number(p.adp).toFixed(0) : null],
       ['ESPN', p.espn_ppr || p.espn_std],
       ['Yahoo', p.yahoo],
@@ -365,7 +365,7 @@ function computeJenksBreaks(data, numClasses) {
   if (!Array.isArray(data) || data.length === 0) return [];
   const sorted = data
     .slice()
-    .filter((v) => typeof v === 'number' && !isNaN(v))
+    .filter((v) => typeof v === 'number' && !Number.isNaN(v))
     .sort((a, b) => a - b);
   const n = sorted.length;
   if (n === 0) return [];
@@ -542,7 +542,7 @@ function getTierScarcity(players, takenSet, posFilter) {
       tInfo.taken > 0 && tInfo.remaining > 0 && tInfo.remaining <= 2 && tInfo.tier <= 4;
     if (tInfo.isScarcity) {
       const isLast = tInfo.remaining === 1;
-      const label = isLast ? '⚡ Last in T' + tInfo.tier : '⚠️ 2 left in T' + tInfo.tier;
+      const label = isLast ? `⚡ Last in T${tInfo.tier}` : `⚠️ 2 left in T${tInfo.tier}`;
       tInfo.scarcityLabel = label;
 
       // Find available players in this tier to attach row alerts
@@ -572,7 +572,7 @@ function defaultTeams(count, mySlot, myName) {
   const list = [];
   for (let i = 1; i <= count; i++) {
     const isMe = i === mySlot;
-    const name = isMe ? myName || 'My Team' : 'Team ' + i;
+    const name = isMe ? myName || 'My Team' : `Team ${i}`;
     list.push({ slot: i, name: name });
   }
   return list;
@@ -594,8 +594,8 @@ function teamForOverall(overall, teamsCount, mode, teamNames, mySlot, tradedPick
   } else if (teamNames && typeof teamNames === 'object') {
     name = teamNames[effectiveSlot] || teamNames[String(effectiveSlot)];
   }
-  if (!name || !name.trim()) {
-    name = effectiveSlot === mySlot ? 'My Team' : 'Team ' + effectiveSlot;
+  if (!name?.trim()) {
+    name = effectiveSlot === mySlot ? 'My Team' : `Team ${effectiveSlot}`;
   }
   const res = {
     round: round,
@@ -622,7 +622,7 @@ function resolvePickPlayer(entry, players) {
     const pos = (entry.customPos || 'OTHER').toUpperCase();
     const name = entry.customName
       ? entry.customName.trim()
-      : 'Unlisted ' + (pos !== 'OTHER' ? pos : 'Player');
+      : `Unlisted ${pos !== 'OTHER' ? pos : 'Player'}`;
     res = {
       id: entry.playerId != null ? entry.playerId : null,
       name: name,
@@ -664,7 +664,7 @@ function getByeClashStatus(candidate, myRosterPlayers) {
   }
 
   const candBye = parseInt(candidate.bye, 10);
-  if (isNaN(candBye) || candBye <= 0) {
+  if (Number.isNaN(candBye) || candBye <= 0) {
     return { type: 'none', samePos: [], otherPos: [] };
   }
 
@@ -781,7 +781,7 @@ function formatLineupSummary(rosterSlots) {
   add(s.superflex, 'SF');
   add(s.k, 'K');
   add(s.dst, 'D/ST');
-  if (s.bench && s.bench > 0) parts.push(s.bench + ' BN');
+  if (s.bench && s.bench > 0) parts.push(`${s.bench} BN`);
   return parts.join(' · ') || 'No Starters Configured';
 }
 
@@ -883,7 +883,7 @@ function fmtPick(overall, teams) {
   if (!overall || !teams || teams <= 0) return '—';
   const r = Math.ceil(overall / teams);
   const i = overall - (r - 1) * teams;
-  return r + '.' + String(i).padStart(2, '0');
+  return `${r}.${String(i).padStart(2, '0')}`;
 }
 
 // Formats a draft pick entry into clean plain text for clipboard sharing
@@ -900,23 +900,23 @@ function formatPickForClipboard(entry, settings, tradedPicks, players) {
   const tInfo = teamForOverall(entry.overall, teams, mode, teamNames, mySlot, tradedPicks);
   const p = resolvePickPlayer(entry, players) || {};
 
-  const hasPos = Boolean(p.pos && p.pos.trim());
-  const hasTeam = Boolean(p.team && p.team.trim() && p.team !== '—');
+  const hasPos = Boolean(p.pos?.trim());
+  const hasTeam = Boolean(p.team?.trim() && p.team !== '—');
   let posTeamStr = '';
   if (hasPos && hasTeam) {
-    posTeamStr = ' (' + p.pos.trim() + ' · ' + p.team.trim() + ')';
+    posTeamStr = ` (${p.pos.trim()} · ${p.team.trim()})`;
   } else if (hasPos) {
-    posTeamStr = ' (' + p.pos.trim() + ')';
+    posTeamStr = ` (${p.pos.trim()})`;
   } else if (hasTeam) {
-    posTeamStr = ' (' + p.team.trim() + ')';
+    posTeamStr = ` (${p.team.trim()})`;
   }
 
   const isKeeper = Boolean(entry.isKeeper || p.isKeeper);
   const keeperSuffix = isKeeper ? ' [Keeper]' : '';
 
-  const pickNumStr = '#' + entry.overall;
-  const pickRoundStr = teams > 0 ? ' (' + fmtPick(entry.overall, teams) + ')' : '';
-  const teamNameStr = tInfo && tInfo.name ? tInfo.name.trim() : 'Team';
+  const pickNumStr = `#${entry.overall}`;
+  const pickRoundStr = teams > 0 ? ` (${fmtPick(entry.overall, teams)})` : '';
+  const teamNameStr = tInfo?.name ? tInfo.name.trim() : 'Team';
   const playerNameStr = (p.name || entry.customName || 'Player').trim();
 
   return (
@@ -953,9 +953,7 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
       : 'other';
   const clash = p.bye && byBye[p.bye] && byBye[p.bye].length >= 2;
   const clickHandler =
-    p.id != null
-      ? 'showPlayer(' + p.id + ')'
-      : 'showUnlistedPlayer(' + (p.entry ? p.entry.overall : 0) + ')';
+    p.id != null ? `showPlayer(${p.id})` : `showUnlistedPlayer(${p.entry ? p.entry.overall : 0})`;
   const unlistedBadge = p.isUnlisted
     ? ' <span class="meta" style="font-size:10px">(custom)</span>'
     : '';
@@ -965,7 +963,7 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
         p.team +
         '</span>'
       : '';
-  const isKeeper = p.isKeeper || (p.entry && p.entry.isKeeper);
+  const isKeeper = p.isKeeper || p.entry?.isKeeper;
   const keeperBadge = isKeeper
     ? '<span class="keeper-badge" title="Keeper" style="font-size:11px; margin-right:2px">🔒</span>'
     : '';
@@ -975,17 +973,17 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
       fmtPick(p.entry.overall, teamsCount) +
       '</span>'
     : isKeeper
-      ? '<span class="pk" style="margin-left:auto; margin-right:4px">' + keeperBadge + '</span>'
+      ? `<span class="pk" style="margin-left:auto; margin-right:4px">${keeperBadge}</span>`
       : '';
 
   let injTag = '';
-  if (p.injury && p.injury.code) {
+  if (p.injury?.code) {
     const c = p.injury.code;
     const tip =
       (p.injury.status || 'Injured') +
-      (p.injury.type ? ': ' + p.injury.type : '') +
-      (p.injury.detail ? ' (' + p.injury.detail + ')' : '') +
-      (p.injury.returnDate ? ' - Est. Return: ' + p.injury.returnDate : '');
+      (p.injury.type ? `: ${p.injury.type}` : '') +
+      (p.injury.detail ? ` (${p.injury.detail})` : '') +
+      (p.injury.returnDate ? ` - Est. Return: ${p.injury.returnDate}` : '');
     injTag =
       ' <span class="injtag inj-' +
       c.toLowerCase() +
@@ -1020,7 +1018,7 @@ function formatRosterSlotHtml(item, isStarter, teamsCount, byBye = {}) {
     '<span class="bye' +
     (clash ? ' clash' : '') +
     '">' +
-    (p.bye ? 'bye ' + p.bye : '—') +
+    (p.bye ? `bye ${p.bye}` : '—') +
     '</span>' +
     '</div>'
   );
@@ -1033,7 +1031,6 @@ function parseSleeperDraft(draftData, usersData, currentUsernameOrId) {
   const metadata = draftData.metadata || {};
   const settings = draftData.settings || {};
   const draftOrder = draftData.draft_order || {};
-  const slotToRoster = draftData.slot_to_roster_id || {};
 
   const leagueName = metadata.name || 'Sleeper Draft';
   const teamsCount = Math.max(
@@ -1054,13 +1051,13 @@ function parseSleeperDraft(draftData, usersData, currentUsernameOrId) {
   const userMap = new Map();
   if (Array.isArray(usersData)) {
     for (const u of usersData) {
-      if (!u || !u.user_id) continue;
-      const tName = u.metadata && u.metadata.team_name ? u.metadata.team_name.trim() : '';
+      if (!u?.user_id) continue;
+      const tName = u.metadata?.team_name ? u.metadata.team_name.trim() : '';
       const dName = u.display_name ? u.display_name.trim() : '';
       userMap.set(String(u.user_id), {
         userId: String(u.user_id),
         displayName: dName,
-        teamName: tName || dName || 'User ' + u.user_id,
+        teamName: tName || dName || `User ${u.user_id}`,
       });
     }
   }
@@ -1083,10 +1080,10 @@ function parseSleeperDraft(draftData, usersData, currentUsernameOrId) {
       if (uInfo) {
         teamNames.push(uInfo.teamName);
       } else {
-        teamNames.push('Slot ' + s);
+        teamNames.push(`Slot ${s}`);
       }
     } else {
-      teamNames.push('Team ' + s);
+      teamNames.push(`Team ${s}`);
     }
   }
 
@@ -1152,7 +1149,7 @@ function resolveRemotePick(remotePick, playersList, options) {
     const meta = remotePick.metadata;
     const fn = (meta.first_name || '').trim();
     const ln = (meta.last_name || '').trim();
-    rawName = (fn + ' ' + ln).trim() || meta.name || '';
+    rawName = `${fn} ${ln}`.trim() || meta.name || '';
     rawPos = (meta.position || meta.pos || '').trim().toUpperCase();
     rawTeam = (meta.team || '').trim().toUpperCase();
   } else {
@@ -1361,7 +1358,7 @@ function resolveRemotePick(remotePick, playersList, options) {
   // Fallback to Unlisted Pick if not found
   if (unlistedFallback) {
     const finalPos = rawPos || (dstCanonical ? 'DST' : 'OTHER');
-    const finalName = rawName || 'Unlisted ' + (finalPos !== 'OTHER' ? finalPos : 'Player');
+    const finalName = rawName || `Unlisted ${finalPos !== 'OTHER' ? finalPos : 'Player'}`;
     const finalTeam = rawTeam || (dstCanonical ? dstCanonical.team : '—');
     return {
       playerId: null,
@@ -1464,7 +1461,7 @@ function generateDraftPicks(teams, rounds, mode, tradedPicks, teamNames, mySlot)
       originalSlot: natural.slot,
       currentSlot: info.slot,
       originalTeam:
-        (Array.isArray(teamNames) ? teamNames[natural.slot - 1] : null) || 'Team ' + natural.slot,
+        (Array.isArray(teamNames) ? teamNames[natural.slot - 1] : null) || `Team ${natural.slot}`,
       currentTeam: info.name,
       isTraded: !!info.isTraded,
       isMe: !!info.isMe,
@@ -1565,12 +1562,12 @@ function validateKeeperAssignment(
   const tCount = Math.max(2, Math.min(32, parseInt(teams, 10) || 12));
   const rCount = Math.max(1, Math.min(50, parseInt(rounds, 10) || 20));
   const slot = parseInt(candidate.slot, 10);
-  if (isNaN(slot) || slot < 1 || slot > tCount) {
-    return { valid: false, error: 'Invalid team slot ' + candidate.slot };
+  if (Number.isNaN(slot) || slot < 1 || slot > tCount) {
+    return { valid: false, error: `Invalid team slot ${candidate.slot}` };
   }
   const round = parseInt(candidate.round, 10);
-  if (isNaN(round) || round < 1 || round > rCount) {
-    return { valid: false, error: 'Invalid draft round ' + candidate.round };
+  if (Number.isNaN(round) || round < 1 || round > rCount) {
+    return { valid: false, error: `Invalid draft round ${candidate.round}` };
   }
   const hasPlayer =
     candidate.playerId != null ||
@@ -1589,7 +1586,7 @@ function validateKeeperAssignment(
   if (maxLimit != null && currentKeepersForTeam.length >= maxLimit) {
     return {
       valid: false,
-      error: 'Team ' + slot + ' has reached the maximum of ' + maxLimit + ' keepers',
+      error: `Team ${slot} has reached the maximum of ${maxLimit} keepers`,
     };
   }
 
@@ -1597,7 +1594,7 @@ function validateKeeperAssignment(
   for (const k of keepers) {
     if (!k || k.id === candidate.id) continue;
     if (candidate.playerId != null && k.playerId != null && candidate.playerId === k.playerId) {
-      return { valid: false, error: 'Player is already kept by Team ' + k.slot };
+      return { valid: false, error: `Player is already kept by Team ${k.slot}` };
     }
     if (
       candidate.customName &&
@@ -1606,7 +1603,7 @@ function validateKeeperAssignment(
     ) {
       return {
         valid: false,
-        error: 'Player "' + candidate.customName + '" is already kept by Team ' + k.slot,
+        error: `Player "${candidate.customName}" is already kept by Team ${k.slot}`,
       };
     }
   }
@@ -1618,7 +1615,7 @@ function validateKeeperAssignment(
   if (roundPicks.length === 0) {
     return {
       valid: false,
-      error: 'Team ' + slot + ' owns 0 picks in Round ' + round + ' (due to traded picks)',
+      error: `Team ${slot} owns 0 picks in Round ${round} (due to traded picks)`,
     };
   }
 
@@ -1657,7 +1654,7 @@ function getKeeperPicksMap(keepers, teams, rounds, mode, tradedPicks) {
   const grouped = {};
   for (const k of keepers) {
     if (!k || k.slot == null || k.round == null) continue;
-    const key = k.slot + '_' + k.round;
+    const key = `${k.slot}_${k.round}`;
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(k);
   }
@@ -1725,7 +1722,7 @@ function remapKeepersOnSlotSwap(keepers, slotA, slotB) {
   if (!Array.isArray(keepers)) return [];
   const a = parseInt(slotA, 10);
   const b = parseInt(slotB, 10);
-  if (isNaN(a) || isNaN(b) || a === b) return keepers.slice();
+  if (Number.isNaN(a) || Number.isNaN(b) || a === b) return keepers.slice();
 
   return keepers.map((k) => {
     if (!k || typeof k !== 'object') return k;
@@ -1751,7 +1748,7 @@ function buildPlayerLookupIndex(playersList) {
 
   for (let i = 0; i < list.length; i++) {
     const p = list[i];
-    if (!p || !p.name) continue;
+    if (!p?.name) continue;
     const pid = p.id != null ? p.id : i;
     const playerWithId = p.id != null ? p : Object.assign({ id: pid }, p);
 
@@ -1761,10 +1758,10 @@ function buildPlayerLookupIndex(playersList) {
 
     if (normN) {
       if (normP && normT) {
-        exactMap.set(normN + '|' + normP + '|' + normT, playerWithId);
+        exactMap.set(`${normN}|${normP}|${normT}`, playerWithId);
       }
-      if (normP && !namePosMap.has(normN + '|' + normP)) {
-        namePosMap.set(normN + '|' + normP, playerWithId);
+      if (normP && !namePosMap.has(`${normN}|${normP}`)) {
+        namePosMap.set(`${normN}|${normP}`, playerWithId);
       }
       if (!nameOnlyMap.has(normN)) {
         nameOnlyMap.set(normN, playerWithId);
@@ -1807,13 +1804,13 @@ function findPlayerInPool(identity, playersList, lookupIndex) {
   }
 
   // 2. Exact match: (name + pos + team)
-  if (normP && normT && idx.exactMap.has(normN + '|' + normP + '|' + normT)) {
-    return idx.exactMap.get(normN + '|' + normP + '|' + normT);
+  if (normP && normT && idx.exactMap.has(`${normN}|${normP}|${normT}`)) {
+    return idx.exactMap.get(`${normN}|${normP}|${normT}`);
   }
 
   // 3. Name + Pos match
-  if (normP && idx.namePosMap.has(normN + '|' + normP)) {
-    return idx.namePosMap.get(normN + '|' + normP);
+  if (normP && idx.namePosMap.has(`${normN}|${normP}`)) {
+    return idx.namePosMap.get(`${normN}|${normP}`);
   }
 
   // 4. Name only match
@@ -1917,7 +1914,7 @@ function reconcileStateWithNewPlayerPool(state, newPlayersList) {
         keepersReconciled++;
       } else {
         // Player dropped from pool -> gracefully convert to unlisted custom keeper
-        k.customName = k.playerName || identity.name || 'Player #' + k.playerId;
+        k.customName = k.playerName || identity.name || `Player #${k.playerId}`;
         k.customPos = k.playerPos || identity.pos || 'WR';
         k.customTeam = k.playerTeam || identity.team || null;
         k.customBye = k.playerBye != null ? k.playerBye : null;
@@ -1965,7 +1962,7 @@ function reconcileStateWithNewPlayerPool(state, newPlayersList) {
         logReconciled++;
       } else {
         // Preserve as unlisted pick so history is never broken
-        entry.customName = entry.name || identity.name || 'Player #' + entry.playerId;
+        entry.customName = entry.name || identity.name || `Player #${entry.playerId}`;
         entry.customPos = entry.pos || identity.pos || 'WR';
         entry.customTeam = entry.team || identity.team || '';
         entry.playerId = null;
@@ -1982,7 +1979,7 @@ function reconcileStateWithNewPlayerPool(state, newPlayersList) {
       if (oldId == null) continue;
       const snap = originalSnapshots[oldId];
       let targetId = oldId;
-      if (snap && snap.name) {
+      if (snap?.name) {
         const match = findPlayerInPool(snap, newPlayersList, lookup);
         if (match) {
           targetId = match.id;
@@ -2015,7 +2012,7 @@ function reconcileStateWithNewPlayerPool(state, newPlayersList) {
       if (oldId == null) continue;
       const snap = originalSnapshots[oldId];
       let targetId = oldId;
-      if (snap && snap.name) {
+      if (snap?.name) {
         const match = findPlayerInPool(snap, newPlayersList, lookup);
         if (match) {
           targetId = match.id;
@@ -2087,7 +2084,7 @@ function deserializeDraftState(input, currentPlayers) {
     try {
       raw = JSON.parse(raw);
     } catch (err) {
-      return { ok: false, error: 'Invalid JSON format: ' + err.message };
+      return { ok: false, error: `Invalid JSON format: ${err.message}` };
     }
   }
 
@@ -2113,7 +2110,7 @@ function deserializeDraftState(input, currentPlayers) {
   for (const k of rawKeepers) {
     if (!k || typeof k !== 'object') continue;
     validKeepers.push({
-      id: k.id || 'k_' + Math.random().toString(36).substr(2, 9),
+      id: k.id || `k_${Math.random().toString(36).substr(2, 9)}`,
       slot: Math.max(1, Math.min(parseInt(settings.teams, 10) || 32, parseInt(k.slot, 10) || 1)),
       round: Math.max(1, Math.min(settings.rounds || 50, parseInt(k.round, 10) || 1)),
       playerId: k.playerId != null ? parseInt(k.playerId, 10) : null,
@@ -2168,8 +2165,8 @@ function deserializeDraftState(input, currentPlayers) {
     settings: settings,
     keepers: validKeepers,
     draftLog: validLog,
-    watchlist: watchlist.map((x) => parseInt(x, 10)).filter((x) => !isNaN(x)),
-    queue: queue.map((x) => parseInt(x, 10)).filter((x) => !isNaN(x)),
+    watchlist: watchlist.map((x) => parseInt(x, 10)).filter((x) => !Number.isNaN(x)),
+    queue: queue.map((x) => parseInt(x, 10)).filter((x) => !Number.isNaN(x)),
     playerSnapshots: playerSnapshots,
     tradedPicks: tradedPicks,
     syncSettings: syncSettings,
@@ -2211,7 +2208,7 @@ function createDefaultLeagueManifest(defaultLeagueName, defaultLeagueId) {
 }
 
 function createLeagueProfile(name, id, baseState) {
-  const profileId = id || 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+  const profileId = id || `league_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
   const leagueName = name && String(name).trim() ? String(name).trim() : 'New League';
   const s = baseState || {};
   const settings = Object.assign({}, s.settings || {});
@@ -2233,15 +2230,12 @@ function createLeagueProfile(name, id, baseState) {
 }
 
 function duplicateLeagueSettings(sourceState, newName, newId) {
-  const profileId = newId || 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-  const srcName =
-    sourceState && sourceState.settings && sourceState.settings.leagueName
-      ? sourceState.settings.leagueName
-      : 'League';
+  const profileId = newId || `league_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  const srcName = sourceState?.settings?.leagueName ? sourceState.settings.leagueName : 'League';
   const leagueName =
-    newName && String(newName).trim() ? String(newName).trim() : srcName + ' (Copy)';
+    newName && String(newName).trim() ? String(newName).trim() : `${srcName} (Copy)`;
 
-  const srcSettings = sourceState && sourceState.settings ? sourceState.settings : {};
+  const srcSettings = sourceState?.settings ? sourceState.settings : {};
   const clonedSettings = JSON.parse(JSON.stringify(srcSettings));
   clonedSettings.leagueName = leagueName;
   clonedSettings.sleeperDraftId = '';
@@ -2253,9 +2247,7 @@ function duplicateLeagueSettings(sourceState, newName, newId) {
     settings: clonedSettings,
     keepers: [],
     log: [],
-    watchlist: Array.isArray(sourceState && sourceState.watchlist)
-      ? sourceState.watchlist.slice()
-      : [],
+    watchlist: Array.isArray(sourceState?.watchlist) ? sourceState.watchlist.slice() : [],
     queue: [],
     tradedPicks: {},
     updatedAt: new Date().toISOString(),
@@ -2279,7 +2271,7 @@ function deserializeLeagueBackup(payload) {
     try {
       data = JSON.parse(data);
     } catch (e) {
-      return { ok: false, error: 'Invalid JSON: ' + e.message };
+      return { ok: false, error: `Invalid JSON: ${e.message}` };
     }
   }
   if (!data || typeof data !== 'object') {
@@ -2306,10 +2298,8 @@ function deserializeLeagueBackup(payload) {
     const singleRes = deserializeDraftState(data);
     if (singleRes.ok) {
       const singleState = singleRes.state;
-      const leagueName =
-        (singleState.settings && singleState.settings.leagueName) || 'Imported League';
-      const leagueId =
-        'league_import_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+      const leagueName = singleState.settings?.leagueName || 'Imported League';
+      const leagueId = `league_import_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       return {
         ok: true,
         type: 'single',
@@ -2380,7 +2370,7 @@ function generateDraftBoardGrid(options) {
 
       if (entry) {
         playerObj = resolvePickPlayer(entry, playersLookup);
-        isKeeper = Boolean(entry.isKeeper || (playerObj && playerObj.isKeeper) || keeperPick);
+        isKeeper = Boolean(entry.isKeeper || playerObj?.isKeeper || keeperPick);
       } else if (keeperPick) {
         const p =
           keeperPick.playerId != null && playersLookup
@@ -2390,8 +2380,7 @@ function generateDraftBoardGrid(options) {
             : null;
         playerObj = {
           id: keeperPick.playerId != null ? keeperPick.playerId : null,
-          name:
-            keeperPick.customName || (p ? p.name : 'Keeper #' + (keeperPick.playerId || overall)),
+          name: keeperPick.customName || (p ? p.name : `Keeper #${keeperPick.playerId || overall}`),
           pos: (keeperPick.customPos || (p ? p.pos : 'WR') || 'WR').toUpperCase(),
           team: keeperPick.customTeam || (p ? p.team : '—') || '—',
           bye: keeperPick.customBye != null ? keeperPick.customBye : p ? p.bye : null,
@@ -2409,7 +2398,7 @@ function generateDraftBoardGrid(options) {
         overall: overall,
         originalSlot: teamInfo.originalSlot != null ? teamInfo.originalSlot : s,
         effectiveSlot: teamInfo.slot,
-        originalTeamName: (Array.isArray(teamNames) ? teamNames[s - 1] : null) || 'Team ' + s,
+        originalTeamName: (Array.isArray(teamNames) ? teamNames[s - 1] : null) || `Team ${s}`,
         effectiveTeamName: teamInfo.name,
         isTraded: Boolean(teamInfo.isTraded),
         isMe: Boolean(teamInfo.isMe),
@@ -2498,7 +2487,7 @@ function analyzeLiveDraftStrategy(options) {
           : null;
       const kPlayer = {
         id: k.playerId != null ? k.playerId : null,
-        name: k.customName || (p ? p.name : 'Keeper #' + (k.playerId || overall)),
+        name: k.customName || (p ? p.name : `Keeper #${k.playerId || overall}`),
         pos: (k.customPos || (p ? p.pos : 'WR') || 'WR').toUpperCase(),
         team: k.customTeam || (p ? p.team : '—') || '—',
         bye: k.customBye != null ? k.customBye : p ? p.bye : null,
@@ -2839,7 +2828,7 @@ function generateDraftSummaryAnalysis(options) {
           : null;
       const kPlayer = {
         id: k.playerId != null ? k.playerId : null,
-        name: k.customName || (p ? p.name : 'Keeper #' + (k.playerId || overall)),
+        name: k.customName || (p ? p.name : `Keeper #${k.playerId || overall}`),
         pos: (k.customPos || (p ? p.pos : 'WR') || 'WR').toUpperCase(),
         team: k.customTeam || (p ? p.team : '—') || '—',
         bye: k.customBye != null ? k.customBye : p ? p.bye : null,
@@ -2848,7 +2837,7 @@ function generateDraftSummaryAnalysis(options) {
         pickOverall: overall,
         effectiveSlot: k.slot,
         effectiveTeamName:
-          (Array.isArray(teamNames) ? teamNames[k.slot - 1] : null) || 'Team ' + k.slot,
+          (Array.isArray(teamNames) ? teamNames[k.slot - 1] : null) || `Team ${k.slot}`,
       };
       kPlayer.score =
         computeFormatScore(kPlayer, scoringSettings) ??
@@ -2869,7 +2858,7 @@ function generateDraftSummaryAnalysis(options) {
     const tPlayers = teamDraftedMap[s] || [];
     const tName =
       (Array.isArray(teamNames) ? teamNames[s - 1] : null) ||
-      (s === mySlot ? 'My Team' : 'Team ' + s);
+      (s === mySlot ? 'My Team' : `Team ${s}`);
     const allocation = assignRosterSlots(tPlayers, rosterSlots);
 
     let startersScore = 0;

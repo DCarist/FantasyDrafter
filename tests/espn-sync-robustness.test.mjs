@@ -1,14 +1,6 @@
-// Test suite for ESPN Live Sync Robustness, Autopicker Burst Handling & Server Event Logging
-
-import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { join } from 'path';
-import {
-  normalizeName,
-  reconcileDraftLog,
-  resolveRemotePick,
-  teamForOverall,
-} from '../draft-logic.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { reconcileDraftLog, resolveRemotePick } from '../draft-logic.js';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -151,14 +143,14 @@ function extractPickNumber(text, teamsCount) {
   const explicitMatch = str.match(/(?:pick|pk|#|p)\s*([0-9]{1,3})\b/i);
   if (explicitMatch) {
     const num = parseInt(explicitMatch[1], 10);
-    if (!isNaN(num) && num > 0 && num <= 600) return num;
+    if (!Number.isNaN(num) && num > 0 && num <= 600) return num;
   }
 
   // 3. Standalone integer in a pick column
   const directMatch = str.match(/^([0-9]{1,3})\.?$/);
   if (directMatch) {
     const num = parseInt(directMatch[1], 10);
-    if (!isNaN(num) && num > 0 && num <= 600) return num;
+    if (!Number.isNaN(num) && num > 0 && num <= 600) return num;
   }
 
   return null;
@@ -469,7 +461,7 @@ const mockPickTrainText = [
 const parsedTeams = [];
 for (const item of mockPickTrainText) {
   const pickM = item.match(/(?:pick|pk|#)\s*([0-9]{1,2})\b/i);
-  assert(pickM !== null, 'Matches pick number in pick train item: ' + item);
+  assert(pickM !== null, `Matches pick number in pick train item: ${item}`);
   const pNum = parseInt(pickM[1], 10);
   const tName = item.replace(/(?:pick|pk|#)\s*[0-9]{1,2}\b/gi, '').trim();
   parsedTeams[pNum - 1] = tName;

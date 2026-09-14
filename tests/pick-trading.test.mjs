@@ -1,6 +1,6 @@
 // Test suite for Pick Ownership, Grid Generation, and Pick Trading
-import { createRequire } from 'module';
-import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
+import { createRequire } from 'node:module';
+import { eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');

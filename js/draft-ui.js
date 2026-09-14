@@ -10,8 +10,8 @@
   function renderHeader() {
     const s = global.state.settings;
     const titleEl = $('leaguetitle');
-    if (titleEl) titleEl.textContent = '🏈 ' + (s.leagueName || 'Your Draft Board');
-    document.title = (s.leagueName || 'Your Draft Board') + ' — Superflex Dynasty';
+    if (titleEl) titleEl.textContent = `🏈 ${s.leagueName || 'Your Draft Board'}`;
+    document.title = `${s.leagueName || 'Your Draft Board'} — Superflex Dynasty`;
     if ($('hdrteams')) $('hdrteams').textContent = s.teams;
 
     // Header slot dropdown
@@ -94,7 +94,7 @@
       // Auditory and visual cues for user's turn
       if (currentKeeper) {
         const kp = currentKeeper.playerId != null ? byId(currentKeeper.playerId) || {} : {};
-        const kName = currentKeeper.customName || kp.name || 'Player #' + currentKeeper.playerId;
+        const kName = currentKeeper.customName || kp.name || `Player #${currentKeeper.playerId}`;
         clock.textContent =
           'Pick ' +
           fmtPick(pick, s.teams) +
@@ -116,7 +116,7 @@
           ') — ' +
           who.name +
           ' (YOU ARE ON THE CLOCK)';
-        clock.className = 'clock mine' + (s.visualPulse ? ' pulse-anim' : '');
+        clock.className = `clock mine${s.visualPulse ? ' pulse-anim' : ''}`;
         if (lastOnClockPickNotified !== pick) {
           lastOnClockPickNotified = pick;
           if (typeof playPickChime === 'function') playPickChime();
@@ -168,14 +168,14 @@
               );
             }
             if (p === nextData.nextDraftPick) {
-              return '<b>#' + p + ' (in ' + (p - pick) + ')</b>';
+              return `<b>#${p} (in ${p - pick})</b>`;
             }
-            return '#' + p;
+            return `#${p}`;
           });
-          $('nextpicks').innerHTML = 'Your next picks: ' + items.join(', ');
+          $('nextpicks').innerHTML = `Your next picks: ${items.join(', ')}`;
         }
       }
-      if ($('unknownbtn')) $('unknownbtn').textContent = 'Unlisted pick for ' + who.name + ' ➜';
+      if ($('unknownbtn')) $('unknownbtn').textContent = `Unlisted pick for ${who.name} ➜`;
     }
     if (typeof updateSyncBadge === 'function') updateSyncBadge();
   }
@@ -257,7 +257,7 @@
         ')" title="' +
         (t.isScarcity
           ? t.scarcityLabel
-          : 'Tier ' + t.tier + ': ' + t.remaining + ' of ' + t.total + ' available') +
+          : `Tier ${t.tier}: ${t.remaining} of ${t.total} available`) +
         '">' +
         'T' +
         t.tier +
@@ -282,7 +282,7 @@
   global.setTierFilter = setTierFilter;
 
   function formatTierPill(tier) {
-    if (tier == null || isNaN(tier)) return '<span class="tier-pill tier-none">—</span>';
+    if (tier == null || Number.isNaN(tier)) return '<span class="tier-pill tier-none">—</span>';
     const t = Math.max(1, Math.round(tier));
     const cls =
       t <= 1
@@ -296,7 +296,7 @@
               : t === 5
                 ? 'tier-5'
                 : 'tier-6';
-    return '<span class="tier-pill ' + cls + '">T' + t + '</span>';
+    return `<span class="tier-pill ${cls}">T${t}</span>`;
   }
 
   function getPlayerEdge(p, s) {
@@ -366,7 +366,7 @@
     }
     const isRedraft = s.leagueType === 'redraft';
     const scTag = s.scoring === 'ppr' ? 'PPR' : s.scoring === 'std' ? 'STD' : 'Half';
-    const redLabel = 'Red (' + (s.qbFormat === '1qb' ? scTag : 'SF ' + scTag) + ')';
+    const redLabel = `Red (${s.qbFormat === '1qb' ? scTag : `SF ${scTag}`})`;
     const thRank1 = $('th_rank1') || $('th_dyn');
     const thRank2 = $('th_rank2') || $('th_red');
     if (thRank1) {
@@ -380,7 +380,7 @@
     }
     if (thRank2) {
       if (isRedraft) {
-        thRank2.textContent = 'ESPN (' + (s.scoring === 'std' ? 'STD' : 'PPR') + ')';
+        thRank2.textContent = `ESPN (${s.scoring === 'std' ? 'STD' : 'PPR'})`;
         thRank2.title = 'ESPN Platform Rank';
       } else {
         thRank2.textContent = redLabel;
@@ -439,11 +439,11 @@
       let tierBadgeHtml = '';
       if (showTiers) {
         if (idx === 0) {
-          tierBadgeHtml = ' <span class="tierlabel">T' + curTier + '</span>';
+          tierBadgeHtml = ` <span class="tierlabel">T${curTier}</span>`;
           prevTier = curTier;
         } else if (prevTier != null && curTier !== prevTier) {
           tierRow = ' tierbreak';
-          tierBadgeHtml = ' <span class="tierlabel">T' + curTier + '</span>';
+          tierBadgeHtml = ` <span class="tierlabel">T${curTier}</span>`;
           prevTier = curTier;
         }
       }
@@ -459,14 +459,14 @@
       const value =
         !isTaken && edgeInfo && edgeInfo.edge >= 15
           ? ' <span class="valuetag" title="' +
-            ('+' + edgeInfo.edge + ' Edge vs ESPN').replace(/"/g, '&quot;') +
+            `+${edgeInfo.edge} Edge vs ESPN`.replace(/"/g, '&quot;') +
             '">+' +
             edgeInfo.edge +
             ' vs ESPN</span>'
           : !isTaken && p.adp && p.adp - pick >= 8
-            ? ' <span class="valuetag">▼' + Math.round(p.adp - pick) + ' vs ADP</span>'
+            ? ` <span class="valuetag">▼${Math.round(p.adp - pick)} vs ADP</span>`
             : '';
-      const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
+      const rookieRankStr = p.rookieRank ? ` #${p.rookieRank}` : '';
       const rookie = p.rookie
         ? '<span class="rookietag" title="Rookie Draft Rank' +
           rookieRankStr +
@@ -474,7 +474,7 @@
           rookieRankStr +
           '</span>'
         : '';
-      const age = p.age ? ' <span class="meta">' + p.age + 'y</span>' : '';
+      const age = p.age ? ` <span class="meta">${p.age}y</span>` : '';
       const watched = isWatched(global.state.watchlist, p.id);
       const starBtn = !isTaken
         ? '<button type="button" class="watchbtn' +
@@ -504,13 +504,13 @@
       }
 
       let injTag = '';
-      if (p.injury && p.injury.code) {
+      if (p.injury?.code) {
         const c = p.injury.code;
         const tip =
           (p.injury.status || 'Injured') +
-          (p.injury.type ? ': ' + p.injury.type : '') +
-          (p.injury.detail ? ' (' + p.injury.detail + ')' : '') +
-          (p.injury.returnDate ? ' - Est. Return: ' + p.injury.returnDate : '');
+          (p.injury.type ? `: ${p.injury.type}` : '') +
+          (p.injury.detail ? ` (${p.injury.detail})` : '') +
+          (p.injury.returnDate ? ` - Est. Return: ${p.injury.returnDate}` : '');
         injTag =
           ' <span class="injtag inj-' +
           c.toLowerCase() +
@@ -584,13 +584,12 @@
         }
       }
 
-      let byeCell = '<td class="meta col-center">' + (p.bye || '—') + '</td>';
+      let byeCell = `<td class="meta col-center">${p.bye || '—'}</td>`;
       if (p.bye) {
         const byeClash = getByeClashStatus(p, myRoster);
         if (byeClash.type === 'same-pos') {
           const names = byeClash.samePos.map((x) => x.name).join(', ');
-          const tip =
-            'Same-position bye clash with ' + names + ' (' + p.pos + ', Week ' + p.bye + ')';
+          const tip = `Same-position bye clash with ${names} (${p.pos}, Week ${p.bye})`;
           byeCell =
             '<td class="col-center"><span class="byetag bye-same-pos" title="' +
             tip.replace(/"/g, '&quot;') +
@@ -598,8 +597,8 @@
             p.bye +
             '</span></td>';
         } else if (byeClash.type === 'other-pos') {
-          const names = byeClash.otherPos.map((x) => x.name + ' (' + x.pos + ')').join(', ');
-          const tip = 'Bye week coincides with ' + names + ' (Week ' + p.bye + ')';
+          const names = byeClash.otherPos.map((x) => `${x.name} (${x.pos})`).join(', ');
+          const tip = `Bye week coincides with ${names} (Week ${p.bye})`;
           byeCell =
             '<td class="col-center"><span class="byetag bye-other-pos" title="' +
             tip.replace(/"/g, '&quot;') +
@@ -647,7 +646,7 @@
             edge +
             " reach).\nOpponents following ESPN's queue may draft this player early.";
         } else {
-          tip = 'Market Neutral: ESPN rank (#' + espn + ') matches Consensus (#' + consensus + ').';
+          tip = `Market Neutral: ESPN rank (#${espn}) matches Consensus (#${consensus}).`;
         }
         edgeCell =
           '<td class="num rk"><span class="' +
@@ -670,14 +669,14 @@
           ')" ondragover="onWatchDragOver(event)" ondragleave="onWatchDragLeave(event)" ondrop="onWatchDrop(event, ' +
           p.id +
           ')" ondragend="onWatchDragEnd(event)"'
-        : ' class="' + tierRow + (isTaken ? ' takenrow' : '') + '"';
+        : ` class="${tierRow}${isTaken ? ' takenrow' : ''}"`;
 
       const rankCell = isWatchlistTab
         ? '<td class="rk watch-rk-cell"><span class="watch-drag-grip" title="Drag to reorder">⠿</span>' +
           (idx + 1) +
           tierBadgeHtml +
           '</td>'
-        : '<td class="rk">' + (idx + 1) + tierBadgeHtml + '</td>';
+        : `<td class="rk">${idx + 1}${tierBadgeHtml}</td>`;
 
       html +=
         '<tr' +
@@ -729,7 +728,7 @@
         'Your watchlist is empty. Click the ☆ star on any player to add them to your watchlist.';
     }
     if ($('pool'))
-      $('pool').innerHTML = html || '<tr><td colspan="11" class="empty">' + emptyMsg + '</td></tr>';
+      $('pool').innerHTML = html || `<tr><td colspan="11" class="empty">${emptyMsg}</td></tr>`;
   }
 
   function renderRosterSection(resolvedPicks, rosterSlots, teamsCount) {
@@ -802,7 +801,7 @@
     const clashWeeks = Object.keys(byBye).filter((w) => byBye[w].length >= 2);
     const byeWarnHtml = clashWeeks.length
       ? '<div class="warnbox" style="margin-top:10px">Bye overlap — week ' +
-        clashWeeks.map((w) => w + ': ' + byBye[w].join(', ')).join(' · week ') +
+        clashWeeks.map((w) => `${w}: ${byBye[w].join(', ')}`).join(' · week ') +
         '</div>'
       : '';
 
@@ -870,7 +869,7 @@
         },
         player: {
           id: k.playerId != null ? k.playerId : null,
-          name: k.customName || p.name || 'Keeper #' + (k.playerId || overall),
+          name: k.customName || p.name || `Keeper #${k.playerId || overall}`,
           pos: k.customPos || p.pos || 'WR',
           team: k.customTeam || p.team || '',
           bye: k.customBye != null ? k.customBye : p.bye || null,
@@ -899,7 +898,7 @@
     } = getRosterPicksForSlot(targetSlot);
 
     if ($('myrosterheader')) {
-      const kText = keeperCount > 0 ? ' · ' + keeperCount + ' kept' : '';
+      const kText = keeperCount > 0 ? ` · ${keeperCount} kept` : '';
       $('myrosterheader').innerHTML =
         '⭐ ' +
         myTeamName +
@@ -949,7 +948,7 @@
         const isMe = i === s.slot;
         const isSelected = global.viewingRosterSlot === i;
         const { draftedCount, keeperCount } = getRosterPicksForSlot(i);
-        const kStr = keeperCount > 0 ? ' · ' + keeperCount + ' kept' : '';
+        const kStr = keeperCount > 0 ? ` · ${keeperCount} kept` : '';
         selectHtml +=
           '<option value="' +
           i +
@@ -984,7 +983,7 @@
     } = getRosterPicksForSlot(targetSlot);
     const kLabel =
       keeperCount > 0
-        ? ' <span class="meta" style="font-size:11px">(' + keeperCount + ' kept)</span>'
+        ? ` <span class="meta" style="font-size:11px">(${keeperCount} kept)</span>`
         : '';
 
     // Label
@@ -996,7 +995,7 @@
           '</span>' +
           (onClockTeam.isMe
             ? ' <span style="color:var(--good); font-weight:700">(Your Turn!)</span>'
-            : ' (Slot ' + onClockTeam.slot + ')') +
+            : ` (Slot ${onClockTeam.slot})`) +
           kLabel;
       } else {
         $('clockteamlabel').innerHTML =
@@ -1007,7 +1006,7 @@
           ' · ' +
           draftedCount +
           ' picks' +
-          (keeperCount > 0 ? ' · ' + keeperCount + ' kept' : '') +
+          (keeperCount > 0 ? ` · ${keeperCount} kept` : '') +
           ') · <a href="javascript:void(0)" onclick="selectRosterSlot(null)" style="color:var(--accent); text-decoration:underline">Back to On-Clock</a>';
       }
     }
@@ -1031,7 +1030,7 @@
             p.pos || (p.team && p.team !== '—')
               ? ' <span class="meta">(' +
                 p.pos +
-                (p.team && p.team !== '—' ? ' · ' + p.team : '') +
+                (p.team && p.team !== '—' ? ` · ${p.team}` : '') +
                 ')</span>'
               : '';
           const tInfo = teamForOverall(
@@ -1088,7 +1087,7 @@
       { id: 'K', label: 'K' },
       { id: 'DST', label: 'D/ST' },
       { id: 'ROOKIE', label: 'Rookies' },
-      { id: 'WATCHLIST', label: '⭐ Watchlist' + (watchCount ? ' (' + watchCount + ')' : '') },
+      { id: 'WATCHLIST', label: `⭐ Watchlist${watchCount ? ` (${watchCount})` : ''}` },
     ];
     if ($('postabs')) {
       $('postabs').innerHTML = tabs
@@ -1194,7 +1193,7 @@
 
     if ($('mywatchlistcount')) {
       $('mywatchlistcount').textContent = scoredWatched.length
-        ? scoredWatched.length + ' players'
+        ? `${scoredWatched.length} players`
         : 'Empty';
     }
 
@@ -1213,7 +1212,7 @@
           const posClass = order.includes(p.pos) ? p.pos : 'other';
           const byeClash = getByeClashStatus(p, myRoster);
           let byeHtml = p.bye
-            ? '<span class="bye">bye ' + p.bye + '</span>'
+            ? `<span class="bye">bye ${p.bye}</span>`
             : '<span class="bye">—</span>';
           if (p.bye && byeClash.type === 'same-pos') {
             const names = byeClash.samePos.map((x) => x.name).join(', ');
@@ -1224,7 +1223,7 @@
               p.bye +
               '</span>';
           } else if (p.bye && byeClash.type === 'other-pos') {
-            const names = byeClash.otherPos.map((x) => x.name + ' (' + x.pos + ')').join(', ');
+            const names = byeClash.otherPos.map((x) => `${x.name} (${x.pos})`).join(', ');
             byeHtml =
               '<span class="bye" style="color:var(--warn); font-weight:600" title="Bye coincides with ' +
               names +
@@ -1234,11 +1233,9 @@
           }
 
           const teamBadge =
-            p.team && p.team !== '—' ? ' <span class="meta team-meta">' + p.team + '</span>' : '';
-          const rookieRankStr = p.rookieRank ? ' #' + p.rookieRank : '';
-          const rookieBadge = p.rookie
-            ? '<span class="rookietag">R' + rookieRankStr + '</span>'
-            : '';
+            p.team && p.team !== '—' ? ` <span class="meta team-meta">${p.team}</span>` : '';
+          const rookieRankStr = p.rookieRank ? ` #${p.rookieRank}` : '';
+          const rookieBadge = p.rookie ? `<span class="rookietag">R${rookieRankStr}</span>` : '';
 
           return (
             '<div class="watchlist-item" draggable="true" title="Drag to reorder priority" ondragstart="onWatchDragStart(event, ' +
@@ -1279,7 +1276,7 @@
     const scStr = s.scoring === 'ppr' ? 'PPR' : s.scoring === 'std' ? 'Standard' : 'Half-PPR';
     if ($('databanner')) {
       let bannerHtml = '';
-      if (!d.players || !d.players.length) {
+      if (!d.players?.length) {
         bannerHtml =
           '<div class="warnbox">⏳ Rankings are still being fetched — the board works, but the player list is empty until the data lands.</div>';
       } else {
@@ -1295,22 +1292,21 @@
               '<button type="button" onclick="const el=document.getElementById(\'refresh_reconcile_toast\'); if(el) el.remove();" style="background:none; border:none; color:#86efac; cursor:pointer; font-size:16px; margin-left:12px;">✕</button>' +
               '</div>';
           }
-        } catch (e) {}
+        } catch (_e) {}
       }
       $('databanner').innerHTML = bannerHtml;
     }
     if ($('sources')) {
-      $('sources').textContent =
-        d.players && d.players.length
-          ? d.players.length +
-            ' players · data gathered ' +
-            (d.generated || '') +
-            ' · Mode: ' +
-            qbStr +
-            ' (' +
-            scStr +
-            ') · Blended rankings synced'
-          : '';
+      $('sources').textContent = d.players?.length
+        ? d.players.length +
+          ' players · data gathered ' +
+          (d.generated || '') +
+          ' · Mode: ' +
+          qbStr +
+          ' (' +
+          scStr +
+          ') · Blended rankings synced'
+        : '';
     }
   }
 
@@ -1335,14 +1331,13 @@
       wasDraftComplete = false;
     }
 
-    if (isBoardModalOpen && $('modalbox') && $('modalbox').classList.contains('modal-board')) {
+    if (isBoardModalOpen && $('modalbox')?.classList.contains('modal-board')) {
       renderDraftBoardModalView();
     }
   }
 
   // ---------- Modals ----------
   let isBoardModalOpen = false;
-  let returnToBoardOnClose = false;
   let boardHighlightFilter = 'ALL';
   let boardDensity = 'normal';
   try {
@@ -1350,7 +1345,7 @@
     if (savedDensity === 'compact' || savedDensity === 'normal') {
       boardDensity = savedDensity;
     }
-  } catch (e) {}
+  } catch (_e) {}
   let boardActiveTab = 'grid';
   let summarySortKey = 'rank';
   let summarySortAsc = true;
@@ -1359,13 +1354,13 @@
   let strategyThreatsCollapsed = false;
   try {
     strategyThreatsCollapsed = localStorage.getItem('fantasy_drafter_threats_collapsed') === 'true';
-  } catch (e) {}
+  } catch (_e) {}
 
   function toggleStrategyThreats() {
     strategyThreatsCollapsed = !strategyThreatsCollapsed;
     try {
       localStorage.setItem('fantasy_drafter_threats_collapsed', String(strategyThreatsCollapsed));
-    } catch (e) {}
+    } catch (_e) {}
     renderDraftBoardModalView();
   }
 
@@ -1377,7 +1372,7 @@
       global.saveSleeperSyncSettings(false);
     }
     isBoardModalOpen = false;
-    returnToBoardOnClose = false;
+    _returnToBoardOnClose = false;
     setupIsDirty = false;
     editingKeeperId = null;
     selectedKeeperPlayer = null;
@@ -1390,7 +1385,7 @@
   }
 
   function closePlayerModal() {
-    returnToBoardOnClose = false;
+    _returnToBoardOnClose = false;
     const playerOverlay = $('playerOverlay');
     if (playerOverlay) {
       playerOverlay.classList.remove('show');
@@ -1405,7 +1400,7 @@
 
   function openDraftBoardModal(initialTab) {
     isBoardModalOpen = true;
-    returnToBoardOnClose = false;
+    _returnToBoardOnClose = false;
     const s = global.state.settings;
     const pick = currentPick();
     const totalPicks = s.teams * s.rounds;
@@ -1429,7 +1424,7 @@
 
   function closeBoardModal() {
     isBoardModalOpen = false;
-    returnToBoardOnClose = false;
+    _returnToBoardOnClose = false;
     closeModal();
   }
 
@@ -1457,7 +1452,7 @@
     boardDensity = density;
     try {
       localStorage.setItem('fantasy_drafter_board_density', density);
-    } catch (e) {}
+    } catch (_e) {}
 
     const container = $('board_container');
     let prevRatioX = 0;
@@ -1516,12 +1511,12 @@
   }
 
   function showPlayerFromBoard(id) {
-    returnToBoardOnClose = true;
+    _returnToBoardOnClose = true;
     showPlayer(id);
   }
 
   function showUnlistedPlayerFromBoard(overall) {
-    returnToBoardOnClose = true;
+    _returnToBoardOnClose = true;
     showUnlistedPlayer(overall);
   }
 
@@ -1533,9 +1528,6 @@
     const onClockTeam = !isComplete
       ? teamForOverall(pick, s.teams, s.mode, s.teamNames, s.slot, global.state.tradedPicks)
       : null;
-    const draftedPicksCount = Math.min(totalPicks, global.state.log.length);
-    const pct = Math.round((draftedPicksCount / totalPicks) * 100);
-
     const modalBox = $('modalbox');
     if (modalBox) {
       modalBox.className = 'modal modal-board';
@@ -1562,18 +1554,6 @@
       '" onclick="setBoardActiveTab(\'summary\')">🏆 League Value & Grades</button>' +
       '</div>';
 
-    let clockStatusHtml = '';
-    if (isComplete) {
-      clockStatusHtml = '<span style="color:var(--good); font-weight:700">🏆 Draft Complete</span>';
-    } else if (onClockTeam) {
-      clockStatusHtml =
-        'On Clock: <strong style="color:var(--accent)">' +
-        onClockTeam.name +
-        '</strong> (Pick #' +
-        pick +
-        ')';
-    }
-
     // 2. Toolbar Actions depending on active tab
     let toolbarActionsHtml = '';
     if (boardActiveTab === 'grid') {
@@ -1591,7 +1571,7 @@
       const filterButtonsHtml = filters
         .map((f) => {
           const activeClass = boardHighlightFilter === f.id ? ' active' : '';
-          const customClass = f.cls ? ' ' + f.cls : '';
+          const customClass = f.cls ? ` ${f.cls}` : '';
           return (
             '<button type="button" class="board-filter-btn' +
             customClass +
@@ -1671,7 +1651,7 @@
         const isMe = slot === s.slot;
         const name =
           (Array.isArray(s.teamNames) ? s.teamNames[slot - 1] : null) ||
-          (isMe ? 'My Team' : 'Team ' + slot);
+          (isMe ? 'My Team' : `Team ${slot}`);
         const isClock = onClockTeam && onClockTeam.slot === slot;
         const thClasses = ['board-th', isMe ? 'is-me' : '', isClock ? 'is-clock' : '']
           .filter(Boolean)
@@ -1758,8 +1738,8 @@
 
             const clickFn =
               p.id != null
-                ? 'showPlayerFromBoard(' + p.id + ')'
-                : 'showUnlistedPlayerFromBoard(' + overall + ')';
+                ? `showPlayerFromBoard(${p.id})`
+                : `showUnlistedPlayerFromBoard(${overall})`;
 
             const isKeeper = pickCell.isKeeper;
             const isTraded = pickCell.isTraded;
@@ -1778,7 +1758,7 @@
               : '';
             const teamByeStr =
               (p.team && p.team !== '—' ? p.team : '') +
-              (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
+              (p.bye ? `${p.team && p.team !== '—' ? ' · ' : ''}Wk ${p.bye}` : '');
 
             if (isCompact) {
               let topEndHtml = '';
@@ -1794,7 +1774,7 @@
                   '</span>';
               } else {
                 topEndHtml =
-                  (tradedChip ? tradedChip + ' ' : '') +
+                  (tradedChip ? `${tradedChip} ` : '') +
                   '<span class="board-card-compact-meta">' +
                   (teamByeStr || p.pos || '—') +
                   '</span>';
@@ -1880,7 +1860,7 @@
 
             const teamByeStr =
               (p.team && p.team !== '—' ? p.team : '') +
-              (p.bye ? (p.team && p.team !== '—' ? ' · ' : '') + 'Wk ' + p.bye : '');
+              (p.bye ? `${p.team && p.team !== '—' ? ' · ' : ''}Wk ${p.bye}` : '');
 
             if (isCompact) {
               tableBodyHtml +=
@@ -1950,7 +1930,7 @@
             // Empty upcoming cell
             const onClockBadge = isClock ? '<span class="on-clock-badge">⚡ ON CLOCK</span>' : '';
             const tradedChip = pickCell.isTraded
-              ? '<span class="traded-tag">via ' + pickCell.originalTeamName + '</span>'
+              ? `<span class="traded-tag">via ${pickCell.originalTeamName}</span>`
               : '';
 
             tableBodyHtml +=
@@ -2051,11 +2031,8 @@
                   const alert = modalScarcity.playerAlerts
                     ? modalScarcity.playerAlerts.get(t.id)
                     : null;
-                  return alert && alert.isLast;
-                }) ||
-                strat.recommendedTargets.find(
-                  (t) => modalScarcity.playerAlerts && modalScarcity.playerAlerts.has(t.id),
-                );
+                  return alert?.isLast;
+                }) || strat.recommendedTargets.find((t) => modalScarcity.playerAlerts?.has(t.id));
 
               if (topScarcityTarget) {
                 const a = modalScarcity.playerAlerts.get(topScarcityTarget.id);
@@ -2063,7 +2040,7 @@
                   '<div style="font-size:12px; color:#fbbf24; margin-top:4px; display:flex; align-items:center; gap:4px">⚠️ <strong>Tier Cliff Alert:</strong> ' +
                   topScarcityTarget.name +
                   ' is ' +
-                  (a.isLast ? 'the last available' : 'one of only ' + a.remaining + ' remaining') +
+                  (a.isLast ? 'the last available' : `one of only ${a.remaining} remaining`) +
                   ' Tier ' +
                   a.tier +
                   ' ' +
@@ -2108,7 +2085,7 @@
               ' (' +
               fmtPick(strat.nextUserPick, s.teams) +
               ')</strong> · Currently on clock: <strong style="color:var(--text)">' +
-              (onClockTeam ? onClockTeam.name : 'Pick #' + pick) +
+              (onClockTeam ? onClockTeam.name : `Pick #${pick}`) +
               '</strong></div>' +
               '</div>' +
               '</div>';
@@ -2173,7 +2150,7 @@
 
             const dangersHtml = (strat.runDangers || [])
               .map((d) => {
-                return '<span class="threat-danger-badge">🚨 ' + d.message + '</span>';
+                return `<span class="threat-danger-badge">🚨 ${d.message}</span>`;
               })
               .join('');
 
@@ -2188,7 +2165,7 @@
                 ' Picks Ahead)';
 
             const collapseBtnLabel = strategyThreatsCollapsed
-              ? '▶ Expand (' + strat.opponentThreats.length + ' Picks)'
+              ? `▶ Expand (${strat.opponentThreats.length} Picks)`
               : '▼ Collapse';
 
             threatsHtml =
@@ -2205,7 +2182,7 @@
                 ? '<div class="threat-timeline" style="margin-top:10px">' +
                   cardsHtml +
                   '</div>' +
-                  (dangersHtml ? '<div class="run-dangers-bar">' + dangersHtml + '</div>' : '')
+                  (dangersHtml ? `<div class="run-dangers-bar">${dangersHtml}</div>` : '')
                 : '') +
               '</div>';
           } else if (
@@ -2228,7 +2205,7 @@
           // User Needs Grid
           const needsCardsHtml = (strat.userNeeds || [])
             .map((n) => {
-              const statusCls = 'need-status-pill ' + n.urgency.toLowerCase();
+              const statusCls = `need-status-pill ${n.urgency.toLowerCase()}`;
               const barPct = Math.min(100, Math.round((n.filled / Math.max(1, n.baseReq)) * 100));
               const barColor =
                 n.urgency === 'CRITICAL'
@@ -2311,10 +2288,7 @@
                 } else {
                   rowsHtml = pList
                     .map((p, idx) => {
-                      const isW = Boolean(
-                        p.isWatched ||
-                          (global.state.watchlist && global.state.watchlist.includes(p.id)),
-                      );
+                      const isW = Boolean(p.isWatched || global.state.watchlist?.includes(p.id));
                       const starIcon = isW ? '★' : '☆';
                       const starClass = isW ? 'target-star-btn active' : 'target-star-btn';
                       const starTitle = isW ? 'In Watchlist (Click to remove)' : 'Add to Watchlist';
@@ -2338,8 +2312,7 @@
                             '</span>';
                         } else if (bClash.type === 'other-pos') {
                           const names = (bClash.otherPos || []).map((x) => x.name).join(', ');
-                          const tip =
-                            'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                          const tip = `Bye coincides with ${names || 'roster'} (Week ${p.bye})`;
                           byeHtml =
                             '<span class="target-bye-pill overlap" title="' +
                             tip.replace(/"/g, '&quot;') +
@@ -2347,7 +2320,7 @@
                             p.bye +
                             '</span>';
                         } else {
-                          byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
+                          byeHtml = `<span class="target-bye-pill normal">Wk ${p.bye}</span>`;
                         }
                       } else {
                         byeHtml = '<span class="target-bye-pill normal">—</span>';
@@ -2364,20 +2337,19 @@
                               '</span>'
                             : '';
 
-                      const pAlert =
-                        modalScarcity && modalScarcity.playerAlerts
-                          ? modalScarcity.playerAlerts.get(p.id)
-                          : null;
+                      const pAlert = modalScarcity?.playerAlerts
+                        ? modalScarcity.playerAlerts.get(p.id)
+                        : null;
                       const scarcityTag = pAlert
                         ? ' <span class="scarcity-tag' +
                           (pAlert.isLast ? ' last-in-tier' : '') +
                           '" style="font-size:8.5px; padding:0 4px">' +
                           (pAlert.isLast
-                            ? '⚡ Last in T' + pAlert.tier
-                            : '⚠️ 2 in T' + pAlert.tier) +
+                            ? `⚡ Last in T${pAlert.tier}`
+                            : `⚠️ 2 in T${pAlert.tier}`) +
                           '</span>'
                         : '';
-                      const tierBadge = p.posTier ? ' ' + formatTierPill(p.posTier) : '';
+                      const tierBadge = p.posTier ? ` ${formatTierPill(p.posTier)}` : '';
                       const rookieTag = p.rookie ? ' <span class="rookietag">R</span>' : '';
 
                       return (
@@ -2429,7 +2401,7 @@
                     .join('');
                 }
 
-                const statusPillCls = 'need-status-pill ' + needInfo.urgency.toLowerCase();
+                const statusPillCls = `need-status-pill ${needInfo.urgency.toLowerCase()}`;
 
                 return (
                   '<div class="' +
@@ -2517,8 +2489,7 @@
                         '</span>';
                     } else if (byeClash && byeClash.type === 'other-pos') {
                       const names = (byeClash.otherPos || []).map((x) => x.name).join(', ');
-                      const tip =
-                        'Bye coincides with ' + (names || 'roster') + ' (Week ' + p.bye + ')';
+                      const tip = `Bye coincides with ${names || 'roster'} (Week ${p.bye})`;
                       byeHtml =
                         '<span class="target-bye-pill overlap" title="' +
                         tip.replace(/"/g, '&quot;') +
@@ -2526,7 +2497,7 @@
                         p.bye +
                         '</span>';
                     } else {
-                      byeHtml = '<span class="target-bye-pill normal">Wk ' + p.bye + '</span>';
+                      byeHtml = `<span class="target-bye-pill normal">Wk ${p.bye}</span>`;
                     }
                   }
 
@@ -2540,21 +2511,20 @@
                         surplus +
                         ' vs ADP</span>'
                       : p.adp
-                        ? '<span>ADP ' + p.adp + '</span>'
+                        ? `<span>ADP ${p.adp}</span>`
                         : '';
 
-                  const pAlert =
-                    modalScarcity && modalScarcity.playerAlerts
-                      ? modalScarcity.playerAlerts.get(p.id)
-                      : null;
+                  const pAlert = modalScarcity?.playerAlerts
+                    ? modalScarcity.playerAlerts.get(p.id)
+                    : null;
                   const scarcityTag = pAlert
                     ? ' <span class="scarcity-tag' +
                       (pAlert.isLast ? ' last-in-tier' : '') +
                       '" style="font-size:8.5px; padding:0 4px">' +
-                      (pAlert.isLast ? '⚡ Last in T' + pAlert.tier : '⚠️ 2 in T' + pAlert.tier) +
+                      (pAlert.isLast ? `⚡ Last in T${pAlert.tier}` : `⚠️ 2 in T${pAlert.tier}`) +
                       '</span>'
                     : '';
-                  const tierBadge = p.posTier ? ' ' + formatTierPill(p.posTier) : '';
+                  const tierBadge = p.posTier ? ` ${formatTierPill(p.posTier)}` : '';
                   const rookieBadge = p.rookie ? ' <span class="rookietag">R</span>' : '';
 
                   return (
@@ -2592,7 +2562,7 @@
                     '</span>' +
                     '<span>·</span>' +
                     byeHtml +
-                    (surplusHtml ? '<span>·</span>' + surplusHtml : '') +
+                    (surplusHtml ? `<span>·</span>${surplusHtml}` : '') +
                     '</div>' +
                     '</div>' +
                     '<div style="text-align:right; flex-shrink:0">' +
@@ -2666,7 +2636,7 @@
       if (!summary) return;
 
       const myT = summary.myTeam;
-      const myGradeLetter = myT && myT.grade ? myT.grade.charAt(0).toLowerCase() : 'b';
+      const myGradeLetter = myT?.grade ? myT.grade.charAt(0).toLowerCase() : 'b';
 
       const myReportHtml = myT
         ? '<div class="summary-report-card">' +
@@ -2711,7 +2681,7 @@
           '<div class="summary-stat-label">Best Value Pick</div>' +
           '<div class="summary-stat-val" style="font-size:12px; font-weight:700">' +
           (myT.bestSteal
-            ? myT.bestSteal.player.name + ' (+' + Math.round(myT.bestSteal.surplus) + ')'
+            ? `${myT.bestSteal.player.name} (+${Math.round(myT.bestSteal.surplus)})`
             : '—') +
           '</div>' +
           '</div>' +
@@ -2725,9 +2695,7 @@
         '<div class="superlative-card"><div class="superlative-title">👑 Top Rated Team</div><div class="superlative-winner">' +
         (sup.champion ? sup.champion.teamName : '—') +
         '</div><div class="superlative-detail">' +
-        (sup.champion
-          ? sup.champion.totalScore + ' total points (' + sup.champion.grade + ')'
-          : '') +
+        (sup.champion ? `${sup.champion.totalScore} total points (${sup.champion.grade})` : '') +
         '</div></div>' +
         '<div class="superlative-card"><div class="superlative-title">💎 Steal of the Draft</div><div class="superlative-winner">' +
         (sup.bestSteal ? sup.bestSteal.player.name : '—') +
@@ -2753,22 +2721,22 @@
         '<div class="superlative-card"><div class="superlative-title">🥇 Best QB Room</div><div class="superlative-winner">' +
         (sup.bestQb ? sup.bestQb.teamName : '—') +
         '</div><div class="superlative-detail">' +
-        (sup.bestQb ? sup.bestQb.qbScore + ' QB points' : '') +
+        (sup.bestQb ? `${sup.bestQb.qbScore} QB points` : '') +
         '</div></div>' +
         '<div class="superlative-card"><div class="superlative-title">🥇 Best RB Room</div><div class="superlative-winner">' +
         (sup.bestRb ? sup.bestRb.teamName : '—') +
         '</div><div class="superlative-detail">' +
-        (sup.bestRb ? sup.bestRb.rbScore + ' RB points' : '') +
+        (sup.bestRb ? `${sup.bestRb.rbScore} RB points` : '') +
         '</div></div>' +
         '<div class="superlative-card"><div class="superlative-title">🥇 Best WR Room</div><div class="superlative-winner">' +
         (sup.bestWr ? sup.bestWr.teamName : '—') +
         '</div><div class="superlative-detail">' +
-        (sup.bestWr ? sup.bestWr.wrScore + ' WR points' : '') +
+        (sup.bestWr ? `${sup.bestWr.wrScore} WR points` : '') +
         '</div></div>' +
         '<div class="superlative-card"><div class="superlative-title">🥇 Best TE Room</div><div class="superlative-winner">' +
         (sup.bestTe ? sup.bestTe.teamName : '—') +
         '</div><div class="superlative-detail">' +
-        (sup.bestTe ? sup.bestTe.teScore + ' TE points' : '') +
+        (sup.bestTe ? `${sup.bestTe.teScore} TE points` : '') +
         '</div></div>' +
         '</div>';
 
@@ -3012,7 +2980,7 @@
     const refreshDate =
       (window.DRAFT_DATA && (window.DRAFT_DATA.injuriesUpdated || window.DRAFT_DATA.generated)) ||
       'latest update';
-    if (!p.injury || !p.injury.code) {
+    if (!p.injury?.code) {
       return (
         '<div class="injury-accordion inactive">' +
         '<div class="injury-header-inactive">' +
@@ -3028,10 +2996,10 @@
     const inj = p.injury;
     const c = (inj.code || 'Q').toLowerCase();
     const returnText = inj.returnDate
-      ? '<span class="inj-returndate">Est. Return: <b>' + inj.returnDate + '</b></span>'
+      ? `<span class="inj-returndate">Est. Return: <b>${inj.returnDate}</b></span>`
       : '';
     const partText = inj.type
-      ? inj.type + (inj.detail ? ' (' + inj.detail + ')' : '')
+      ? inj.type + (inj.detail ? ` (${inj.detail})` : '')
       : inj.detail || 'Undisclosed';
     const comments = inj.longComment || inj.shortComment || 'No additional notes reported.';
 
@@ -3100,10 +3068,7 @@
       );
     }
 
-    const teamDc =
-      window.DRAFT_DATA && window.DRAFT_DATA.depthCharts
-        ? window.DRAFT_DATA.depthCharts[p.team]
-        : null;
+    const teamDc = window.DRAFT_DATA?.depthCharts ? window.DRAFT_DATA.depthCharts[p.team] : null;
     if (!teamDc) {
       return (
         '<div class="dc-accordion">' +
@@ -3156,13 +3121,13 @@
 
       const inj = ath.injury || (pid != null && byId(pid) ? byId(pid).injury : null);
       let injTag = '';
-      if (inj && inj.code) {
+      if (inj?.code) {
         const c = inj.code;
         const tip =
           (inj.status || 'Injured') +
-          (inj.type ? ': ' + inj.type : '') +
-          (inj.detail ? ' (' + inj.detail + ')' : '') +
-          (inj.returnDate ? ' - Est. Return: ' + inj.returnDate : '');
+          (inj.type ? `: ${inj.type}` : '') +
+          (inj.detail ? ` (${inj.detail})` : '') +
+          (inj.returnDate ? ` - Est. Return: ${inj.returnDate}` : '');
         injTag =
           '<span class="dc-inj inj-' +
           c.toLowerCase() +
@@ -3199,7 +3164,7 @@
     };
 
     const renderRow = (label, badgeClass, athletes) => {
-      if (!athletes || !athletes.length) return '';
+      if (!athletes?.length) return '';
       return (
         '<div class="dc-pos-row">' +
         '<span class="dc-pos-badge ' +
@@ -3218,9 +3183,9 @@
     rowsHtml += renderRow('QB', 'qb', teamDc.qb);
     rowsHtml += renderRow('RB', 'rb', teamDc.rb);
     if (teamDc.wr) {
-      if (teamDc.wr.wr1 && teamDc.wr.wr1.length) rowsHtml += renderRow('WR1', 'wr', teamDc.wr.wr1);
-      if (teamDc.wr.wr2 && teamDc.wr.wr2.length) rowsHtml += renderRow('WR2', 'wr', teamDc.wr.wr2);
-      if (teamDc.wr.wr3 && teamDc.wr.wr3.length) rowsHtml += renderRow('WR3', 'wr', teamDc.wr.wr3);
+      if (teamDc.wr.wr1?.length) rowsHtml += renderRow('WR1', 'wr', teamDc.wr.wr1);
+      if (teamDc.wr.wr2?.length) rowsHtml += renderRow('WR2', 'wr', teamDc.wr.wr2);
+      if (teamDc.wr.wr3?.length) rowsHtml += renderRow('WR3', 'wr', teamDc.wr.wr3);
     }
     rowsHtml += renderRow('TE', 'te', teamDc.te);
     rowsHtml += renderRow('K', 'k', teamDc.pk);
@@ -3247,8 +3212,8 @@
     const p = byId(id);
     if (!p) return;
     const s = global.state.settings;
-    const activeDyn = getDynastyRank(p, s.qbFormat);
-    const activeRed = getRedraftRank(p, s.qbFormat, s.scoring);
+    const _activeDyn = getDynastyRank(p, s.qbFormat);
+    const _activeRed = getRedraftRank(p, s.qbFormat, s.scoring);
     const activeScore = computeFormatScore(p, {
       blend: s.blend / 100,
       qbFormat: s.qbFormat,
@@ -3325,9 +3290,7 @@
     const rawStats =
       typeof formatPlayerStats === 'function' ? formatPlayerStats(p, s, activeScore) : [];
 
-    const stats = rawStats
-      .map((x) => '<span class="stat">' + x[0] + '<b>' + x[1] + '</b></span>')
-      .join('');
+    const stats = rawStats.map((x) => `<span class="stat">${x[0]}<b>${x[1]}</b></span>`).join('');
 
     const snapDate = window.DRAFT_DATA.extrasGenerated || window.DRAFT_DATA.generated || '';
     const blurb = p.blurb
@@ -3338,7 +3301,7 @@
         ' — use the links below for anything newer.</div>'
       : '<div class="blurbnote">No baked-in news for this player — use the live links below.</div>';
     const depthChartHtml = renderDepthChart(p, taken);
-    const sched = (window.DRAFT_DATA.schedules || {})[p.team];
+    const sched = window.DRAFT_DATA.schedules?.[p.team];
     const schedHtml = sched
       ? '<h4>2026 Schedule</h4><div class="schedgrid">' +
         sched
@@ -3358,7 +3321,7 @@
         ? '<div class="blurbnote">Schedule data still loading — check back shortly.</div>'
         : '';
     const q = encodeURIComponent(
-      p.name + (p.team && p.team !== 'FA' ? ' ' + p.team : '') + ' fantasy',
+      `${p.name + (p.team && p.team !== 'FA' ? ` ${p.team}` : '')} fantasy`,
     );
     const links =
       '<div class="links">' +
@@ -3387,7 +3350,7 @@
         names +
         ')</div>';
     } else if (byeClash.type === 'other-pos') {
-      const names = byeClash.otherPos.map((x) => x.name + ' (' + x.pos + ')').join(', ');
+      const names = byeClash.otherPos.map((x) => `${x.name} (${x.pos})`).join(', ');
       byeAlert =
         '<div style="margin-top:10px; padding:8px 10px; background:#33261a; border:1px solid var(--warn); color:var(--warn); border-radius:8px; font-size:12.5px">⚡ <b>Roster Bye Overlap:</b> Shares Week ' +
         p.bye +
@@ -3410,14 +3373,14 @@
       : '';
 
     let headerInjBadge = '';
-    if (p.injury && p.injury.code) {
+    if (p.injury?.code) {
       const c = p.injury.code.toLowerCase();
       headerInjBadge =
         ' <span class="injtag-lg inj-' +
         c +
         '">' +
         p.injury.code +
-        (p.injury.type ? ' · ' + p.injury.type : '') +
+        (p.injury.type ? ` · ${p.injury.type}` : '') +
         '</span>';
     }
     const injuryHtml = renderInjurySection(p);
@@ -3477,7 +3440,7 @@
           ? 'K'
           : 'other';
 
-    const q = encodeURIComponent(p.name + ' fantasy');
+    const q = encodeURIComponent(`${p.name} fantasy`);
     const links =
       '<div class="links">' +
       '<a target="_blank" href="https://news.google.com/search?q=' +
@@ -3512,10 +3475,8 @@
         ' (' +
         fmtPick(entry.overall, global.state.settings.teams) +
         ')</b></span>' +
-        (p.team && p.team !== '—'
-          ? '<span class="stat">NFL Team<b>' + p.team + '</b></span>'
-          : '') +
-        (p.bye ? '<span class="stat">Bye Week<b>Week ' + p.bye + '</b></span>' : '') +
+        (p.team && p.team !== '—' ? `<span class="stat">NFL Team<b>${p.team}</b></span>` : '') +
+        (p.bye ? `<span class="stat">Bye Week<b>Week ${p.bye}</b></span>` : '') +
         '</div>' +
         '<div class="blurbnote">This selection was recorded as an unlisted pick and is tracked on this team\'s roster and positional counts.</div>' +
         links;
@@ -3607,12 +3568,12 @@
     unlistedSelectedPos = pos;
     const positions = ['QB', 'RB', 'WR', 'TE', 'K', 'DST', 'OTHER'];
     for (const p of positions) {
-      const btn = $('unlisted_pos_' + p);
-      if (btn) btn.className = 'tab' + (p === pos ? ' on' : '');
+      const btn = $(`unlisted_pos_${p}`);
+      if (btn) btn.className = `tab${p === pos ? ' on' : ''}`;
     }
     const input = $('unlisted_name_input');
     if (input && !input.value.trim()) {
-      input.placeholder = 'e.g. Ray-Ray McCloud (Leave blank for Unlisted ' + pos + ')';
+      input.placeholder = `e.g. Ray-Ray McCloud (Leave blank for Unlisted ${pos})`;
     }
   }
 
@@ -3622,7 +3583,7 @@
     const byeInput = $('unlisted_bye_input');
     const name = nameInput ? nameInput.value.trim() : '';
     const team = teamInput ? teamInput.value.trim().toUpperCase() : '';
-    const bye = byeInput && byeInput.value ? parseInt(byeInput.value, 10) : null;
+    const bye = byeInput?.value ? parseInt(byeInput.value, 10) : null;
     draftUnlistedPlayer(unlistedSelectedPos, name, team, bye);
   }
 
@@ -3654,7 +3615,7 @@
   function handleCreateNewLeagueClick() {
     if (!confirmIfDirty()) return;
     const name = prompt('Enter name for the new league:', 'New League');
-    if (!name || !name.trim()) return;
+    if (!name?.trim()) return;
     setupIsDirty = false;
     if (typeof global.createNewLeague === 'function') {
       global.createNewLeague(name.trim());
@@ -3664,10 +3625,9 @@
 
   function handleDuplicateLeagueClick() {
     if (!confirmIfDirty()) return;
-    const currentName =
-      (global.state && global.state.settings && global.state.settings.leagueName) || 'League';
-    const name = prompt('Enter name for the duplicated league:', currentName + ' (Copy)');
-    if (!name || !name.trim()) return;
+    const currentName = global.state?.settings?.leagueName || 'League';
+    const name = prompt('Enter name for the duplicated league:', `${currentName} (Copy)`);
+    if (!name?.trim()) return;
     setupIsDirty = false;
     if (typeof global.duplicateCurrentLeague === 'function') {
       global.duplicateCurrentLeague(name.trim());
@@ -3683,8 +3643,7 @@
     }
     const activeId =
       typeof global.getActiveLeagueId === 'function' ? global.getActiveLeagueId() : '';
-    const currentName =
-      (global.state && global.state.settings && global.state.settings.leagueName) || 'this league';
+    const currentName = global.state?.settings?.leagueName || 'this league';
     if (
       !confirm(
         `Are you sure you want to delete "${currentName}" and all of its draft picks? This action cannot be undone.`,
@@ -3717,23 +3676,23 @@
   }
 
   function handleLeagueFileImportSelected(event) {
-    const file = event.target && event.target.files && event.target.files[0];
+    const file = event.target?.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target.result;
       if (typeof global.importLeagueBackup === 'function') {
         const res = global.importLeagueBackup(content);
-        if (res && res.ok) {
+        if (res?.ok) {
           setupIsDirty = false;
           alert(
             '✅ Successfully imported ' +
-              (res.type === 'multi' ? res.count + ' leagues' : 'league: ' + res.name) +
+              (res.type === 'multi' ? `${res.count} leagues` : `league: ${res.name}`) +
               '!',
           );
           openLeagueSetup();
         } else {
-          alert('❌ Failed to import league file: ' + (res ? res.error : 'Unknown error'));
+          alert(`❌ Failed to import league file: ${res ? res.error : 'Unknown error'}`);
         }
       }
     };
@@ -3802,7 +3761,7 @@
     function renderSetupTable(teamsCount) {
       let rows = '';
       for (let i = 1; i <= teamsCount; i++) {
-        const name = setupDraftNames[i - 1] || 'Team ' + i;
+        const name = setupDraftNames[i - 1] || `Team ${i}`;
         const isMe = i === setupMySlot;
         rows +=
           '<tr class="' +
@@ -3847,17 +3806,13 @@
     }
 
     let espnSyncBtn = '';
-    if (
-      global.syncState &&
-      global.syncState.espnLeagueInfo &&
-      global.syncState.espnLeagueInfo.teams
-    ) {
+    if (global.syncState?.espnLeagueInfo?.teams) {
       const info = global.syncState.espnLeagueInfo;
       espnSyncBtn =
         '<button type="button" class="act" onclick="applyEspnLeagueSetup(); openLeagueSetup();" style="font-size:11.5px; padding:3px 9px; color:var(--accent)">📥 Sync Teams & Slot from ESPN (' +
         info.teams +
         ' Teams' +
-        (info.mySlot ? ' · Slot #' + info.mySlot : '') +
+        (info.mySlot ? ` · Slot #${info.mySlot}` : '') +
         ')</button>';
     }
 
@@ -3959,9 +3914,9 @@
       '<div style="margin-top:10px; padding:10px; background:#141923; border:1px solid var(--border); border-radius:6px; font-size:12px; color:var(--dim)">' +
       '<div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">' +
       '<div>📊 <b style="color:var(--text)">Rankings & Injury Status:</b> ' +
-      (window.DRAFT_DATA && window.DRAFT_DATA.players ? window.DRAFT_DATA.players.length : 0) +
+      (window.DRAFT_DATA?.players ? window.DRAFT_DATA.players.length : 0) +
       ' players loaded (Data date: <b style="color:var(--accent)">' +
-      ((window.DRAFT_DATA && window.DRAFT_DATA.generated) || 'live') +
+      (window.DRAFT_DATA?.generated || 'live') +
       '</b>).</div>' +
       '<button type="button" class="act primary" id="refresh_data_btn" onclick="triggerDataRefresh(this)" style="font-size:12px; padding:4px 10px">🔄 Refresh Data Now</button>' +
       '</div>' +
@@ -4032,7 +3987,7 @@
       syncSetupInputsFromDom();
       const newCount = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
       while (setupDraftNames.length < newCount)
-        setupDraftNames.push('Team ' + (setupDraftNames.length + 1));
+        setupDraftNames.push(`Team ${setupDraftNames.length + 1}`);
       if (setupMySlot > newCount) setupMySlot = 1;
       $('setup_teams_body').innerHTML = renderSetupTable(newCount);
     });
@@ -4072,10 +4027,10 @@
   function syncSetupInputsFromDom() {
     const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     for (let i = 1; i <= count; i++) {
-      const input = $('team_input_' + i);
+      const input = $(`team_input_${i}`);
       if (input) {
         setupDraftNames[i - 1] =
-          (input.value != null ? String(input.value).trim() : '') || 'Team ' + i;
+          (input.value != null ? String(input.value).trim() : '') || `Team ${i}`;
       }
     }
   }
@@ -4086,7 +4041,7 @@
     setupMySlot = slot;
     const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     for (let i = 1; i <= count; i++) {
-      const row = $('setup_row_' + i);
+      const row = $(`setup_row_${i}`);
       if (row) row.className = i === slot ? 'is-me' : '';
     }
   }
@@ -4125,7 +4080,7 @@
     $('setup_teams_body').innerHTML = (() => {
       let rows = '';
       for (let i = 1; i <= countVal; i++) {
-        const name = setupDraftNames[i - 1] || 'Team ' + i;
+        const name = setupDraftNames[i - 1] || `Team ${i}`;
         const isMe = i === setupMySlot;
         rows +=
           '<tr class="' +
@@ -4175,10 +4130,10 @@
     const count = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     setupDraftNames = [];
     for (let i = 1; i <= count; i++) {
-      setupDraftNames.push(i === setupMySlot ? 'You' : 'Team ' + i);
+      setupDraftNames.push(i === setupMySlot ? 'You' : `Team ${i}`);
     }
     for (let i = 1; i <= count; i++) {
-      const inp = $('team_input_' + i);
+      const inp = $(`team_input_${i}`);
       if (inp) inp.value = setupDraftNames[i - 1];
     }
   }
@@ -4205,7 +4160,7 @@
     s.qbFormat = $('setup_qb_select').value;
     s.slot = setupMySlot;
     s.teamNames = setupDraftNames.slice(0, s.teams);
-    while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
+    while (s.teamNames.length < s.teams) s.teamNames.push(`Team ${s.teamNames.length + 1}`);
 
     if ($('setup_max_keepers')) {
       s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
@@ -4240,9 +4195,9 @@
     if (typeof document !== 'undefined') {
       const titleEl = document.getElementById('leaguetitle');
       if (titleEl) {
-        titleEl.textContent = '🏈 ' + s.leagueName;
+        titleEl.textContent = `🏈 ${s.leagueName}`;
       }
-      document.title = s.leagueName + ' — Draft Board';
+      document.title = `${s.leagueName} — Draft Board`;
     }
     render();
   }
@@ -4285,7 +4240,7 @@
         s.slot = setupMySlot;
         if (Array.isArray(setupDraftNames)) {
           s.teamNames = setupDraftNames.slice(0, s.teams);
-          while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
+          while (s.teamNames.length < s.teams) s.teamNames.push(`Team ${s.teamNames.length + 1}`);
         }
         if ($('setup_max_keepers')) {
           s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
@@ -4327,13 +4282,12 @@
         data = await res.json();
       } else {
         const text = await res.text();
-        throw new Error(text || 'Server returned status ' + res.status);
+        throw new Error(text || `Server returned status ${res.status}`);
       }
       if (res.ok && data.ok) {
         if (statusEl) {
           statusEl.style.color = 'var(--good)';
-          statusEl.textContent =
-            '✅ ' + (data.message || 'Data updated successfully!') + ' Reloading app...';
+          statusEl.textContent = `✅ ${data.message || 'Data updated successfully!'} Reloading app...`;
         }
         if (btn) btn.textContent = '✅ Done!';
         try {
@@ -4343,12 +4297,12 @@
               JSON.stringify({ timestamp: Date.now() }),
             );
           }
-        } catch (e) {}
+        } catch (_e) {}
         setTimeout(() => {
           window.location.reload();
         }, 1200);
       } else {
-        throw new Error(data.message || 'Server returned status ' + res.status);
+        throw new Error(data.message || `Server returned status ${res.status}`);
       }
     } catch (err) {
       if (statusEl) {
@@ -4441,7 +4395,7 @@
       if ($('setup_qb_select')) s.qbFormat = $('setup_qb_select').value;
       s.slot = setupMySlot;
       s.teamNames = setupDraftNames.slice(0, s.teams);
-      while (s.teamNames.length < s.teams) s.teamNames.push('Team ' + (s.teamNames.length + 1));
+      while (s.teamNames.length < s.teams) s.teamNames.push(`Team ${s.teamNames.length + 1}`);
       if ($('setup_max_keepers')) {
         s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
       }
@@ -4487,7 +4441,7 @@
       keeperIsCustom = false;
       selectedKeeperPlayer = byId(k.playerId) || {
         id: k.playerId,
-        name: 'Player #' + k.playerId,
+        name: `Player #${k.playerId}`,
         pos: 'WR',
         team: '',
       };
@@ -4572,7 +4526,7 @@
 
     const pickForKeeperId = {};
     for (const [overall, kObj] of Object.entries(keeperPicksMap)) {
-      if (kObj && kObj.id) {
+      if (kObj?.id) {
         pickForKeeperId[kObj.id] = parseInt(overall, 10);
       }
     }
@@ -4585,7 +4539,7 @@
       const sorted = keepers.slice().sort((a, b) => a.slot - b.slot || a.round - b.round);
       for (const k of sorted) {
         const p = k.playerId != null ? byId(k.playerId) || {} : {};
-        const name = k.customName || k.playerName || p.name || 'Player #' + k.playerId;
+        const name = k.customName || k.playerName || p.name || `Player #${k.playerId}`;
         const pos = k.customPos || k.playerPos || p.pos || '—';
         const team = k.customTeam || k.playerTeam || p.team || '—';
         const posClass = ['QB', 'RB', 'WR', 'TE'].includes(pos)
@@ -4598,9 +4552,7 @@
         const isMe = k.slot === s.slot;
         const isEditing = k.id === editingKeeperId;
         const overall = pickForKeeperId[k.id];
-        const pickStr = overall
-          ? '#' + overall + ' (' + fmtPick(overall, s.teams) + ')'
-          : 'Rd ' + k.round;
+        const pickStr = overall ? `#${overall} (${fmtPick(overall, s.teams)})` : `Rd ${k.round}`;
         const droppedBadge = k.wasDroppedFromPool
           ? ' <span class="meta" style="color:var(--warn); font-size:11px" title="Player fell out of consensus rankings pool during refresh; preserved as custom keeper">⚠️ (unranked in pool)</span>'
           : k.customName
@@ -4703,7 +4655,7 @@
         editingKeeper.customName ||
         (byId(editingKeeper.playerId)
           ? byId(editingKeeper.playerId).name
-          : 'Player #' + editingKeeper.playerId);
+          : `Player #${editingKeeper.playerId}`);
       formHeaderHtml =
         '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">' +
         '<h4 style="margin:0; color:var(--accent); font-size:13px; text-transform:none">✏️ Edit Keeper: <span style="color:var(--text)">' +
@@ -4720,8 +4672,8 @@
         '</div>';
     }
 
-    const customNameVal = editingKeeper && editingKeeper.customName ? editingKeeper.customName : '';
-    const customTeamVal = editingKeeper && editingKeeper.customTeam ? editingKeeper.customTeam : '';
+    const customNameVal = editingKeeper?.customName ? editingKeeper.customName : '';
+    const customTeamVal = editingKeeper?.customTeam ? editingKeeper.customTeam : '';
     const customByeVal =
       editingKeeper && editingKeeper.customBye != null ? editingKeeper.customBye : '';
     const searchVal = !keeperIsCustom && selectedKeeperPlayer ? selectedKeeperPlayer.name : '';
@@ -4803,7 +4755,7 @@
       '<button type="button" class="act primary" onclick="saveAndCloseKeepersModal()">Save & Close</button>' +
       '</div>';
 
-    if (editingKeeper && editingKeeper.round && $('keeper_round_select')) {
+    if (editingKeeper?.round && $('keeper_round_select')) {
       $('keeper_round_select').value = editingKeeper.round;
     }
 
@@ -4904,7 +4856,7 @@
         '<span class="meta">' +
         (p.team || '') +
         '</span>' +
-        (p.bye ? '<span class="meta">· Wk ' + p.bye + '</span>' : '') +
+        (p.bye ? `<span class="meta">· Wk ${p.bye}</span>` : '') +
         '</div>';
     });
 
@@ -5083,7 +5035,7 @@
       const ok = document.execCommand('copy');
       document.body.removeChild(ta);
       return Promise.resolve(ok);
-    } catch (e) {
+    } catch (_e) {
       return Promise.resolve(false);
     }
   }
@@ -5098,11 +5050,11 @@
       document.body.appendChild(toast);
     }
     toast.textContent = msg;
-    toast.className = 'copy-toast show' + (isWarn ? ' warn' : '');
+    toast.className = `copy-toast show${isWarn ? ' warn' : ''}`;
     if (typeof clearTimeout !== 'undefined') clearTimeout(toast._timer);
     if (typeof setTimeout !== 'undefined') {
       toast._timer = setTimeout(() => {
-        toast.className = 'copy-toast' + (isWarn ? ' warn' : '');
+        toast.className = `copy-toast${isWarn ? ' warn' : ''}`;
       }, 2200);
     }
   }
@@ -5123,11 +5075,11 @@
     const text =
       typeof fmtFn === 'function'
         ? fmtFn(lastEntry, global.state.settings, global.state.tradedPicks, byId)
-        : '#' + lastEntry.overall + ' pick';
+        : `#${lastEntry.overall} pick`;
 
     if (text) {
       copyTextToClipboard(text);
-      showCopyToast('📋 Copied: ' + text);
+      showCopyToast(`📋 Copied: ${text}`);
     }
     return text;
   }

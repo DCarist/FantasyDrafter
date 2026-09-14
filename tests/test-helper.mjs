@@ -31,7 +31,7 @@ export function assertThrows(fn, label) {
     fn();
     failureCount++;
     console.error(`  ❌ FAIL: ${label} (expected function to throw, but it succeeded)`);
-  } catch (err) {
+  } catch (_err) {
     console.log(`  ✅ ok: ${label} (threw error as expected)`);
   }
 }

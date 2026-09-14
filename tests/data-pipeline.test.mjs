@@ -1,7 +1,7 @@
 // Test suite for Data Pipeline & Ingestion
-import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -103,7 +103,7 @@ try {
   unlinkSync(sheetPath);
   unlinkSync(outJsPath);
   unlinkSync(outJsonPath);
-} catch (e) {}
+} catch (_e) {}
 
 const success = finishSuite('Data Pipeline & Ingestion');
 process.exit(success ? 0 : 1);

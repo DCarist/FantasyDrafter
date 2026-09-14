@@ -1,7 +1,7 @@
 // Test suite for NFL Injury Reports, Filtering, and Collapsible Modal UI
 
-import { existsSync, readFileSync } from 'fs';
-import { createRequire } from 'module';
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
@@ -128,9 +128,9 @@ const mockAthHealthy = {
 
 function formatAthletePillTest(ath) {
   let injTag = '';
-  if (ath.injury && ath.injury.code) {
+  if (ath.injury?.code) {
     const c = ath.injury.code;
-    const tip = (ath.injury.status || 'Injured') + (ath.injury.type ? ': ' + ath.injury.type : '');
+    const tip = (ath.injury.status || 'Injured') + (ath.injury.type ? `: ${ath.injury.type}` : '');
     injTag = `<span class="dc-inj inj-${c.toLowerCase()}" title="${tip}">${c}</span>`;
   }
   return `<div class="dc-player"><span class="dc-name">${ath.name}</span>${injTag}</div>`;
@@ -145,7 +145,7 @@ assert(!pillHealthy.includes('dc-inj'), 'Healthy athlete pill does not have dc-i
 
 // Verify Player Details Collapsible Section HTML Generator
 function renderInjurySectionTest(p, refreshDate = '2026-09-01') {
-  if (!p.injury || !p.injury.code) {
+  if (!p.injury?.code) {
     return `<div class="injury-accordion inactive"><div class="injury-header-inactive"><span>🩺</span><span>No injury reported as of ${refreshDate}</span></div></div>`;
   }
   const inj = p.injury;

@@ -1,7 +1,7 @@
 // Test suite for ESPN API Client Robustness, Anti-403 Protections & Fallback Resilience
 
-import { spawnSync } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -120,7 +120,7 @@ for (const t of nfl32) {
 }
 
 // --- 6. Python Fallback Simulation (Simulating curl unavailable) ---
-const testFallbackRun = spawnSync(
+spawnSync(
   'python',
   [
     '-c',

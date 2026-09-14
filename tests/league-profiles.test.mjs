@@ -1,5 +1,5 @@
 // Test suite for Multi-League Profiles, Manifest Management, and Workspace Switching
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
@@ -141,7 +141,7 @@ mockStorage.set(
 
 // Load draft-state.js in mock environment
 Object.assign(globalThis, L);
-const fs = require('fs');
+const fs = require('node:fs');
 const stateCode = fs.readFileSync('./js/draft-state.js', 'utf8');
 // biome-ignore lint/security/noGlobalEval: test environment evaluation of draft-state.js
 eval(stateCode);
@@ -197,7 +197,7 @@ const deleteRes = globalThis.deleteLeague(dupRes.id);
 eq(deleteRes.ok, true, 'Deleted cloned league');
 eq(globalThis.getLeagueList().length, 2, 'Two leagues remain in manifest');
 assert(
-  mockStorage.get('fantasy_drafter_league_' + dupRes.id) == null,
+  mockStorage.get(`fantasy_drafter_league_${dupRes.id}`) == null,
   'Deleted league storage removed',
 );
 

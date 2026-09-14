@@ -1,6 +1,6 @@
 // Test suite for Bye Week Conflict Detection and Positional Alignment Highlighting
-import { createRequire } from 'module';
-import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
+import { createRequire } from 'node:module';
+import { eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
