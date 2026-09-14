@@ -45,7 +45,9 @@ assert(existsSync('js/draft-ui.js'), 'js/draft-ui.js exists');
 const draftUiCode = readFileSync('js/draft-ui.js', 'utf-8');
 
 // Ensure row template string builds exactly 11 <td> cells
-const rowHtmlBlock = draftUiCode.match(/html \+= '<tr' \+ dragAttrs \+ '>'([\s\S]*?)<\/tr>';/);
+const rowHtmlBlock = draftUiCode.match(
+  /html\s*\+=\s*['"]<tr['"]\s*\+\s*dragAttrs\s*\+\s*['"]>['"]([\s\S]*?)<\/tr>['"];/,
+);
 assert(rowHtmlBlock, 'draft-ui.js defines row template block');
 
 const staticTdMatches = (rowHtmlBlock[1].match(/<td/g) || []).length;

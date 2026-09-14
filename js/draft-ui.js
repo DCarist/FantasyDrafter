@@ -679,20 +679,48 @@
           '</td>'
         : '<td class="rk">' + (idx + 1) + tierBadgeHtml + '</td>';
 
-      // biome-ignore format: preserve exact syntax for player-view-alignment test
-      html += '<tr' + dragAttrs + '>'
-        + rankCell
-        + '<td class="clickname" onclick="showPlayer(' + p.id + ')">' + starBtn + '<span class="pname">' + p.name + '</span>' + injTag + rookie + age + value + scarcityTag + '</td>'
-        + '<td class="col-center"><span class="pos ' + posClass + '">' + p.pos + '</span></td>'
-        + '<td class="col-center">' + formatTierPill(p.posTier) + '</td>'
-        + '<td class="meta col-center">' + (p.team || '—') + '</td>'
-        + byeCell
-        + '<td class="num rk">' + rank1Val + '</td>'
-        + '<td class="num rk">' + rank2Val + '</td>'
-        + edgeCell
-        + '<td class="num score">' + (p.score != null ? p.score.toFixed(1) : '—') + '</td>'
-        + actionCell
-        + '</tr>';
+      html +=
+        '<tr' +
+        dragAttrs +
+        '>' +
+        rankCell +
+        '<td class="clickname" onclick="showPlayer(' +
+        p.id +
+        ')">' +
+        starBtn +
+        '<span class="pname">' +
+        p.name +
+        '</span>' +
+        injTag +
+        rookie +
+        age +
+        value +
+        scarcityTag +
+        '</td>' +
+        '<td class="col-center"><span class="pos ' +
+        posClass +
+        '">' +
+        p.pos +
+        '</span></td>' +
+        '<td class="col-center">' +
+        formatTierPill(p.posTier) +
+        '</td>' +
+        '<td class="meta col-center">' +
+        (p.team || '—') +
+        '</td>' +
+        byeCell +
+        '<td class="num rk">' +
+        rank1Val +
+        '</td>' +
+        '<td class="num rk">' +
+        rank2Val +
+        '</td>' +
+        edgeCell +
+        '<td class="num score">' +
+        (p.score != null ? p.score.toFixed(1) : '—') +
+        '</td>' +
+        actionCell +
+        '</tr>';
     });
 
     let emptyMsg = global.PLAYERS.length ? 'No players match.' : 'Player data not loaded yet.';
