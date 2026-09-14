@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import contextlib
 import csv
 import io
 import json
@@ -27,10 +28,12 @@ from datetime import date
 # Ensure UTF-8 console output on Windows
 if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure_out = getattr(sys.stdout, "reconfigure", None)
+        if callable(reconfigure_out):
+            reconfigure_out(encoding="utf-8", errors="replace")
+        reconfigure_err = getattr(sys.stderr, "reconfigure", None)
+        if callable(reconfigure_err):
+            reconfigure_err(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -221,9 +224,7 @@ def build_dst_map():
         elif abbr == "LV":
             variants.extend(["lv raiders", "lv raiders dst", "las vegas dst"])
         elif abbr == "LAC":
-            variants.extend(
-                ["la chargers", "la chargers dst", "los angeles chargers dst"]
-            )
+            variants.extend(["la chargers", "la chargers dst", "los angeles chargers dst"])
         elif abbr == "LAR":
             variants.extend(["la rams", "la rams dst", "los angeles rams dst"])
 
@@ -299,7 +300,7 @@ def fetch_source(url_or_path):
         try:
             from espn_client import fetch_with_curl
 
-            out, err = fetch_with_curl(url_or_path, timeout=30)
+            out, _err = fetch_with_curl(url_or_path, timeout=30)
             if out:
                 return out
         except Exception:
@@ -316,7 +317,7 @@ def fetch_source(url_or_path):
             return resp.read().decode("utf-8", errors="replace")
     else:
         print(f"Reading local source: {url_or_path}")
-        with open(url_or_path, "r", encoding="utf-8") as f:
+        with open(url_or_path, encoding="utf-8") as f:
             return f.read()
 
 
@@ -361,7 +362,7 @@ def update_rankings(
     try:
         source_js = out_js if (out_js and os.path.exists(out_js)) else DEFAULT_OUT_JS
         if os.path.exists(source_js):
-            with open(source_js, "r", encoding="utf-8") as f:
+            with open(source_js, encoding="utf-8") as f:
                 content = f.read()
                 json_str = content.split("=", 1)[1].rstrip().rstrip(";")
                 old_data = json.loads(json_str)
@@ -429,10 +430,8 @@ def update_rankings(
             rookie_rank = None
             if rookie_raw and rookie_raw.lower() != "vet":
                 is_rookie = True
-                try:
+                with contextlib.suppress(ValueError):
                     rookie_rank = int(float(rookie_raw))
-                except ValueError:
-                    pass
 
             sheet_map[k] = {
                 "name": canon_name,
@@ -484,10 +483,8 @@ def update_rankings(
 
         bye_raw = r.get("bye")
         if bye_raw and bye_raw != "NA" and (canon_team or team):
-            try:
+            with contextlib.suppress(ValueError):
                 byes[canon_team or team] = int(bye_raw)
-            except ValueError:
-                pass
 
         rec = players.setdefault(
             k,
@@ -646,40 +643,30 @@ def update_rankings(
 
         # Default consensus redraft fallback
         if rec["redraft"] is None:
-            rec["redraft"] = (
-                rec["red_1qb_half"] or rec["red_1qb_ppr"] or rec["red_1qb_std"]
-            )
+            rec["redraft"] = rec["red_1qb_half"] or rec["red_1qb_ppr"] or rec["red_1qb_std"]
 
     # 7. Enrich with values.csv data (ages, draft year for rookies, fallback dynasty ranks)
     for k, rec in players.items():
         v = values_map.get(k)
         if v:
             if not rec.get("age") and v.get("age") and v["age"] != "NA":
-                try:
+                with contextlib.suppress(ValueError):
                     rec["age"] = round(float(v["age"]), 1)
-                except ValueError:
-                    pass
 
             if v.get("draft_year"):
-                try:
+                with contextlib.suppress(ValueError):
                     yr = int(float(v["draft_year"]))
                     if yr >= 2026:
                         rec["rookie"] = True
                         rookies.add(k)
-                except ValueError:
-                    pass
 
             if rec["dynSF"] is None and v.get("ecr_2qb") and v["ecr_2qb"] != "NA":
-                try:
+                with contextlib.suppress(ValueError):
                     rec["dynSF"] = round(float(v["ecr_2qb"]), 1)
-                except ValueError:
-                    pass
 
             if rec["dyn1QB"] is None and v.get("ecr_1qb") and v["ecr_1qb"] != "NA":
-                try:
+                with contextlib.suppress(ValueError):
                     rec["dyn1QB"] = round(float(v["ecr_1qb"]), 1)
-                except ValueError:
-                    pass
 
     # 8. Finalize records, resolve team/position conflicts, and apply fallbacks
     out = []
@@ -785,16 +772,14 @@ def update_rankings(
     # Sort by best available rank
     out.sort(
         key=lambda p: min(
-            x
-            for x in (p["dynSF"], p["dyn1QB"], p["redraft"], p["adp"], 9999)
-            if x is not None
+            x for x in (p["dynSF"], p["dyn1QB"], p["redraft"], p["adp"], 9999) if x is not None
         )
     )
 
     # 8b. Refresh 32-team depth charts from ESPN or re-link existing
     depth_charts = existing_depth_charts
     try:
-        from fetch_depth_charts import fetch_all_depth_charts, build_player_lookup
+        from fetch_depth_charts import build_player_lookup, fetch_all_depth_charts
 
         print("Refreshing 32-team depth charts from ESPN...")
         depth_charts = fetch_all_depth_charts(
@@ -802,9 +787,7 @@ def update_rankings(
         )
         print(f"Successfully synced depth charts for {len(depth_charts)} teams.")
     except Exception as e:
-        print(
-            f"Note: Live depth chart refresh skipped ({e}), re-linking existing depth charts..."
-        )
+        print(f"Note: Live depth chart refresh skipped ({e}), re-linking existing depth charts...")
         if depth_charts:
             try:
                 from fetch_depth_charts import build_player_lookup
@@ -814,15 +797,15 @@ def update_rankings(
                     for group_key in ["qb", "rb", "te", "pk"]:
                         for ath in tdata.get(group_key, []):
                             nn = norm_name(ath.get("name", ""))
-                            ath["playerId"] = lookup_exact.get(
-                                (nn, team_abbr)
-                            ) or lookup_name.get(nn)
-                    for role_key, wr_list in tdata.get("wr", {}).items():
+                            ath["playerId"] = lookup_exact.get((nn, team_abbr)) or lookup_name.get(
+                                nn
+                            )
+                    for _role_key, wr_list in tdata.get("wr", {}).items():
                         for ath in wr_list:
                             nn = norm_name(ath.get("name", ""))
-                            ath["playerId"] = lookup_exact.get(
-                                (nn, team_abbr)
-                            ) or lookup_name.get(nn)
+                            ath["playerId"] = lookup_exact.get((nn, team_abbr)) or lookup_name.get(
+                                nn
+                            )
             except Exception as le:
                 print(f"Note: Depth chart re-link skipped: {le}")
 
@@ -833,15 +816,9 @@ def update_rankings(
         "schedules": existing_schedules,
         "depthCharts": depth_charts,
         "sources": {
-            "dynastySF": [
-                "https://www.fantasypros.com/nfl/rankings/dynasty-superflex.php"
-            ],
-            "dynasty1QB": [
-                "https://www.fantasypros.com/nfl/rankings/dynasty-overall.php"
-            ],
-            "redraft": [
-                "https://www.fantasypros.com/nfl/rankings/consensus-cheatsheets.php"
-            ],
+            "dynastySF": ["https://www.fantasypros.com/nfl/rankings/dynasty-superflex.php"],
+            "dynasty1QB": ["https://www.fantasypros.com/nfl/rankings/dynasty-overall.php"],
+            "redraft": ["https://www.fantasypros.com/nfl/rankings/consensus-cheatsheets.php"],
             "adp": ["https://www.fantasypros.com/nfl/adp/best-ball-overall.php"],
             "googleSheet": [sheet_url],
             "provider": ["https://github.com/dynastyprocess/data"],
@@ -886,7 +863,7 @@ def update_rankings(
     print(f"Generated timestamp: {payload['generated']}")
 
     print("\nTop 12 Players by Dynasty Superflex:")
-    top_sf = sorted([p for p in out if p["dynSF"]], key=lambda p: p["dynSF"])[:12]
+    top_sf = sorted([p for p in out if p["dynSF"]], key=lambda p: float(p["dynSF"] or 0))[:12]
     for p in top_sf:
         r_tag = (
             f" (Rk #{p['rookieRank']})"
@@ -899,7 +876,7 @@ def update_rankings(
 
     print("\nTop 8 Rookies by Superflex Value:")
     top_rk = sorted(
-        [p for p in out if p["rookie"] and p["dynSF"]], key=lambda p: p["dynSF"]
+        [p for p in out if p["rookie"] and p["dynSF"]], key=lambda p: float(p["dynSF"] or 0)
     )[:8]
     for p in top_rk:
         print(
@@ -913,9 +890,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Automated Rankings Updater for Ken's Fantasy Drafter."
     )
-    parser.add_argument(
-        "--ecr-source", default=None, help="URL or local file path for ECR CSV"
-    )
+    parser.add_argument("--ecr-source", default=None, help="URL or local file path for ECR CSV")
     parser.add_argument(
         "--values-source", default=None, help="URL or local file path for Values CSV"
     )
@@ -924,9 +899,7 @@ def main():
         default=None,
         help="URL or local file path for Google Sheet CSV",
     )
-    parser.add_argument(
-        "--out-js", default=DEFAULT_OUT_JS, help="Output path for players-data.js"
-    )
+    parser.add_argument("--out-js", default=DEFAULT_OUT_JS, help="Output path for players-data.js")
     parser.add_argument(
         "--out-json",
         default=DEFAULT_OUT_JSON,

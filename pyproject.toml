@@ -31,6 +31,7 @@ ignore = [
     "E501",   # line length handled by ruff format
     "RUF012", # mutable class default
 ]
+allowed-confusables = ["’"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -38,10 +39,12 @@ indent-style = "space"
 line-ending = "auto"
 
 [tool.ty]
+[tool.ty.src]
 exclude = [
     "players-data.js",
     "players-data.json",
     "data/**",
     "logs/**",
 ]
+
 

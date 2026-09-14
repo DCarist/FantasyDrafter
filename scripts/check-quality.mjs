@@ -18,9 +18,9 @@
  *   node scripts/check-quality.mjs --fix               # Auto-fix formatting and safe lints
  */
 
-import { spawnSync } from 'child_process';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { spawnSync } from 'node:child_process';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,7 +38,7 @@ const colors = {
   red: '\x1b[31m',
   yellow: '\x1b[33m',
   cyan: '\x1b[36m',
-  dim: '\x1b[2m'
+  dim: '\x1b[2m',
 };
 
 function logHeader(title) {
@@ -53,7 +53,7 @@ function runStep(name, command, cmdArgs) {
   const res = spawnSync(command, cmdArgs, {
     cwd: REPO_ROOT,
     stdio: 'inherit',
-    shell: true
+    shell: true,
   });
   const duration = ((Date.now() - startTime) / 1000).toFixed(2);
 
@@ -61,7 +61,9 @@ function runStep(name, command, cmdArgs) {
   if (passed) {
     console.log(`\n${colors.green}✔ ${name} passed (${duration}s)${colors.reset}`);
   } else {
-    console.log(`\n${colors.red}✖ ${name} failed with exit code ${res.status} (${duration}s)${colors.reset}`);
+    console.log(
+      `\n${colors.red}✖ ${name} failed with exit code ${res.status} (${duration}s)${colors.reset}`,
+    );
   }
 
   return { name, passed, duration, exitCode: res.status };
@@ -104,20 +106,29 @@ if (['all', 'tests', 'test'].includes(selectedTool)) {
 }
 
 // Summary
-console.log(`\n${colors.bold}================ Quality Checks Summary ================${colors.reset}`);
+console.log(
+  `\n${colors.bold}================ Quality Checks Summary ================${colors.reset}`,
+);
 let allPassed = true;
 for (const step of steps) {
-  const statusBadge = step.passed ? `${colors.green}[PASS]${colors.reset}` : `${colors.red}[FAIL]${colors.reset}`;
+  const statusBadge = step.passed
+    ? `${colors.green}[PASS]${colors.reset}`
+    : `${colors.red}[FAIL]${colors.reset}`;
   console.log(`  ${statusBadge} ${step.name.padEnd(30)} (${step.duration}s)`);
   if (!step.passed) allPassed = false;
 }
-console.log(`${colors.bold}========================================================${colors.reset}`);
+console.log(
+  `${colors.bold}========================================================${colors.reset}`,
+);
 
 if (allPassed) {
-  console.log(`\n${colors.green}${colors.bold}🎉 All requested quality checks passed successfully!${colors.reset}\n`);
+  console.log(
+    `\n${colors.green}${colors.bold}🎉 All requested quality checks passed successfully!${colors.reset}\n`,
+  );
   process.exit(0);
 } else {
-  console.log(`\n${colors.red}${colors.bold}⚠️  Some quality checks reported errors. Please review the output above.${colors.reset}\n`);
+  console.log(
+    `\n${colors.red}${colors.bold}⚠️  Some quality checks reported errors. Please review the output above.${colors.reset}\n`,
+  );
   process.exit(1);
 }
-

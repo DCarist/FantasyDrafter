@@ -12,7 +12,7 @@
     espnLastSeen: null,
     espnLeagueInfo: null,
     channel: null,
-    activeTab: 'sleeper'
+    activeTab: 'sleeper',
   };
 
   let serverRelaySource = null;
@@ -20,39 +20,45 @@
   let lastSyncTimestamp = 0;
 
   function reportServerPick(data) {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = window.location.origin.startsWith('http')
+      ? window.location.origin
+      : 'http://127.0.0.1:8517';
     try {
       fetch(host + '/api/sync/pick', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-        mode: 'cors'
-      }).catch(() => { });
-    } catch (e) { }
+        mode: 'cors',
+      }).catch(() => {});
+    } catch (e) {}
   }
 
   function reportServerEvent(message, type) {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = window.location.origin.startsWith('http')
+      ? window.location.origin
+      : 'http://127.0.0.1:8517';
     try {
       fetch(host + '/api/sync/log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: message, type: type || 'info' }),
-        mode: 'cors'
-      }).catch(() => { });
-    } catch (e) { }
+        mode: 'cors',
+      }).catch(() => {});
+    } catch (e) {}
   }
 
   function reportServerReset() {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = window.location.origin.startsWith('http')
+      ? window.location.origin
+      : 'http://127.0.0.1:8517';
     try {
       fetch(host + '/api/sync/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: 'drafter', timestamp: Date.now() }),
-        mode: 'cors'
-      }).catch(() => { });
-    } catch (e) { }
+        mode: 'cors',
+      }).catch(() => {});
+    } catch (e) {}
   }
 
   function initBroadcastSync() {
@@ -97,7 +103,9 @@
   }
 
   function initServerSyncRelay() {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = window.location.origin.startsWith('http')
+      ? window.location.origin
+      : 'http://127.0.0.1:8517';
 
     // Try Server-Sent Events (SSE) as primary zero-poll real-time channel
     try {
@@ -118,7 +126,7 @@
         try {
           const data = JSON.parse(e.data);
           handleIncomingSyncEvent(data);
-        } catch (err) { }
+        } catch (err) {}
       };
 
       serverRelaySource.onerror = function () {
@@ -131,11 +139,20 @@
   }
 
   function shouldAutoApplyLeagueInfo(info) {
-    if (!info || !info.teams || !Array.isArray(info.teamNames) || info.teamNames.length === 0) return false;
+    if (!info || !info.teams || !Array.isArray(info.teamNames) || info.teamNames.length === 0)
+      return false;
     // Auto-apply if the local draft has not started yet (empty log) AND teamNames are still generic/default
-    if (global.state && global.state.log && global.state.log.length === 0 && global.state.settings) {
+    if (
+      global.state &&
+      global.state.log &&
+      global.state.log.length === 0 &&
+      global.state.settings
+    ) {
       const s = global.state.settings;
-      const isDefaultNames = !s.teamNames || s.teamNames.length === 0 || s.teamNames.every((n, i) => n === ('Team ' + (i + 1)) || n === 'My Team' || n === 'You');
+      const isDefaultNames =
+        !s.teamNames ||
+        s.teamNames.length === 0 ||
+        s.teamNames.every((n, i) => n === 'Team ' + (i + 1) || n === 'My Team' || n === 'You');
       if (isDefaultNames || s.teams !== info.teams) {
         return true;
       }
@@ -144,15 +161,22 @@
   }
 
   async function pollServerSync() {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = window.location.origin.startsWith('http')
+      ? window.location.origin
+      : 'http://127.0.0.1:8517';
     try {
-      const res = await fetch(host + '/api/sync/poll?since=' + lastSyncTimestamp, { cache: 'no-store' });
+      const res = await fetch(host + '/api/sync/poll?since=' + lastSyncTimestamp, {
+        cache: 'no-store',
+      });
       if (!res.ok) return;
       const data = await res.json();
       if (data.serverTime) lastSyncTimestamp = data.serverTime;
 
       if (data.leagueInfo && data.leagueInfo.teams) {
-        const wasNew = !syncState.espnLeagueInfo || syncState.espnLeagueInfo.teams !== data.leagueInfo.teams || syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
+        const wasNew =
+          !syncState.espnLeagueInfo ||
+          syncState.espnLeagueInfo.teams !== data.leagueInfo.teams ||
+          syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
         syncState.espnLeagueInfo = data.leagueInfo;
         if (wasNew && shouldAutoApplyLeagueInfo(data.leagueInfo)) {
           applyEspnLeagueSetup(true);
@@ -168,7 +192,7 @@
         updateSyncBadge();
         updateEspnStatusBox();
       } else {
-        if (syncState.type === 'espn' && (Date.now() - (syncState.espnLastSeen || 0) > 30000)) {
+        if (syncState.type === 'espn' && Date.now() - (syncState.espnLastSeen || 0) > 30000) {
           syncState.espnConnected = false;
           syncState.type = 'off';
           updateSyncBadge();
@@ -191,7 +215,10 @@
   function handleIncomingSyncEvent(data) {
     if (!data) return;
     if (data.leagueInfo && data.leagueInfo.teams) {
-      const wasNew = !syncState.espnLeagueInfo || syncState.espnLeagueInfo.teams !== data.leagueInfo.teams || syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
+      const wasNew =
+        !syncState.espnLeagueInfo ||
+        syncState.espnLeagueInfo.teams !== data.leagueInfo.teams ||
+        syncState.espnLeagueInfo.mySlot !== data.leagueInfo.mySlot;
       syncState.espnLeagueInfo = data.leagueInfo;
       if (wasNew && shouldAutoApplyLeagueInfo(data.leagueInfo)) {
         applyEspnLeagueSetup(true);
@@ -236,7 +263,7 @@
       teams: (leagueInfo && leagueInfo.teams) || global.state.settings.teams || 12,
       slot: (leagueInfo && leagueInfo.mySlot) || global.state.settings.slot || 1,
       mode: global.state.settings.mode || '3rr',
-      teamNames: (leagueInfo && leagueInfo.teamNames) || global.state.settings.teamNames || null
+      teamNames: (leagueInfo && leagueInfo.teamNames) || global.state.settings.teamNames || null,
     };
 
     const result = reconcileDraftLog(global.state.log, remotePicks, global.PLAYERS, draftContext);
@@ -245,7 +272,7 @@
       global.state.log = result.log;
 
       // Clean drafted players from watchlist and queue
-      const takenIds = global.state.log.map(e => e.playerId).filter(id => id != null);
+      const takenIds = global.state.log.map((e) => e.playerId).filter((id) => id != null);
       if (takenIds.length > 0) {
         global.state.watchlist = cleanWatchlist(global.state.watchlist, takenIds);
         if (typeof cleanQueue === 'function') {
@@ -257,7 +284,9 @@
       if (typeof global.render === 'function') global.render();
 
       if (result.added > 0) {
-        reportServerEvent(`⚡ Live Synced ${result.added} new pick(s) from ESPN draft room (Total: #${global.state.log.length})`);
+        reportServerEvent(
+          `⚡ Live Synced ${result.added} new pick(s) from ESPN draft room (Total: #${global.state.log.length})`,
+        );
       }
       if (result.rolledBack > 0) {
         reportServerEvent(`⏪ Reconciled draft: ${result.rolledBack} pick(s) rolled back`);
@@ -275,24 +304,38 @@
       overall = current;
     }
 
-    const existingIdx = global.state.log.findIndex(e => e.overall === overall);
+    const existingIdx = global.state.log.findIndex((e) => e.overall === overall);
 
     // Safety Guard: Protect past settled picks from being overwritten by stale/bad single-pick numbers
     if (existingIdx >= 0 && overall < current - 1) {
       const existing = global.state.log[existingIdx];
       const resolved = resolveRemotePick(pickData, global.PLAYERS, { unlistedFallback: true });
-      const isSame = (resolved.playerId != null && existing.playerId === resolved.playerId) ||
-        (resolved.playerId == null && existing.playerId == null && existing.customName === resolved.customName);
+      const isSame =
+        (resolved.playerId != null && existing.playerId === resolved.playerId) ||
+        (resolved.playerId == null &&
+          existing.playerId == null &&
+          existing.customName === resolved.customName);
       if (!isSame) {
-        console.warn(`[Sync Guard] Ignored stale pick event #${overall} for "${pickData.name}" as #${overall} is already filled.`);
+        console.warn(
+          `[Sync Guard] Ignored stale pick event #${overall} for "${pickData.name}" as #${overall} is already filled.`,
+        );
         return;
       }
     }
 
-    const resolved = resolveRemotePick(pickData, global.PLAYERS, { unlistedFallback: global.state.settings.autoUnlistedSync !== false });
+    const resolved = resolveRemotePick(pickData, global.PLAYERS, {
+      unlistedFallback: global.state.settings.autoUnlistedSync !== false,
+    });
     if (!resolved) return;
 
-    const slotInfo = teamForOverall(overall, global.state.settings.teams, global.state.settings.mode, global.state.settings.teamNames, global.state.settings.slot, global.state.tradedPicks);
+    const slotInfo = teamForOverall(
+      overall,
+      global.state.settings.teams,
+      global.state.settings.mode,
+      global.state.settings.teamNames,
+      global.state.settings.slot,
+      global.state.tradedPicks,
+    );
     const isMine = slotInfo.isMe;
 
     const entry = {
@@ -302,7 +345,7 @@
       customPos: resolved.customPos || null,
       customTeam: resolved.customTeam || null,
       customBye: resolved.customBye || null,
-      mine: isMine
+      mine: isMine,
     };
 
     if (existingIdx >= 0) {
@@ -331,7 +374,8 @@
 
     if (syncState.type === 'sleeper' && syncState.sleeperTimer) {
       badge.className = 'sync-badge sleeper';
-      badge.innerHTML = '<span class="dot-pulse"></span> Sleeper (#' + global.state.log.length + ')';
+      badge.innerHTML =
+        '<span class="dot-pulse"></span> Sleeper (#' + global.state.log.length + ')';
     } else if (syncState.type === 'espn' && syncState.espnConnected) {
       badge.className = 'sync-badge espn';
       badge.innerHTML = '<span class="dot-pulse"></span> ESPN Live';
@@ -369,19 +413,29 @@
     global.save();
 
     const statusEl = document.getElementById('sleeper_import_msg');
-    if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent)">⏳ Fetching draft from Sleeper API...</span>';
+    if (statusEl)
+      statusEl.innerHTML =
+        '<span style="color:var(--accent)">⏳ Fetching draft from Sleeper API...</span>';
 
     try {
-      const draftRes = await fetch('https://api.sleeper.app/v1/draft/' + encodeURIComponent(draftId));
+      const draftRes = await fetch(
+        'https://api.sleeper.app/v1/draft/' + encodeURIComponent(draftId),
+      );
       if (!draftRes.ok) throw new Error('Sleeper draft not found (Status ' + draftRes.status + ')');
       const draftData = await draftRes.json();
 
       let usersData = [];
       if (draftData.league_id) {
         try {
-          const usersRes = await fetch('https://api.sleeper.app/v1/league/' + encodeURIComponent(draftData.league_id) + '/users');
+          const usersRes = await fetch(
+            'https://api.sleeper.app/v1/league/' +
+              encodeURIComponent(draftData.league_id) +
+              '/users',
+          );
           if (usersRes.ok) usersData = await usersRes.json();
-        } catch (uErr) { /* users fetch optional */ }
+        } catch (uErr) {
+          /* users fetch optional */
+        }
       }
 
       const parsed = parseSleeperDraft(draftData, usersData, username);
@@ -399,24 +453,49 @@
       if (typeof global.render === 'function') global.render();
 
       if (statusEl) {
-        statusEl.innerHTML = '<span style="color:var(--good); font-weight:600">✅ Successfully imported '
-          + parsed.teams + '-team league: <b>' + parsed.leagueName + '</b> (' + parsed.mode.toUpperCase() + ') · Assigned Slot ' + parsed.slot + '!</span>';
+        statusEl.innerHTML =
+          '<span style="color:var(--good); font-weight:600">✅ Successfully imported ' +
+          parsed.teams +
+          '-team league: <b>' +
+          parsed.leagueName +
+          '</b> (' +
+          parsed.mode.toUpperCase() +
+          ') · Assigned Slot ' +
+          parsed.slot +
+          '!</span>';
       }
-      reportServerEvent('🏈 Sleeper Draft Connected: ' + parsed.leagueName + ' (' + parsed.teams + '-team ' + parsed.mode.toUpperCase() + ') · Assigned Slot ' + parsed.slot, 'success');
+      reportServerEvent(
+        '🏈 Sleeper Draft Connected: ' +
+          parsed.leagueName +
+          ' (' +
+          parsed.teams +
+          '-team ' +
+          parsed.mode.toUpperCase() +
+          ') · Assigned Slot ' +
+          parsed.slot,
+        'success',
+      );
     } catch (err) {
       console.error('Sleeper import error:', err);
       if (statusEl) {
-        statusEl.innerHTML = '<span style="color:var(--bad)">❌ Failed to import from Sleeper: ' + err.message + '</span>';
+        statusEl.innerHTML =
+          '<span style="color:var(--bad)">❌ Failed to import from Sleeper: ' +
+          err.message +
+          '</span>';
       }
     }
   }
 
   async function pollSleeperPicks() {
-    const draftId = global.state.settings.sleeperDraftId || extractSleeperDraftId(document.getElementById('sync_sleeper_draft_id')?.value);
+    const draftId =
+      global.state.settings.sleeperDraftId ||
+      extractSleeperDraftId(document.getElementById('sync_sleeper_draft_id')?.value);
     if (!draftId) return;
 
     try {
-      const res = await fetch('https://api.sleeper.app/v1/draft/' + encodeURIComponent(draftId) + '/picks');
+      const res = await fetch(
+        'https://api.sleeper.app/v1/draft/' + encodeURIComponent(draftId) + '/picks',
+      );
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const picks = await res.json();
 
@@ -426,7 +505,12 @@
         syncState.sleeperStatus = 'Active (' + picks.length + ' picks)';
 
         const prevLen = global.state.log.length;
-        const rec = reconcileDraftLog(global.state.log, picks, global.PLAYERS, global.state.settings);
+        const rec = reconcileDraftLog(
+          global.state.log,
+          picks,
+          global.PLAYERS,
+          global.state.settings,
+        );
         if (rec.changed) {
           global.state.log = rec.log;
           const taken = global.takenMap();
@@ -438,10 +522,24 @@
           if (typeof global.render === 'function') global.render();
 
           if (rec.added > 0) {
-            reportServerEvent('⚡ Live Synced ' + rec.added + ' pick(s) from Sleeper draft (Total: #' + global.state.log.length + ')', 'info');
+            reportServerEvent(
+              '⚡ Live Synced ' +
+                rec.added +
+                ' pick(s) from Sleeper draft (Total: #' +
+                global.state.log.length +
+                ')',
+              'info',
+            );
           }
           if (rec.rolledBack > 0) {
-            reportServerEvent('↩️ Rolled back ' + rec.rolledBack + ' pick(s) to match Sleeper history (Now at #' + global.state.log.length + ')', 'warn');
+            reportServerEvent(
+              '↩️ Rolled back ' +
+                rec.rolledBack +
+                ' pick(s) to match Sleeper history (Now at #' +
+                global.state.log.length +
+                ')',
+              'warn',
+            );
           }
         }
       }
@@ -496,7 +594,8 @@
     syncState.sleeperPicksCount = 0;
     syncState.sleeperLastPoll = null;
 
-    const sleeperDraftId = global.state && global.state.settings && global.state.settings.sleeperDraftId;
+    const sleeperDraftId =
+      global.state && global.state.settings && global.state.settings.sleeperDraftId;
     if (sleeperDraftId) {
       syncState.type = 'sleeper';
       syncState.sleeperStatus = 'Connecting...';
@@ -521,41 +620,67 @@
       }
     }
     if (box) {
-      box.innerHTML = '<div><b>Status:</b> ' + (syncState.sleeperTimer ? '<span style="color:var(--good); font-weight:700">🟢 Active (2s Polling)</span>' : '<span style="color:var(--dim)">⚪ Disconnected / Paused</span>') + '</div>'
-        + '<div><b>Picks on Sleeper:</b> ' + syncState.sleeperPicksCount + ' (Local: ' + global.state.log.length + ')</div>'
-        + '<div><b>Last Polled:</b> ' + (syncState.sleeperLastPoll || '—') + '</div>';
+      box.innerHTML =
+        '<div><b>Status:</b> ' +
+        (syncState.sleeperTimer
+          ? '<span style="color:var(--good); font-weight:700">🟢 Active (2s Polling)</span>'
+          : '<span style="color:var(--dim)">⚪ Disconnected / Paused</span>') +
+        '</div>' +
+        '<div><b>Picks on Sleeper:</b> ' +
+        syncState.sleeperPicksCount +
+        ' (Local: ' +
+        global.state.log.length +
+        ')</div>' +
+        '<div><b>Last Polled:</b> ' +
+        (syncState.sleeperLastPoll || '—') +
+        '</div>';
     }
   }
 
   function updateEspnStatusBox() {
     const box = document.getElementById('espn_status_box');
     if (box) {
-      const isConn = syncState.espnConnected && (Date.now() - (syncState.espnLastSeen || 0) < 30000);
+      const isConn = syncState.espnConnected && Date.now() - (syncState.espnLastSeen || 0) < 30000;
       let leagueInfoHtml = '';
       if (syncState.espnLeagueInfo && syncState.espnLeagueInfo.teams) {
         const info = syncState.espnLeagueInfo;
         const mySlotTxt = info.mySlot ? ` · Your Slot: <b>#${info.mySlot}</b>` : '';
-        leagueInfoHtml = '<div style="margin-top:8px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-size:12px">'
-          + '<div>📋 <b>Detected ESPN League:</b> <span style="color:var(--accent); font-weight:700">' + info.teams + ' Teams</span>' + mySlotTxt + '</div>'
-          + '<div style="margin-top:6px; display:flex; gap:8px">'
-          + '<button type="button" class="act primary" onclick="applyEspnLeagueSetup()" style="font-size:12px; padding:4px 10px">📥 Apply ESPN League Setup (' + info.teams + ' Teams' + (info.mySlot ? ' & Slot #' + info.mySlot : '') + ')</button>'
-          + '</div>'
-          + '</div>';
+        leagueInfoHtml =
+          '<div style="margin-top:8px; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; font-size:12px">' +
+          '<div>📋 <b>Detected ESPN League:</b> <span style="color:var(--accent); font-weight:700">' +
+          info.teams +
+          ' Teams</span>' +
+          mySlotTxt +
+          '</div>' +
+          '<div style="margin-top:6px; display:flex; gap:8px">' +
+          '<button type="button" class="act primary" onclick="applyEspnLeagueSetup()" style="font-size:12px; padding:4px 10px">📥 Apply ESPN League Setup (' +
+          info.teams +
+          ' Teams' +
+          (info.mySlot ? ' & Slot #' + info.mySlot : '') +
+          ')</button>' +
+          '</div>' +
+          '</div>';
       }
 
-      box.innerHTML = '<div><b>Extension Status:</b> '
-        + (isConn ? '<span style="color:var(--good); font-weight:700">🟢 Connected to ESPN Draft Room</span>' : '<span style="color:var(--warn)">⚪ Waiting for ESPN Draft Room tab (Auto-connects when tab is open)</span>')
-        + '</div>'
-        + '<div><b>Last Message:</b> ' + (syncState.espnLastSeen ? new Date(syncState.espnLastSeen).toLocaleTimeString() : 'None') + '</div>'
-        + leagueInfoHtml
-        + '<div style="font-size:11px; margin-top:4px; color:var(--dim)">Relay endpoint: <code style="color:var(--accent)">http://127.0.0.1:8517/api/sync/</code></div>';
+      box.innerHTML =
+        '<div><b>Extension Status:</b> ' +
+        (isConn
+          ? '<span style="color:var(--good); font-weight:700">🟢 Connected to ESPN Draft Room</span>'
+          : '<span style="color:var(--warn)">⚪ Waiting for ESPN Draft Room tab (Auto-connects when tab is open)</span>') +
+        '</div>' +
+        '<div><b>Last Message:</b> ' +
+        (syncState.espnLastSeen ? new Date(syncState.espnLastSeen).toLocaleTimeString() : 'None') +
+        '</div>' +
+        leagueInfoHtml +
+        '<div style="font-size:11px; margin-top:4px; color:var(--dim)">Relay endpoint: <code style="color:var(--accent)">http://127.0.0.1:8517/api/sync/</code></div>';
     }
   }
 
   function applyEspnLeagueSetup(silent = false) {
     const info = syncState.espnLeagueInfo;
     if (!info || !info.teams) {
-      if (!silent) alert('No ESPN league info received yet. Open or re-sync your ESPN draft room tab first.');
+      if (!silent)
+        alert('No ESPN league info received yet. Open or re-sync your ESPN draft room tab first.');
       return;
     }
     const tCount = Math.max(8, Math.min(16, parseInt(info.teams, 10) || 12));
@@ -564,14 +689,19 @@
       global.state.settings.teamNames = info.teamNames.slice(0, tCount);
     }
     if (info.mySlot) {
-      global.state.settings.slot = Math.max(1, Math.min(tCount, parseInt(info.mySlot, 10) || global.state.settings.slot));
+      global.state.settings.slot = Math.max(
+        1,
+        Math.min(tCount, parseInt(info.mySlot, 10) || global.state.settings.slot),
+      );
     }
     global.save();
     if (typeof global.render === 'function') global.render();
     updateEspnStatusBox();
     const teamName = global.getTeamName(global.state.settings.slot);
     if (!silent) {
-      alert(`✅ Successfully imported ${global.state.settings.teams} teams and Slot #${global.state.settings.slot} (${teamName}) from ESPN!`);
+      alert(
+        `✅ Successfully imported ${global.state.settings.teams} teams and Slot #${global.state.settings.slot} (${teamName}) from ESPN!`,
+      );
     }
   }
 
@@ -581,7 +711,7 @@
       const btn = document.getElementById('sync_tab_' + t);
       const sec = document.getElementById('sync_sec_' + t);
       if (btn) btn.className = 'tab' + (t === tabName ? ' on' : '');
-      if (sec) sec.style.display = (t === tabName ? 'block' : 'none');
+      if (sec) sec.style.display = t === tabName ? 'block' : 'none';
     }
   }
 
@@ -589,31 +719,38 @@
     const path = 'd:\\Programming\\FantasyDrafter\\extensions\\espn-sync';
     const btn = document.getElementById('copy_ext_btn');
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(path).then(() => {
-        if (btn) {
-          const orig = btn.innerHTML;
-          btn.innerHTML = '✅ Copied!';
-          btn.style.color = 'var(--good)';
-          setTimeout(() => {
-            btn.innerHTML = orig;
-            btn.style.color = '';
-          }, 2000);
-        }
-      }).catch(() => {
-        prompt('Extension folder path:', path);
-      });
+      navigator.clipboard
+        .writeText(path)
+        .then(() => {
+          if (btn) {
+            const orig = btn.innerHTML;
+            btn.innerHTML = '✅ Copied!';
+            btn.style.color = 'var(--good)';
+            setTimeout(() => {
+              btn.innerHTML = orig;
+              btn.style.color = '';
+            }, 2000);
+          }
+        })
+        .catch(() => {
+          prompt('Extension folder path:', path);
+        });
     } else {
       prompt('Extension folder path:', path);
     }
   }
 
   async function sendEspnPing() {
-    const host = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8517';
+    const host = window.location.origin.startsWith('http')
+      ? window.location.origin
+      : 'http://127.0.0.1:8517';
     try {
       await fetch(host + '/api/sync/ping', { method: 'POST', mode: 'cors' });
-    } catch (e) { }
+    } catch (e) {}
     if (syncState.channel) {
-      try { syncState.channel.postMessage({ type: 'PING', source: 'drafter' }); } catch (e) { }
+      try {
+        syncState.channel.postMessage({ type: 'PING', source: 'drafter' });
+      } catch (e) {}
     }
     setTimeout(pollServerSync, 200);
   }
@@ -624,66 +761,92 @@
     const sleeperUserVal = s.sleeperUsername || '';
 
     document.getElementById('modalbox').innerHTML =
-      '<h3>⚡ Live Draft Synchronization'
-      + '<button class="close" onclick="closeModal()">×</button></h3>'
-      + '<div style="font-size:12.5px; color:var(--dim); margin:6px 0 14px">Sync your live draft board with an ongoing online draft on Sleeper or ESPN.</div>'
-      + '<div class="tabs" style="gap:6px; margin-bottom:14px">'
-      + '<button type="button" class="tab' + (syncState.activeTab === 'sleeper' ? ' on' : '') + '" id="sync_tab_sleeper" onclick="switchSyncTab(\'sleeper\')">🏈 Sleeper API</button>'
-      + '<button type="button" class="tab' + (syncState.activeTab === 'espn' ? ' on' : '') + '" id="sync_tab_espn" onclick="switchSyncTab(\'espn\')">📺 ESPN Extension Sync</button>'
-      + '<button type="button" class="tab' + (syncState.activeTab === 'settings' ? ' on' : '') + '" id="sync_tab_settings" onclick="switchSyncTab(\'settings\')">⚙️ Cues & Options</button>'
-      + '</div>'
+      '<h3>⚡ Live Draft Synchronization' +
+      '<button class="close" onclick="closeModal()">×</button></h3>' +
+      '<div style="font-size:12.5px; color:var(--dim); margin:6px 0 14px">Sync your live draft board with an ongoing online draft on Sleeper or ESPN.</div>' +
+      '<div class="tabs" style="gap:6px; margin-bottom:14px">' +
+      '<button type="button" class="tab' +
+      (syncState.activeTab === 'sleeper' ? ' on' : '') +
+      '" id="sync_tab_sleeper" onclick="switchSyncTab(\'sleeper\')">🏈 Sleeper API</button>' +
+      '<button type="button" class="tab' +
+      (syncState.activeTab === 'espn' ? ' on' : '') +
+      '" id="sync_tab_espn" onclick="switchSyncTab(\'espn\')">📺 ESPN Extension Sync</button>' +
+      '<button type="button" class="tab' +
+      (syncState.activeTab === 'settings' ? ' on' : '') +
+      '" id="sync_tab_settings" onclick="switchSyncTab(\'settings\')">⚙️ Cues & Options</button>' +
+      '</div>' +
       // --- Sleeper Tab ---
-      + '<div id="sync_sec_sleeper" style="display:' + (syncState.activeTab === 'sleeper' ? 'block' : 'none') + '">'
-      + '<div class="setup-grid" style="grid-template-columns: 1fr 1fr; gap:10px">'
-      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Sleeper Draft ID or League URL</label><input type="text" id="sync_sleeper_draft_id" placeholder="e.g. 10492850284 or https://sleeper.com/draft/nfl/1049..." value="' + sleeperIdVal.replace(/"/g, '&quot;') + '"></div>'
-      + '<div class="setup-field" style="grid-column: 1 / -1;"><label>Your Sleeper Username (Optional for Auto-Slot Matching)</label><input type="text" id="sync_sleeper_username" placeholder="e.g. You" value="' + sleeperUserVal.replace(/"/g, '&quot;') + '"></div>'
-      + '</div>'
-      + '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px">'
-      + '<button type="button" class="act" onclick="importSleeperLeague()">📥 Import League & Order</button>'
-      + '<button type="button" class="act primary" id="sleeper_toggle_btn" onclick="toggleSleeperSync()">' + (syncState.sleeperTimer ? '⏸ Pause Live Polling' : '▶ Start Live Sync (2s Polling)') + '</button>'
-      + '</div>'
-      + '<div id="sleeper_import_msg" style="margin-top:10px; font-size:12.5px"></div>'
-      + '<div class="sync-status-box" id="sleeper_status_box"></div>'
-      + '</div>'
+      '<div id="sync_sec_sleeper" style="display:' +
+      (syncState.activeTab === 'sleeper' ? 'block' : 'none') +
+      '">' +
+      '<div class="setup-grid" style="grid-template-columns: 1fr 1fr; gap:10px">' +
+      '<div class="setup-field" style="grid-column: 1 / -1;"><label>Sleeper Draft ID or League URL</label><input type="text" id="sync_sleeper_draft_id" placeholder="e.g. 10492850284 or https://sleeper.com/draft/nfl/1049..." value="' +
+      sleeperIdVal.replace(/"/g, '&quot;') +
+      '"></div>' +
+      '<div class="setup-field" style="grid-column: 1 / -1;"><label>Your Sleeper Username (Optional for Auto-Slot Matching)</label><input type="text" id="sync_sleeper_username" placeholder="e.g. You" value="' +
+      sleeperUserVal.replace(/"/g, '&quot;') +
+      '"></div>' +
+      '</div>' +
+      '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px">' +
+      '<button type="button" class="act" onclick="importSleeperLeague()">📥 Import League & Order</button>' +
+      '<button type="button" class="act primary" id="sleeper_toggle_btn" onclick="toggleSleeperSync()">' +
+      (syncState.sleeperTimer ? '⏸ Pause Live Polling' : '▶ Start Live Sync (2s Polling)') +
+      '</button>' +
+      '</div>' +
+      '<div id="sleeper_import_msg" style="margin-top:10px; font-size:12.5px"></div>' +
+      '<div class="sync-status-box" id="sleeper_status_box"></div>' +
+      '</div>' +
       // --- ESPN Tab ---
-      + '<div id="sync_sec_espn" style="display:' + (syncState.activeTab === 'espn' ? 'block' : 'none') + '">'
-      + '<div style="background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px">'
-      + '<div style="font-size:13.5px; font-weight:700; color:var(--text); margin-bottom:6px">🔌 ESPN Live Sync Extension Setup</div>'
-      + '<div style="font-size:12px; color:var(--dim); line-height:1.6">'
-      + 'Streams live picks from ESPN automatically with 0 clicks during the draft:'
-      + '<ol style="margin:8px 0 10px 18px; padding:0">'
-      + '<li>Open <code style="color:var(--accent); background:var(--bg); padding:1px 5px; border-radius:3px">chrome://extensions</code> or <code style="color:var(--accent); background:var(--bg); padding:1px 5px; border-radius:3px">edge://extensions</code> in your browser.</li>'
-      + '<li>Toggle on <b>Developer mode</b> in the top-right corner.</li>'
-      + '<li>Click <b>Load unpacked</b> and select the extension folder:</li>'
-      + '</ol>'
-      + '</div>'
-      + '<div style="display:flex; align-items:center; gap:8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 12px">'
-      + '<code id="ext_path_text" style="color:var(--good); font-size:12px; user-select:all; flex:1; overflow:hidden; text-overflow:ellipsis">d:\\Programming\\FantasyDrafter\\extensions\\espn-sync</code>'
-      + '<button type="button" class="act" id="copy_ext_btn" onclick="copyExtensionPath()" style="padding:4px 10px; font-size:12px">📋 Copy Path</button>'
-      + '</div>'
-      + '</div>'
-      + '<div class="sync-status-box" id="espn_status_box"></div>'
-      + '<div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center">'
-      + '<span style="font-size:11.5px; color:var(--dim)">Auto-connects when ESPN draft room is open</span>'
-      + '<button type="button" class="act" onclick="sendEspnPing()">🔄 Ping ESPN Tab</button>'
-      + '</div>'
-      + '</div>'
+      '<div id="sync_sec_espn" style="display:' +
+      (syncState.activeTab === 'espn' ? 'block' : 'none') +
+      '">' +
+      '<div style="background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px">' +
+      '<div style="font-size:13.5px; font-weight:700; color:var(--text); margin-bottom:6px">🔌 ESPN Live Sync Extension Setup</div>' +
+      '<div style="font-size:12px; color:var(--dim); line-height:1.6">' +
+      'Streams live picks from ESPN automatically with 0 clicks during the draft:' +
+      '<ol style="margin:8px 0 10px 18px; padding:0">' +
+      '<li>Open <code style="color:var(--accent); background:var(--bg); padding:1px 5px; border-radius:3px">chrome://extensions</code> or <code style="color:var(--accent); background:var(--bg); padding:1px 5px; border-radius:3px">edge://extensions</code> in your browser.</li>' +
+      '<li>Toggle on <b>Developer mode</b> in the top-right corner.</li>' +
+      '<li>Click <b>Load unpacked</b> and select the extension folder:</li>' +
+      '</ol>' +
+      '</div>' +
+      '<div style="display:flex; align-items:center; gap:8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:8px 12px">' +
+      '<code id="ext_path_text" style="color:var(--good); font-size:12px; user-select:all; flex:1; overflow:hidden; text-overflow:ellipsis">d:\\Programming\\FantasyDrafter\\extensions\\espn-sync</code>' +
+      '<button type="button" class="act" id="copy_ext_btn" onclick="copyExtensionPath()" style="padding:4px 10px; font-size:12px">📋 Copy Path</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="sync-status-box" id="espn_status_box"></div>' +
+      '<div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center">' +
+      '<span style="font-size:11.5px; color:var(--dim)">Auto-connects when ESPN draft room is open</span>' +
+      '<button type="button" class="act" onclick="sendEspnPing()">🔄 Ping ESPN Tab</button>' +
+      '</div>' +
+      '</div>' +
       // --- Settings Tab ---
-      + '<div id="sync_sec_settings" style="display:' + (syncState.activeTab === 'settings' ? 'block' : 'none') + '">'
-      + '<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px">'
-      + '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_chime"' + (s.audioChime ? ' checked' : '') + '> 🔔 Play auditory chime when our team is on the clock</label>'
-      + '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_pulse"' + (s.visualPulse ? ' checked' : '') + '> ✨ Pulsing green visual glow on header clock during our turn</label>'
-      + '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_unlisted"' + (s.autoUnlistedSync ? ' checked' : '') + '> 📝 Auto-draft unlisted players if not found in consensus rankings</label>'
-      + '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_rollback"' + (s.syncRollback ? ' checked' : '') + '> ↩ Auto-reconcile picks if commissioner rolls back a pick</label>'
-      + '</div>'
-      + '<div style="margin-top:14px; display:flex; gap:8px">'
-      + '<button type="button" class="act" onclick="playPickChime(true)">🔔 Test Audio Chime</button>'
-      + '<button type="button" class="act primary" onclick="saveSyncSettings()">Save Options</button>'
-      + '</div>'
-      + '</div>'
-      + '<div class="modal-actions" style="margin-top:18px">'
-      + '<button type="button" class="act" onclick="closeModal()">Close</button>'
-      + '</div>';
+      '<div id="sync_sec_settings" style="display:' +
+      (syncState.activeTab === 'settings' ? 'block' : 'none') +
+      '">' +
+      '<div style="display:flex; flex-direction:column; gap:10px; margin-top:8px">' +
+      '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_chime"' +
+      (s.audioChime ? ' checked' : '') +
+      '> 🔔 Play auditory chime when our team is on the clock</label>' +
+      '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_pulse"' +
+      (s.visualPulse ? ' checked' : '') +
+      '> ✨ Pulsing green visual glow on header clock during our turn</label>' +
+      '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_unlisted"' +
+      (s.autoUnlistedSync ? ' checked' : '') +
+      '> 📝 Auto-draft unlisted players if not found in consensus rankings</label>' +
+      '<label style="display:flex; align-items:center; gap:8px; font-size:13px; cursor:pointer"><input type="checkbox" id="sync_opt_rollback"' +
+      (s.syncRollback ? ' checked' : '') +
+      '> ↩ Auto-reconcile picks if commissioner rolls back a pick</label>' +
+      '</div>' +
+      '<div style="margin-top:14px; display:flex; gap:8px">' +
+      '<button type="button" class="act" onclick="playPickChime(true)">🔔 Test Audio Chime</button>' +
+      '<button type="button" class="act primary" onclick="saveSyncSettings()">Save Options</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="modal-actions" style="margin-top:18px">' +
+      '<button type="button" class="act" onclick="closeModal()">Close</button>' +
+      '</div>';
 
     document.getElementById('overlay').classList.add('show');
     updateSleeperStatusBox();
@@ -692,10 +855,18 @@
   }
 
   function saveSyncSettings() {
-    global.state.settings.audioChime = document.getElementById('sync_opt_chime') ? document.getElementById('sync_opt_chime').checked : true;
-    global.state.settings.visualPulse = document.getElementById('sync_opt_pulse') ? document.getElementById('sync_opt_pulse').checked : true;
-    global.state.settings.autoUnlistedSync = document.getElementById('sync_opt_unlisted') ? document.getElementById('sync_opt_unlisted').checked : true;
-    global.state.settings.syncRollback = document.getElementById('sync_opt_rollback') ? document.getElementById('sync_opt_rollback').checked : true;
+    global.state.settings.audioChime = document.getElementById('sync_opt_chime')
+      ? document.getElementById('sync_opt_chime').checked
+      : true;
+    global.state.settings.visualPulse = document.getElementById('sync_opt_pulse')
+      ? document.getElementById('sync_opt_pulse').checked
+      : true;
+    global.state.settings.autoUnlistedSync = document.getElementById('sync_opt_unlisted')
+      ? document.getElementById('sync_opt_unlisted').checked
+      : true;
+    global.state.settings.syncRollback = document.getElementById('sync_opt_rollback')
+      ? document.getElementById('sync_opt_rollback').checked
+      : true;
     global.save();
     if (typeof global.closeModal === 'function') global.closeModal();
     if (typeof global.render === 'function') global.render();
@@ -728,4 +899,3 @@
   global.applyEspnLeagueSetup = applyEspnLeagueSetup;
   global.switchSyncContext = switchSyncContext;
 })(typeof window !== 'undefined' ? window : globalThis);
-

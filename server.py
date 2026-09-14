@@ -6,19 +6,20 @@ between the ESPN Live Draft Room bookmarklet / extension and Fantasy Drafter.
 Supports HTTP Fetch, Private Network Access (PNA), Image Beacons, SSE, and REST Polling.
 """
 
+import argparse
+import contextlib
+import datetime
 import http.server
+import json
+import os
 import socket
 import socketserver
-import json
-import time
-import threading
-import urllib.parse
-import os
-import sys
-import argparse
-import webbrowser
-import datetime
 import subprocess
+import sys
+import threading
+import time
+import urllib.parse
+import webbrowser
 
 # Force UTF-8 encoding on Windows console so emojis and special characters render cleanly
 if sys.platform == "win32":
@@ -35,10 +36,8 @@ def safe_print(msg):
     try:
         print(msg)
     except Exception:
-        try:
+        with contextlib.suppress(Exception):
             print(str(msg).encode("ascii", errors="replace").decode("ascii"))
-        except Exception:
-            pass
 
 
 PORT = 8517
@@ -53,13 +52,12 @@ def init_logging():
     try:
         if not os.path.exists(LOG_DIR):
             os.makedirs(LOG_DIR, exist_ok=True)
-        with log_file_lock:
-            with open(LAST_RUN_LOG, "w", encoding="utf-8") as f:
-                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write("=" * 80 + "\n")
-                f.write("Fantasy Drafter — Server & Sync Event Log\n")
-                f.write(f"Session Started: {now_str} (Port {PORT})\n")
-                f.write("=" * 80 + "\n\n")
+        with log_file_lock, open(LAST_RUN_LOG, "w", encoding="utf-8") as f:
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write("=" * 80 + "\n")
+            f.write("Fantasy Drafter — Server & Sync Event Log\n")
+            f.write(f"Session Started: {now_str} (Port {PORT})\n")
+            f.write("=" * 80 + "\n\n")
     except Exception as e:
         safe_print(f"Warning: Could not initialize log file: {e}")
 
@@ -70,10 +68,9 @@ def log_event(msg, write_to_terminal=True):
     try:
         if not os.path.exists(LOG_DIR):
             os.makedirs(LOG_DIR, exist_ok=True)
-        with log_file_lock:
-            with open(LAST_RUN_LOG, "a", encoding="utf-8") as f:
-                f.write(formatted + "\n")
-                f.flush()
+        with log_file_lock, open(LAST_RUN_LOG, "a", encoding="utf-8") as f:
+            f.write(formatted + "\n")
+            f.flush()
     except Exception:
         pass
 
@@ -85,9 +82,7 @@ def log_event(msg, write_to_terminal=True):
 GIF_1X1 = b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\x00\x00\x00!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;"
 
 # SVG Football Favicon
-FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🏈</text></svg>'.encode(
-    "utf-8"
-)
+FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🏈</text></svg>'.encode()
 
 # In-memory sync state
 sync_lock = threading.Lock()
@@ -106,7 +101,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             super().handle()
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
             pass
-        except socket.error as e:
+        except OSError as e:
             if getattr(e, "winerror", None) in (10053, 10054):
                 pass
             else:
@@ -115,16 +110,8 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             pass
 
     def finish(self):
-        try:
+        with contextlib.suppress(Exception):
             super().finish()
-        except (
-            ConnectionResetError,
-            ConnectionAbortedError,
-            BrokenPipeError,
-            socket.error,
-            Exception,
-        ):
-            pass
 
     def log_message(self, format, *args):
         # Suppress high-frequency polling, heartbeat, SSE stream, pick relay, snapshot, and log messages from raw HTTP terminal output
@@ -162,9 +149,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global last_espn_ping, latest_snapshot, latest_league_info, last_reset_timestamp
-        if self.path == "/api/data/refresh" or self.path.startswith(
-            "/api/data/refresh"
-        ):
+        if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
             self.handle_data_refresh()
             return
 
@@ -188,19 +173,15 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(
-                json.dumps(
-                    {"ok": True, "reset": True, "timestamp": last_reset_timestamp}
-                ).encode("utf-8")
+                json.dumps({"ok": True, "reset": True, "timestamp": last_reset_timestamp}).encode(
+                    "utf-8"
+                )
             )
             return
 
         if self.path.startswith("/api/sync/log"):
             content_length = int(self.headers.get("Content-Length", 0))
-            body = (
-                self.rfile.read(content_length).decode("utf-8")
-                if content_length > 0
-                else "{}"
-            )
+            body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
             try:
                 log_data = json.loads(body)
             except Exception:
@@ -245,11 +226,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
         if self.path.startswith("/api/sync/snapshot"):
             content_length = int(self.headers.get("Content-Length", 0))
-            body = (
-                self.rfile.read(content_length).decode("utf-8")
-                if content_length > 0
-                else "{}"
-            )
+            body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
             try:
                 snap_data = json.loads(body)
             except Exception:
@@ -257,9 +234,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
             source = snap_data.get("source", "espn")
             picks = snap_data.get("picks", [])
-            league_info = (
-                snap_data.get("leagueInfo") or snap_data.get("league_info") or {}
-            )
+            league_info = snap_data.get("leagueInfo") or snap_data.get("league_info") or {}
             with sync_lock:
                 if source == "espn":
                     last_espn_ping = time.time()
@@ -281,9 +256,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 else "empty"
             )
             teams_desc = (
-                f" ({latest_league_info['teams']} Teams)"
-                if latest_league_info.get("teams")
-                else ""
+                f" ({latest_league_info['teams']} Teams)" if latest_league_info.get("teams") else ""
             )
             log_event(
                 f"📋 Draft Snapshot: {len(picks)} picks synced{teams_desc} (Latest: {latest_desc}) [{source.upper()}]"
@@ -292,18 +265,12 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
-            self.wfile.write(
-                json.dumps({"ok": True, "count": len(picks)}).encode("utf-8")
-            )
+            self.wfile.write(json.dumps({"ok": True, "count": len(picks)}).encode("utf-8"))
             return
 
         if self.path.startswith("/api/sync/pick"):
             content_length = int(self.headers.get("Content-Length", 0))
-            body = (
-                self.rfile.read(content_length).decode("utf-8")
-                if content_length > 0
-                else "{}"
-            )
+            body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
             try:
                 pick_data = json.loads(body)
             except Exception:
@@ -313,9 +280,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             if pick_data.get("type") == "DRAFT_SNAPSHOT" or "picks" in pick_data:
                 source = pick_data.get("source", "espn")
                 picks = pick_data.get("picks", [])
-                league_info = (
-                    pick_data.get("leagueInfo") or pick_data.get("league_info") or {}
-                )
+                league_info = pick_data.get("leagueInfo") or pick_data.get("league_info") or {}
                 with sync_lock:
                     if source == "espn":
                         last_espn_ping = time.time()
@@ -346,9 +311,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(
-                    json.dumps({"ok": True, "count": len(picks)}).encode("utf-8")
-                )
+                self.wfile.write(json.dumps({"ok": True, "count": len(picks)}).encode("utf-8"))
                 return
 
             source = pick_data.get("source", "espn")
@@ -360,7 +323,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     "type": "PICK_MADE",
                     "source": source,
                     "name": pick_data.get("name", ""),
-                    "overall": pick_data.get("overall", None),
+                    "overall": pick_data.get("overall"),
                     "pos": pick_data.get("pos", ""),
                     "team": pick_data.get("team", ""),
                     "by": pick_data.get("by", ""),
@@ -377,11 +340,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         broadcast_sse(pick_event)
 
             if is_new:
-                pick_num = (
-                    f"#{pick_event.get('overall')}"
-                    if pick_event.get("overall")
-                    else "Pick"
-                )
+                pick_num = f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
                 details = []
                 if pick_event.get("pos"):
                     details.append(pick_event["pos"])
@@ -389,9 +348,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     details.append(pick_event["team"])
                 detail_str = f" ({' - '.join(details)})" if details else ""
                 by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
-                source_tag = (
-                    f" [{source.upper()}]" if source and source != "manual" else ""
-                )
+                source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
                 log_event(
                     f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
                 )
@@ -550,7 +507,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     "type": "PICK_MADE",
                     "source": source,
                     "name": pick_data.get("name", ""),
-                    "overall": pick_data.get("overall", None),
+                    "overall": pick_data.get("overall"),
                     "pos": pick_data.get("pos", ""),
                     "team": pick_data.get("team", ""),
                     "by": pick_data.get("by", ""),
@@ -567,11 +524,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         broadcast_sse(pick_event)
 
             if is_new:
-                pick_num = (
-                    f"#{pick_event.get('overall')}"
-                    if pick_event.get("overall")
-                    else "Pick"
-                )
+                pick_num = f"#{pick_event.get('overall')}" if pick_event.get("overall") else "Pick"
                 details = []
                 if pick_event.get("pos"):
                     details.append(pick_event["pos"])
@@ -579,9 +532,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     details.append(pick_event["team"])
                 detail_str = f" ({' - '.join(details)})" if details else ""
                 by_str = f" · {pick_event['by']}" if pick_event.get("by") else ""
-                source_tag = (
-                    f" [{source.upper()}]" if source and source != "manual" else ""
-                )
+                source_tag = f" [{source.upper()}]" if source and source != "manual" else ""
                 log_event(
                     f"🏈 Pick {pick_num}: {pick_event.get('name')}{detail_str}{by_str}{source_tag}"
                 )
@@ -592,9 +543,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(GIF_1X1)
             return
 
-        if self.path.startswith("/api/sync/status") or self.path.startswith(
-            "/api/sync/poll"
-        ):
+        if self.path.startswith("/api/sync/status") or self.path.startswith("/api/sync/poll"):
             since = 0
             if "since=" in self.path:
                 try:
@@ -603,15 +552,11 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     since = 0
 
             with sync_lock:
-                is_connected = (
-                    (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
-                )
+                is_connected = (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
                 new_picks = [e for e in sync_events if e.get("timestamp", 0) > since]
                 status_payload = {
                     "espnConnected": is_connected,
-                    "lastSeen": int(last_espn_ping * 1000)
-                    if last_espn_ping > 0
-                    else None,
+                    "lastSeen": int(last_espn_ping * 1000) if last_espn_ping > 0 else None,
                     "picks": new_picks,
                     "snapshot": latest_snapshot,
                     "leagueInfo": latest_league_info,
@@ -635,21 +580,17 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
             with sync_lock:
                 sse_clients.append(self.wfile)
-                is_connected = (
-                    (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
-                )
+                is_connected = (time.time() - last_espn_ping) < 25 if last_espn_ping > 0 else False
                 init_msg = json.dumps(
                     {
                         "type": "SYNC_STATUS",
                         "espnConnected": is_connected,
-                        "lastSeen": int(last_espn_ping * 1000)
-                        if last_espn_ping > 0
-                        else None,
+                        "lastSeen": int(last_espn_ping * 1000) if last_espn_ping > 0 else None,
                     }
                 )
 
             try:
-                self.wfile.write(f"data: {init_msg}\n\n".encode("utf-8"))
+                self.wfile.write(f"data: {init_msg}\n\n".encode())
                 self.wfile.flush()
                 while True:
                     time.sleep(15)
@@ -661,9 +602,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         sse_clients.remove(self.wfile)
             return
 
-        if self.path == "/api/data/refresh" or self.path.startswith(
-            "/api/data/refresh"
-        ):
+        if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
             self.handle_data_refresh()
             return
 
@@ -690,11 +629,7 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     "message": "Player consensus rankings, depth charts, and injury reports updated successfully!",
                 }
             else:
-                err_msg = (
-                    res.stderr
-                    or res.stdout
-                    or f"Updater exited with code {res.returncode}"
-                )
+                err_msg = res.stderr or res.stdout or f"Updater exited with code {res.returncode}"
                 safe_print(f"⚠️  Data refresh failed ({err_msg})\n")
                 payload = {"ok": False, "message": f"Updater failed: {err_msg[:200]}"}
         except Exception as e:
@@ -726,7 +661,7 @@ def get_player_data_age():
     # 1. Try reading the generated field from players-data.json
     if os.path.exists(json_path):
         try:
-            with open(json_path, "r", encoding="utf-8") as f:
+            with open(json_path, encoding="utf-8") as f:
                 data = json.load(f)
                 gen_date_str = data.get("generated")
                 if gen_date_str:
@@ -770,9 +705,7 @@ def ensure_player_data_fresh(max_days=2, force=False, skip=False):
                 else f"{age_days:.1f} days old (> {max_days} days)"
             )
         )
-        safe_print(
-            f"🔄 Player rankings data is {reason}. Running consensus update pipeline..."
-        )
+        safe_print(f"🔄 Player rankings data is {reason}. Running consensus update pipeline...")
 
         try:
             update_script = os.path.join(DIRECTORY, "scripts", "update_rankings.py")
@@ -785,22 +718,18 @@ def ensure_player_data_fresh(max_days=2, force=False, skip=False):
                     f"⚠️  Rankings updater exited with code {res.returncode}. Continuing with existing data.\n"
                 )
         except Exception as e:
-            safe_print(
-                f"⚠️  Could not update player data ({e}). Continuing with existing data.\n"
-            )
+            safe_print(f"⚠️  Could not update player data ({e}). Continuing with existing data.\n")
     else:
         day_label = (
             "today"
             if age_days == 0
             else f"{int(age_days)} day{'s' if int(age_days) > 1 else ''} old"
         )
-        safe_print(
-            f"📊 Player data is up to date (generated: {gen_date}, {day_label}).\n"
-        )
+        safe_print(f"📊 Player data is up to date (generated: {gen_date}, {day_label}).\n")
 
 
 def broadcast_sse(event_data):
-    msg = f"data: {json.dumps(event_data)}\n\n".encode("utf-8")
+    msg = f"data: {json.dumps(event_data)}\n\n".encode()
     dead_clients = []
     for client in sse_clients:
         try:
@@ -833,9 +762,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Fantasy Drafter — Local Server & Live Sync Relay"
-    )
+    parser = argparse.ArgumentParser(description="Fantasy Drafter — Local Server & Live Sync Relay")
     parser.add_argument(
         "port_pos",
         nargs="?",
@@ -880,22 +807,20 @@ def main():
     init_logging()
 
     # Check and update player rankings data if older than max_age days
-    ensure_player_data_fresh(
-        max_days=args.max_age, force=args.update, skip=args.skip_update
-    )
+    ensure_player_data_fresh(max_days=args.max_age, force=args.update, skip=args.skip_update)
 
     server_url = f"http://127.0.0.1:{port}/draft-board.html"
     relay_url = f"http://127.0.0.1:{port}/api/sync/"
 
     server = ThreadedHTTPServer(("0.0.0.0", port), SyncRelayHandler)
-    log_event(f"==================================================================")
+    log_event("==================================================================")
     log_event(f"🏈 Fantasy Drafter Server running at: {server_url}")
     log_event(f"⚡ Live Sync Relay active at: {relay_url}")
     log_event(f"📝 Event log persistent output saved to: {LAST_RUN_LOG}")
     if open_browser:
-        log_event(f"🌐 Opening Fantasy Drafter in your default web browser...")
-    log_event(f"⌨️  Press Ctrl+C to stop the server.")
-    log_event(f"==================================================================")
+        log_event("🌐 Opening Fantasy Drafter in your default web browser...")
+    log_event("⌨️  Press Ctrl+C to stop the server.")
+    log_event("==================================================================")
 
     if open_browser:
 

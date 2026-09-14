@@ -10,7 +10,7 @@
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') {
-      audioCtx.resume().catch(() => { });
+      audioCtx.resume().catch(() => {});
     }
     return audioCtx;
   }
@@ -26,10 +26,10 @@
       // Ascending major triad chime (F5 -> A5 -> C6)
       const notes = [
         { freq: 698.46, start: 0, dur: 0.14 },
-        { freq: 880.00, start: 0.11, dur: 0.16 },
-        { freq: 1046.50, start: 0.22, dur: 0.38 }
+        { freq: 880.0, start: 0.11, dur: 0.16 },
+        { freq: 1046.5, start: 0.22, dur: 0.38 },
       ];
-      notes.forEach(n => {
+      notes.forEach((n) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
@@ -52,11 +52,22 @@
 
   // Auto-unlock audio context on first user gesture
   if (typeof document !== 'undefined') {
-    document.addEventListener('click', () => { getAudioContext(); }, { once: true });
-    document.addEventListener('keydown', () => { getAudioContext(); }, { once: true });
+    document.addEventListener(
+      'click',
+      () => {
+        getAudioContext();
+      },
+      { once: true },
+    );
+    document.addEventListener(
+      'keydown',
+      () => {
+        getAudioContext();
+      },
+      { once: true },
+    );
   }
 
   global.getAudioContext = getAudioContext;
   global.playPickChime = playPickChime;
 })(typeof window !== 'undefined' ? window : globalThis);
-

@@ -6,7 +6,7 @@
   const STORE_KEY = LEAGUES_MANIFEST_KEY;
 
   const DEFAULTS = {
-    leagueName: "Your Draft Board",
+    leagueName: 'Your Draft Board',
     teams: 12,
     slot: 2,
     rounds: 25,
@@ -24,14 +24,37 @@
     sleeperDraftId: '',
     sleeperUsername: '',
     teamNames: [
-      "Team 1", "You", "Team 3", "Team 4", "Team 5", "Team 6",
-      "Team 7", "Team 8", "Team 9", "Team 10", "Team 11", "Team 12"
+      'Team 1',
+      'You',
+      'Team 3',
+      'Team 4',
+      'Team 5',
+      'Team 6',
+      'Team 7',
+      'Team 8',
+      'Team 9',
+      'Team 10',
+      'Team 11',
+      'Team 12',
     ],
-    rosterSlots: Object.assign({}, (typeof DEFAULT_ROSTER_SLOTS !== 'undefined' ? DEFAULT_ROSTER_SLOTS : {
-      qb: 1, rb: 2, wr: 2, te: 1, flex: 3, superflex: 1, k: 0, dst: 0, bench: 15
-    })),
+    rosterSlots: Object.assign(
+      {},
+      typeof DEFAULT_ROSTER_SLOTS !== 'undefined'
+        ? DEFAULT_ROSTER_SLOTS
+        : {
+            qb: 1,
+            rb: 2,
+            wr: 2,
+            te: 1,
+            flex: 3,
+            superflex: 1,
+            k: 0,
+            dst: 0,
+            bench: 15,
+          },
+    ),
     hideTaken: false,
-    hideOutIR: false
+    hideOutIR: false,
   };
 
   function loadManifest() {
@@ -41,7 +64,7 @@
         if (raw) {
           const m = JSON.parse(raw);
           if (m && Array.isArray(m.leagues) && m.leagues.length > 0) {
-            if (!m.activeLeagueId || !m.leagues.some(l => l.id === m.activeLeagueId)) {
+            if (!m.activeLeagueId || !m.leagues.some((l) => l.id === m.activeLeagueId)) {
               m.activeLeagueId = m.leagues[0].id;
             }
             return m;
@@ -62,22 +85,26 @@
     } catch (e) {}
 
     const defaultLeagueId = 'league_default';
-    const defaultLeagueName = (legacyState && legacyState.settings && legacyState.settings.leagueName)
-      ? legacyState.settings.leagueName
-      : "Your Draft Board";
+    const defaultLeagueName =
+      legacyState && legacyState.settings && legacyState.settings.leagueName
+        ? legacyState.settings.leagueName
+        : 'Your Draft Board';
 
-    const m = (typeof createDefaultLeagueManifest === 'function')
-      ? createDefaultLeagueManifest(defaultLeagueName, defaultLeagueId)
-      : {
-          version: 1,
-          activeLeagueId: defaultLeagueId,
-          leagues: [{
-            id: defaultLeagueId,
-            name: defaultLeagueName,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }]
-        };
+    const m =
+      typeof createDefaultLeagueManifest === 'function'
+        ? createDefaultLeagueManifest(defaultLeagueName, defaultLeagueId)
+        : {
+            version: 1,
+            activeLeagueId: defaultLeagueId,
+            leagues: [
+              {
+                id: defaultLeagueId,
+                name: defaultLeagueName,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          };
 
     try {
       if (typeof localStorage !== 'undefined') {
@@ -103,21 +130,35 @@
 
   // Raw players dataset reference
   const getPlayersList = () => {
-    const raw = (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players) ? window.DRAFT_DATA.players : [];
+    const raw =
+      typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players
+        ? window.DRAFT_DATA.players
+        : [];
     return raw.map((p, i) => Object.assign({ id: i }, p));
   };
 
-  const PLAYERS = (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players)
-    ? window.DRAFT_DATA.players.map((p, i) => Object.assign({ id: i }, p))
-    : [];
+  const PLAYERS =
+    typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players
+      ? window.DRAFT_DATA.players.map((p, i) => Object.assign({ id: i }, p))
+      : [];
 
-  const byId = id => {
+  const byId = (id) => {
     if (id == null) return null;
     if (PLAYERS[id]) return PLAYERS[id];
-    if (typeof window !== 'undefined' && window.DRAFT_DATA && window.DRAFT_DATA.players && window.DRAFT_DATA.players[id]) {
+    if (
+      typeof window !== 'undefined' &&
+      window.DRAFT_DATA &&
+      window.DRAFT_DATA.players &&
+      window.DRAFT_DATA.players[id]
+    ) {
       return Object.assign({ id: id }, window.DRAFT_DATA.players[id]);
     }
-    if (typeof state !== 'undefined' && state && state.playerSnapshots && state.playerSnapshots[id]) {
+    if (
+      typeof state !== 'undefined' &&
+      state &&
+      state.playerSnapshots &&
+      state.playerSnapshots[id]
+    ) {
       const snap = state.playerSnapshots[id];
       return Object.assign({ id: id }, snap);
     }
@@ -130,13 +171,13 @@
     search: '',
     sort: 'score',
     hideTaken: !!(state && state.settings && state.settings.hideTaken),
-    hideOutIR: !!(state && state.settings && state.settings.hideOutIR)
+    hideOutIR: !!(state && state.settings && state.settings.hideOutIR),
   };
   let viewingRosterSlot = null; // null = follow on-the-clock slot
 
   function normalizeState(s) {
     s.settings = Object.assign({}, DEFAULTS, s.settings);
-    if (!s.settings.leagueName) s.settings.leagueName = "Your Draft Board";
+    if (!s.settings.leagueName) s.settings.leagueName = 'Your Draft Board';
     const tCount = Math.max(2, Math.min(32, parseInt(s.settings.teams, 10) || 12));
     s.settings.teams = tCount;
     if (!s.settings.slot || s.settings.slot < 1 || s.settings.slot > tCount) s.settings.slot = 1;
@@ -145,9 +186,10 @@
     if (!['sf', '1qb'].includes(s.settings.qbFormat)) s.settings.qbFormat = 'sf';
     if (!['dynasty', 'redraft'].includes(s.settings.leagueType)) s.settings.leagueType = 'dynasty';
 
-    s.settings.maxKeepers = (s.settings.maxKeepers !== undefined && s.settings.maxKeepers !== null)
-      ? Math.max(0, Math.min(10, parseInt(s.settings.maxKeepers, 10) || 0))
-      : 2;
+    s.settings.maxKeepers =
+      s.settings.maxKeepers !== undefined && s.settings.maxKeepers !== null
+        ? Math.max(0, Math.min(10, parseInt(s.settings.maxKeepers, 10) || 0))
+        : 2;
 
     if (s.settings.audioChime === undefined) s.settings.audioChime = true;
     if (s.settings.visualPulse === undefined) s.settings.visualPulse = true;
@@ -165,30 +207,51 @@
       if (existing && String(existing).trim()) {
         names.push(String(existing).trim());
       } else {
-        names.push(i === s.settings.slot ? 'My Team' : ('Team ' + i));
+        names.push(i === s.settings.slot ? 'My Team' : 'Team ' + i);
       }
     }
     s.settings.teamNames = names;
 
-    const baseSlots = (typeof DEFAULT_ROSTER_SLOTS !== 'undefined') ? DEFAULT_ROSTER_SLOTS : {
-      qb: 1, rb: 2, wr: 2, te: 1, flex: 3, superflex: 1, k: 0, dst: 0, bench: 15
-    };
+    const baseSlots =
+      typeof DEFAULT_ROSTER_SLOTS !== 'undefined'
+        ? DEFAULT_ROSTER_SLOTS
+        : {
+            qb: 1,
+            rb: 2,
+            wr: 2,
+            te: 1,
+            flex: 3,
+            superflex: 1,
+            k: 0,
+            dst: 0,
+            bench: 15,
+          };
     s.settings.rosterSlots = Object.assign({}, baseSlots, s.settings.rosterSlots);
     for (const k of Object.keys(baseSlots)) {
       s.settings.rosterSlots[k] = Math.max(0, parseInt(s.settings.rosterSlots[k], 10) || 0);
     }
-    const startersCount = (s.settings.rosterSlots.qb || 0) + (s.settings.rosterSlots.rb || 0) +
-      (s.settings.rosterSlots.wr || 0) + (s.settings.rosterSlots.te || 0) +
-      (s.settings.rosterSlots.flex || 0) + (s.settings.rosterSlots.superflex || 0) +
-      (s.settings.rosterSlots.k || 0) + (s.settings.rosterSlots.dst || 0);
+    const startersCount =
+      (s.settings.rosterSlots.qb || 0) +
+      (s.settings.rosterSlots.rb || 0) +
+      (s.settings.rosterSlots.wr || 0) +
+      (s.settings.rosterSlots.te || 0) +
+      (s.settings.rosterSlots.flex || 0) +
+      (s.settings.rosterSlots.superflex || 0) +
+      (s.settings.rosterSlots.k || 0) +
+      (s.settings.rosterSlots.dst || 0);
     const totalRounds = startersCount + (s.settings.rosterSlots.bench || 0);
     if (totalRounds > 0) {
       s.settings.rounds = totalRounds;
     }
 
-    s.playerSnapshots = (s.playerSnapshots && typeof s.playerSnapshots === 'object') ? s.playerSnapshots : {};
+    s.playerSnapshots =
+      s.playerSnapshots && typeof s.playerSnapshots === 'object' ? s.playerSnapshots : {};
 
-    const rawKeepers = Array.isArray(s.keepers) ? s.keepers : (Array.isArray(s.settings.keepers) ? s.settings.keepers : []);
+    const rawKeepers = Array.isArray(s.keepers)
+      ? s.keepers
+      : Array.isArray(s.settings.keepers)
+        ? s.settings.keepers
+        : [];
     const validKeepers = [];
     for (const k of rawKeepers) {
       if (!k || typeof k !== 'object') continue;
@@ -204,7 +267,7 @@
         pBye = PLAYERS[pId].bye != null ? PLAYERS[pId].bye : null;
       }
       validKeepers.push({
-        id: k.id || ('k_' + Math.random().toString(36).substr(2, 9)),
+        id: k.id || 'k_' + Math.random().toString(36).substr(2, 9),
         slot: Math.max(1, Math.min(tCount, parseInt(k.slot, 10) || 1)),
         round: Math.max(1, Math.min(s.settings.rounds || 50, parseInt(k.round, 10) || 1)),
         playerId: pId,
@@ -216,7 +279,7 @@
         customPos: k.customPos ? String(k.customPos).trim().toUpperCase() : null,
         customTeam: k.customTeam ? String(k.customTeam).trim().toUpperCase() : null,
         customBye: k.customBye != null ? parseInt(k.customBye, 10) : null,
-        wasDroppedFromPool: !!k.wasDroppedFromPool
+        wasDroppedFromPool: !!k.wasDroppedFromPool,
       });
       if (pId != null && pName) {
         s.playerSnapshots[pId] = { name: pName, pos: pPos, team: pTeam, bye: pBye };
@@ -239,7 +302,12 @@
             name: entry.name,
             pos: entry.pos,
             team: entry.team,
-            bye: entry.bye != null ? entry.bye : (PLAYERS[entry.playerId] ? PLAYERS[entry.playerId].bye : null)
+            bye:
+              entry.bye != null
+                ? entry.bye
+                : PLAYERS[entry.playerId]
+                  ? PLAYERS[entry.playerId].bye
+                  : null,
           };
         }
       }
@@ -254,7 +322,7 @@
             name: PLAYERS[wId].name,
             pos: PLAYERS[wId].pos,
             team: PLAYERS[wId].team,
-            bye: PLAYERS[wId].bye
+            bye: PLAYERS[wId].bye,
           };
         }
       }
@@ -269,7 +337,7 @@
             name: PLAYERS[qId].name,
             pos: PLAYERS[qId].pos,
             team: PLAYERS[qId].team,
-            bye: PLAYERS[qId].bye
+            bye: PLAYERS[qId].bye,
           };
         }
       }
@@ -300,14 +368,36 @@
           s = JSON.parse(raw);
         }
       }
-    } catch (e) { /* fallback on error */ }
-    const norm = normalizeState(s || { settings: Object.assign({}, DEFAULTS), keepers: [], log: [], watchlist: [], queue: [], tradedPicks: {} });
-    const reconcileFn = (typeof reconcileStateWithNewPlayerPool === 'function')
-      ? reconcileStateWithNewPlayerPool
-      : (typeof window !== 'undefined' && typeof window.reconcileStateWithNewPlayerPool === 'function' ? window.reconcileStateWithNewPlayerPool : null);
+    } catch (e) {
+      /* fallback on error */
+    }
+    const norm = normalizeState(
+      s || {
+        settings: Object.assign({}, DEFAULTS),
+        keepers: [],
+        log: [],
+        watchlist: [],
+        queue: [],
+        tradedPicks: {},
+      },
+    );
+    const reconcileFn =
+      typeof reconcileStateWithNewPlayerPool === 'function'
+        ? reconcileStateWithNewPlayerPool
+        : typeof window !== 'undefined' &&
+            typeof window.reconcileStateWithNewPlayerPool === 'function'
+          ? window.reconcileStateWithNewPlayerPool
+          : null;
     if (typeof reconcileFn === 'function' && Array.isArray(PLAYERS) && PLAYERS.length > 0) {
       const res = reconcileFn(norm, PLAYERS);
-      if (res && (res.keepersReconciled > 0 || res.keepersDropped > 0 || res.logReconciled > 0 || res.watchlistReconciled > 0 || res.queueReconciled > 0)) {
+      if (
+        res &&
+        (res.keepersReconciled > 0 ||
+          res.keepersDropped > 0 ||
+          res.logReconciled > 0 ||
+          res.watchlistReconciled > 0 ||
+          res.queueReconciled > 0)
+      ) {
         try {
           if (typeof localStorage !== 'undefined') {
             localStorage.setItem(LEAGUE_STORE_PREFIX + targetId, JSON.stringify(norm));
@@ -328,9 +418,9 @@
     } catch (e) {}
 
     if (manifest && Array.isArray(manifest.leagues)) {
-      const cur = manifest.leagues.find(l => l.id === activeId);
+      const cur = manifest.leagues.find((l) => l.id === activeId);
       if (cur) {
-        const curName = state.settings.leagueName || cur.name || "Your Draft Board";
+        const curName = state.settings.leagueName || cur.name || 'Your Draft Board';
         if (cur.name !== curName || !cur.updatedAt) {
           cur.name = curName;
           cur.updatedAt = new Date().toISOString();
@@ -343,7 +433,7 @@
   function getTeamName(slot) {
     const s = state.settings;
     const name = s.teamNames && s.teamNames[slot - 1];
-    return (name && name.trim()) ? name.trim() : (slot === s.slot ? 'My Team' : ('Team ' + slot));
+    return name && name.trim() ? name.trim() : slot === s.slot ? 'My Team' : 'Team ' + slot;
   }
 
   function takenMap() {
@@ -352,15 +442,22 @@
     if (Array.isArray(state.keepers)) {
       for (const k of state.keepers) {
         if (k && k.playerId != null) {
-          m.set(k.playerId, (k.slot === state.settings.slot) ? 'me' : 'other');
+          m.set(k.playerId, k.slot === state.settings.slot ? 'me' : 'other');
         }
       }
     }
     // 2. Mark drafted players from log
     for (const entry of state.log) {
       if (entry.playerId != null) {
-        const tInfo = teamForOverall(entry.overall, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
-        m.set(entry.playerId, (entry.mine || tInfo.isMe) ? 'me' : 'other');
+        const tInfo = teamForOverall(
+          entry.overall,
+          state.settings.teams,
+          state.settings.mode,
+          state.settings.teamNames,
+          state.settings.slot,
+          state.tradedPicks,
+        );
+        m.set(entry.playerId, entry.mine || tInfo.isMe ? 'me' : 'other');
       }
     }
     return m;
@@ -391,17 +488,37 @@
     const totalPicks = state.settings.teams * state.settings.rounds;
     while (currentPick() <= totalPicks) {
       const pick = currentPick();
-      const keeper = (typeof isKeeperPick === 'function')
-        ? isKeeperPick(pick, state.keepers, state.settings.teams, state.settings.rounds, state.settings.mode, state.tradedPicks)
-        : null;
+      const keeper =
+        typeof isKeeperPick === 'function'
+          ? isKeeperPick(
+              pick,
+              state.keepers,
+              state.settings.teams,
+              state.settings.rounds,
+              state.settings.mode,
+              state.tradedPicks,
+            )
+          : null;
       if (!keeper) break;
 
-      const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
-      const p = (keeper.playerId != null) ? (byId(keeper.playerId) || {}) : {};
+      const who = teamForOverall(
+        pick,
+        state.settings.teams,
+        state.settings.mode,
+        state.settings.teamNames,
+        state.settings.slot,
+        state.tradedPicks,
+      );
+      const p = keeper.playerId != null ? byId(keeper.playerId) || {} : {};
       const posVal = keeper.customPos || keeper.playerPos || p.pos || 'WR';
-      const nameVal = keeper.customName || keeper.playerName || p.name || ('Keeper ' + posVal);
+      const nameVal = keeper.customName || keeper.playerName || p.name || 'Keeper ' + posVal;
       const teamVal = keeper.customTeam || keeper.playerTeam || p.team || '';
-      const byeVal = keeper.customBye != null ? keeper.customBye : (keeper.playerBye != null ? keeper.playerBye : (p.bye || null));
+      const byeVal =
+        keeper.customBye != null
+          ? keeper.customBye
+          : keeper.playerBye != null
+            ? keeper.playerBye
+            : p.bye || null;
 
       state.log.push({
         overall: pick,
@@ -414,7 +531,7 @@
         customTeam: teamVal || null,
         customBye: byeVal,
         mine: who.isMe,
-        isKeeper: true
+        isKeeper: true,
       });
 
       if (keeper.playerId != null) {
@@ -430,7 +547,7 @@
         name: nameVal + ' [Keeper]',
         pos: posVal,
         team: teamVal,
-        by: who.name + (who.isMe ? ' (You)' : '')
+        by: who.name + (who.isMe ? ' (You)' : ''),
       });
 
       advanced = true;
@@ -448,7 +565,7 @@
         state.settings.teams,
         state.settings.rounds,
         state.settings.mode,
-        state.tradedPicks
+        state.tradedPicks,
       );
       if (!validation.valid) {
         return { ok: false, error: validation.error };
@@ -457,19 +574,24 @@
 
     const p = candidate.playerId != null ? byId(candidate.playerId) : null;
     const newKeeper = {
-      id: candidate.id || ('k_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
+      id: candidate.id || 'k_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
       slot: parseInt(candidate.slot, 10) || 1,
       round: parseInt(candidate.round, 10) || 1,
       playerId: candidate.playerId != null ? parseInt(candidate.playerId, 10) : null,
       playerName: candidate.playerName || (p ? p.name : null),
       playerPos: candidate.playerPos || (p ? p.pos : null),
       playerTeam: candidate.playerTeam || (p ? p.team : null),
-      playerBye: candidate.playerBye != null ? parseInt(candidate.playerBye, 10) : (p && p.bye != null ? p.bye : null),
+      playerBye:
+        candidate.playerBye != null
+          ? parseInt(candidate.playerBye, 10)
+          : p && p.bye != null
+            ? p.bye
+            : null,
       customName: candidate.customName ? String(candidate.customName).trim() : null,
       customPos: candidate.customPos ? String(candidate.customPos).trim().toUpperCase() : null,
       customTeam: candidate.customTeam ? String(candidate.customTeam).trim().toUpperCase() : null,
       customBye: candidate.customBye != null ? parseInt(candidate.customBye, 10) : null,
-      wasDroppedFromPool: !!candidate.wasDroppedFromPool
+      wasDroppedFromPool: !!candidate.wasDroppedFromPool,
     };
 
     if (newKeeper.playerId != null && newKeeper.playerName) {
@@ -478,11 +600,13 @@
         name: newKeeper.playerName,
         pos: newKeeper.playerPos,
         team: newKeeper.playerTeam,
-        bye: newKeeper.playerBye
+        bye: newKeeper.playerBye,
       };
     }
 
-    const existingIndex = candidate.id ? state.keepers.findIndex(k => k && k.id === candidate.id) : -1;
+    const existingIndex = candidate.id
+      ? state.keepers.findIndex((k) => k && k.id === candidate.id)
+      : -1;
     if (existingIndex >= 0) {
       state.keepers[existingIndex] = newKeeper;
     } else {
@@ -504,7 +628,7 @@
 
   function removeKeeper(keeperId) {
     if (!keeperId) return;
-    state.keepers = state.keepers.filter(k => k && k.id !== keeperId);
+    state.keepers = state.keepers.filter((k) => k && k.id !== keeperId);
     save();
     if (typeof render === 'function') render();
   }
@@ -523,7 +647,7 @@
       name: p.name || null,
       pos: p.pos || null,
       team: p.team || null,
-      mine: Boolean(mine)
+      mine: Boolean(mine),
     });
     if (id != null && p.name) {
       state.playerSnapshots = state.playerSnapshots || {};
@@ -537,14 +661,21 @@
     save();
     if (typeof render === 'function') render();
 
-    const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
+    const who = teamForOverall(
+      pick,
+      state.settings.teams,
+      state.settings.mode,
+      state.settings.teamNames,
+      state.settings.slot,
+      state.tradedPicks,
+    );
     sendServerPick({
       source: 'manual',
       overall: pick,
       name: p.name || 'Player #' + id,
       pos: p.pos || '',
       team: p.team || '',
-      by: who.name + (who.isMe ? ' (You)' : '')
+      by: who.name + (who.isMe ? ' (You)' : ''),
     });
   }
 
@@ -552,9 +683,10 @@
     if (typeof document !== 'undefined') {
       const modal = document.getElementById('modalbox');
       if (modal && modal.classList.contains('modal-board')) {
-        const fn = (typeof renderDraftBoardModalView === 'function')
-          ? renderDraftBoardModalView
-          : (typeof global !== 'undefined' && global.renderDraftBoardModalView);
+        const fn =
+          typeof renderDraftBoardModalView === 'function'
+            ? renderDraftBoardModalView
+            : typeof global !== 'undefined' && global.renderDraftBoardModalView;
         if (typeof fn === 'function') fn();
       }
     }
@@ -590,7 +722,12 @@
     if (fromIdx < 0) return;
     const toIdx = fromIdx + delta;
     if (toIdx < 0 || toIdx >= state.watchlist.length) return;
-    const reorderFn = (typeof reorderWatchlist === 'function') ? reorderWatchlist : (typeof window !== 'undefined' ? window.reorderWatchlist : null);
+    const reorderFn =
+      typeof reorderWatchlist === 'function'
+        ? reorderWatchlist
+        : typeof window !== 'undefined'
+          ? window.reorderWatchlist
+          : null;
     if (typeof reorderFn === 'function') {
       state.watchlist = reorderFn(state.watchlist, fromIdx, toIdx);
     } else {
@@ -610,7 +747,12 @@
     const fromIdx = state.watchlist.indexOf(fromPlayerId);
     const toIdx = state.watchlist.indexOf(toPlayerId);
     if (fromIdx < 0 || toIdx < 0 || fromIdx === toIdx) return;
-    const reorderFn = (typeof reorderWatchlist === 'function') ? reorderWatchlist : (typeof window !== 'undefined' ? window.reorderWatchlist : null);
+    const reorderFn =
+      typeof reorderWatchlist === 'function'
+        ? reorderWatchlist
+        : typeof window !== 'undefined'
+          ? window.reorderWatchlist
+          : null;
     if (typeof reorderFn === 'function') {
       state.watchlist = reorderFn(state.watchlist, fromIdx, toIdx);
     } else {
@@ -627,17 +769,25 @@
 
   function draftUnlistedPlayer(pos, name, team, bye) {
     const pick = currentPick();
-    const who = teamForOverall(pick, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
+    const who = teamForOverall(
+      pick,
+      state.settings.teams,
+      state.settings.mode,
+      state.settings.teamNames,
+      state.settings.slot,
+      state.tradedPicks,
+    );
     const posVal = (pos || 'WR').toUpperCase();
-    const nameVal = (name && name.trim()) ? name.trim() : ('Unlisted ' + (posVal !== 'OTHER' ? posVal : 'Player'));
+    const nameVal =
+      name && name.trim() ? name.trim() : 'Unlisted ' + (posVal !== 'OTHER' ? posVal : 'Player');
     state.log.push({
       overall: pick,
       playerId: null,
       customName: nameVal,
       customPos: posVal,
-      customTeam: (team && team.trim()) ? team.trim().toUpperCase() : null,
-      customBye: (bye && bye >= 1 && bye <= 18) ? bye : null,
-      mine: who.isMe
+      customTeam: team && team.trim() ? team.trim().toUpperCase() : null,
+      customBye: bye && bye >= 1 && bye <= 18 ? bye : null,
+      mine: who.isMe,
     });
     if (typeof closeModal === 'function') closeModal();
     autoAdvanceKeepers();
@@ -649,8 +799,8 @@
       overall: pick,
       name: nameVal,
       pos: posVal,
-      team: (team && team.trim()) ? team.trim().toUpperCase() : '',
-      by: who.name + (who.isMe ? ' (You)' : '')
+      team: team && team.trim() ? team.trim().toUpperCase() : '',
+      by: who.name + (who.isMe ? ' (You)' : ''),
     });
   }
 
@@ -659,7 +809,14 @@
     const removed = state.log.pop();
     save();
     if (typeof render === 'function') render();
-    sendServerEvent('↩️ Undid pick #' + (removed.overall || (state.log.length + 1)) + ' (Now at Pick #' + (state.log.length + 1) + ')', 'info');
+    sendServerEvent(
+      '↩️ Undid pick #' +
+        (removed.overall || state.log.length + 1) +
+        ' (Now at Pick #' +
+        (state.log.length + 1) +
+        ')',
+      'info',
+    );
   }
 
   function jumpTo(pick) {
@@ -667,31 +824,57 @@
     while (state.log.length > pick - 1) state.log.pop();
     while (state.log.length < pick - 1) {
       const nextPickNum = state.log.length + 1;
-      const keeper = (typeof isKeeperPick === 'function')
-        ? isKeeperPick(nextPickNum, state.keepers, state.settings.teams, state.settings.rounds, state.settings.mode, state.tradedPicks)
-        : null;
+      const keeper =
+        typeof isKeeperPick === 'function'
+          ? isKeeperPick(
+              nextPickNum,
+              state.keepers,
+              state.settings.teams,
+              state.settings.rounds,
+              state.settings.mode,
+              state.tradedPicks,
+            )
+          : null;
       if (keeper) {
-        const who = teamForOverall(nextPickNum, state.settings.teams, state.settings.mode, state.settings.teamNames, state.settings.slot, state.tradedPicks);
-        const p = (keeper.playerId != null) ? (byId(keeper.playerId) || {}) : {};
+        const who = teamForOverall(
+          nextPickNum,
+          state.settings.teams,
+          state.settings.mode,
+          state.settings.teamNames,
+          state.settings.slot,
+          state.tradedPicks,
+        );
+        const p = keeper.playerId != null ? byId(keeper.playerId) || {} : {};
         const posVal = keeper.customPos || keeper.playerPos || p.pos || 'WR';
-        const nameVal = keeper.customName || keeper.playerName || p.name || ('Keeper ' + posVal);
+        const nameVal = keeper.customName || keeper.playerName || p.name || 'Keeper ' + posVal;
         const teamVal = keeper.customTeam || keeper.playerTeam || p.team || null;
-        const byeVal = keeper.customBye != null ? keeper.customBye : (keeper.playerBye != null ? keeper.playerBye : (p.bye || null));
+        const byeVal =
+          keeper.customBye != null
+            ? keeper.customBye
+            : keeper.playerBye != null
+              ? keeper.playerBye
+              : p.bye || null;
         state.log.push({
           overall: nextPickNum,
           playerId: keeper.playerId != null ? keeper.playerId : null,
           name: keeper.playerId != null ? nameVal : null,
           pos: keeper.playerId != null ? posVal : null,
           team: keeper.playerId != null ? teamVal : null,
-          customName: keeper.playerId == null ? (keeper.customName || 'Keeper') : null,
+          customName: keeper.playerId == null ? keeper.customName || 'Keeper' : null,
           customPos: posVal,
           customTeam: teamVal,
           customBye: byeVal,
           mine: who.isMe,
-          isKeeper: true
+          isKeeper: true,
         });
       } else {
-        state.log.push({ overall: nextPickNum, playerId: null, customName: 'Skipped pick', customPos: 'OTHER', mine: false });
+        state.log.push({
+          overall: nextPickNum,
+          playerId: null,
+          customName: 'Skipped pick',
+          customPos: 'OTHER',
+          mine: false,
+        });
       }
     }
     autoAdvanceKeepers();
@@ -711,7 +894,9 @@
       state.keepers = [];
     } else {
       if (state.keepers && state.keepers.length > 0) {
-        const choice = confirm('Clear the draft board back to Pick #1?\n\n• Click OK to reset draft picks (configured Keepers will be preserved)\n• Click Cancel to abort reset');
+        const choice = confirm(
+          'Clear the draft board back to Pick #1?\n\n• Click OK to reset draft picks (configured Keepers will be preserved)\n• Click Cancel to abort reset',
+        );
         if (!choice) return;
       } else {
         if (!confirm('Clear the whole draft (all picks and rosters)?')) return;
@@ -730,14 +915,15 @@
   }
 
   function selectRosterSlot(slot) {
-    global.viewingRosterSlot = (slot === 'clock' || slot == null || slot === '') ? null : parseInt(slot, 10);
+    global.viewingRosterSlot =
+      slot === 'clock' || slot == null || slot === '' ? null : parseInt(slot, 10);
     if (typeof renderInspectRoster === 'function') renderInspectRoster();
   }
 
   // --- Multi-League Management APIs ---
   function getLeagueList() {
     if (!manifest || !Array.isArray(manifest.leagues)) return [];
-    return manifest.leagues.map(l => {
+    return manifest.leagues.map((l) => {
       let draftCount = 0;
       let teams = 12;
       try {
@@ -757,7 +943,7 @@
         draftCount: draftCount,
         teams: teams,
         createdAt: l.createdAt,
-        updatedAt: l.updatedAt
+        updatedAt: l.updatedAt,
       };
     });
   }
@@ -768,8 +954,9 @@
 
   function switchLeague(leagueId) {
     if (!leagueId) return { ok: false, error: 'Invalid league ID' };
-    if (!manifest || !Array.isArray(manifest.leagues)) return { ok: false, error: 'No leagues available' };
-    const target = manifest.leagues.find(l => l.id === leagueId);
+    if (!manifest || !Array.isArray(manifest.leagues))
+      return { ok: false, error: 'No leagues available' };
+    const target = manifest.leagues.find((l) => l.id === leagueId);
     if (!target) return { ok: false, error: 'League not found: ' + leagueId };
 
     // Save active state before switching
@@ -792,9 +979,9 @@
     if (typeof document !== 'undefined') {
       const titleEl = document.getElementById('leaguetitle');
       if (titleEl) {
-        titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Your Draft Board");
+        titleEl.textContent = '🏈 ' + (state.settings.leagueName || 'Your Draft Board');
       }
-      document.title = (state.settings.leagueName || "Fantasy Draft Board") + ' — Draft Board';
+      document.title = (state.settings.leagueName || 'Fantasy Draft Board') + ' — Draft Board';
     }
     if (typeof global.render === 'function') {
       global.render();
@@ -807,16 +994,20 @@
     save();
     const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     const defaultName = 'League ' + (manifest.leagues.length + 1);
-    const finalName = (leagueName && String(leagueName).trim()) ? String(leagueName).trim() : defaultName;
+    const finalName =
+      leagueName && String(leagueName).trim() ? String(leagueName).trim() : defaultName;
 
-    const freshSettings = Object.assign({}, DEFAULTS, { leagueName: finalName, sleeperDraftId: '' });
+    const freshSettings = Object.assign({}, DEFAULTS, {
+      leagueName: finalName,
+      sleeperDraftId: '',
+    });
     const freshState = normalizeState({
       settings: freshSettings,
       keepers: [],
       log: [],
       watchlist: [],
       queue: [],
-      tradedPicks: {}
+      tradedPicks: {},
     });
 
     try {
@@ -829,7 +1020,7 @@
       id: newId,
       name: finalName,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     });
     manifest.activeLeagueId = newId;
     saveManifest();
@@ -853,12 +1044,16 @@
     save();
     const newId = 'league_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     const defaultName = (state.settings.leagueName || 'League') + ' (Copy)';
-    const finalName = (newLeagueName && String(newLeagueName).trim()) ? String(newLeagueName).trim() : defaultName;
+    const finalName =
+      newLeagueName && String(newLeagueName).trim() ? String(newLeagueName).trim() : defaultName;
 
     let clonedPayload = null;
-    const dupFn = (typeof duplicateLeagueSettings === 'function')
-      ? duplicateLeagueSettings
-      : (typeof global.duplicateLeagueSettings === 'function' ? global.duplicateLeagueSettings : null);
+    const dupFn =
+      typeof duplicateLeagueSettings === 'function'
+        ? duplicateLeagueSettings
+        : typeof global.duplicateLeagueSettings === 'function'
+          ? global.duplicateLeagueSettings
+          : null;
 
     if (dupFn) {
       clonedPayload = dupFn(state, finalName, newId);
@@ -875,7 +1070,7 @@
         watchlist: Array.isArray(state.watchlist) ? state.watchlist.slice() : [],
         queue: [],
         tradedPicks: {},
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
     }
 
@@ -885,7 +1080,7 @@
       log: clonedPayload.log,
       watchlist: clonedPayload.watchlist,
       queue: clonedPayload.queue,
-      tradedPicks: clonedPayload.tradedPicks
+      tradedPicks: clonedPayload.tradedPicks,
     });
 
     try {
@@ -898,7 +1093,7 @@
       id: newId,
       name: finalName,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     });
     manifest.activeLeagueId = newId;
     saveManifest();
@@ -919,15 +1114,19 @@
   }
 
   function deleteLeague(leagueId) {
-    if (!manifest || !Array.isArray(manifest.leagues)) return { ok: false, error: 'No leagues found' };
+    if (!manifest || !Array.isArray(manifest.leagues))
+      return { ok: false, error: 'No leagues found' };
     if (manifest.leagues.length <= 1) {
-      return { ok: false, error: 'Cannot delete the only remaining league. At least one league must exist.' };
+      return {
+        ok: false,
+        error: 'Cannot delete the only remaining league. At least one league must exist.',
+      };
     }
-    const idx = manifest.leagues.findIndex(l => l.id === leagueId);
+    const idx = manifest.leagues.findIndex((l) => l.id === leagueId);
     if (idx < 0) return { ok: false, error: 'League not found' };
 
     const deletedName = manifest.leagues[idx].name;
-    const isCurrent = (manifest.activeLeagueId === leagueId);
+    const isCurrent = manifest.activeLeagueId === leagueId;
     manifest.leagues.splice(idx, 1);
     try {
       if (typeof localStorage !== 'undefined') {
@@ -948,8 +1147,9 @@
       if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
       if (typeof document !== 'undefined') {
         const titleEl = document.getElementById('leaguetitle');
-        if (titleEl) titleEl.textContent = '🏈 ' + (state.settings.leagueName || "Your Draft Board");
-        document.title = (state.settings.leagueName || "Fantasy Draft Board") + ' — Draft Board';
+        if (titleEl)
+          titleEl.textContent = '🏈 ' + (state.settings.leagueName || 'Your Draft Board');
+        document.title = (state.settings.leagueName || 'Fantasy Draft Board') + ' — Draft Board';
       }
       if (typeof global.render === 'function') global.render();
     } else {
@@ -975,9 +1175,12 @@
           }
         } catch (e) {}
       }
-      const serFn = (typeof serializeLeagueBackup === 'function')
-        ? serializeLeagueBackup
-        : (typeof global.serializeLeagueBackup === 'function' ? global.serializeLeagueBackup : null);
+      const serFn =
+        typeof serializeLeagueBackup === 'function'
+          ? serializeLeagueBackup
+          : typeof global.serializeLeagueBackup === 'function'
+            ? global.serializeLeagueBackup
+            : null;
 
       if (serFn) {
         dataToExport = serFn(manifest, leaguesMap);
@@ -987,16 +1190,21 @@
           backupType: 'fantasy_drafter_multi_league_backup',
           exportedAt: new Date().toISOString(),
           manifest: manifest,
-          leagues: leaguesMap
+          leagues: leaguesMap,
         };
       }
       filename = `fantasy-drafter-all-leagues-${dateStr}.json`;
     } else {
       // Export active league
-      const safeName = (state.settings.leagueName || 'league').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const serDraftFn = (typeof serializeDraftState === 'function')
-        ? serializeDraftState
-        : (typeof global.serializeDraftState === 'function' ? global.serializeDraftState : null);
+      const safeName = (state.settings.leagueName || 'league')
+        .replace(/[^a-z0-9]/gi, '_')
+        .toLowerCase();
+      const serDraftFn =
+        typeof serializeDraftState === 'function'
+          ? serializeDraftState
+          : typeof global.serializeDraftState === 'function'
+            ? global.serializeDraftState
+            : null;
 
       if (serDraftFn) {
         dataToExport = serDraftFn(state);
@@ -1009,7 +1217,7 @@
           draftLog: state.log,
           watchlist: state.watchlist,
           queue: state.queue,
-          tradedPicks: state.tradedPicks
+          tradedPicks: state.tradedPicks,
         };
       }
       filename = `draft-board-${safeName}-${dateStr}.json`;
@@ -1034,19 +1242,30 @@
   function importLeagueBackup(input) {
     if (!input) return { ok: false, error: 'Empty import payload' };
     let parsed = null;
-    const desFn = (typeof deserializeLeagueBackup === 'function')
-      ? deserializeLeagueBackup
-      : (typeof global.deserializeLeagueBackup === 'function' ? global.deserializeLeagueBackup : null);
+    const desFn =
+      typeof deserializeLeagueBackup === 'function'
+        ? deserializeLeagueBackup
+        : typeof global.deserializeLeagueBackup === 'function'
+          ? global.deserializeLeagueBackup
+          : null;
 
     if (desFn) {
       parsed = desFn(input);
     } else {
       try {
-        const obj = (typeof input === 'string') ? JSON.parse(input) : input;
+        const obj = typeof input === 'string' ? JSON.parse(input) : input;
         if (obj && obj.backupType === 'fantasy_drafter_multi_league_backup') {
           parsed = { ok: true, type: 'multi', manifest: obj.manifest, leagues: obj.leagues };
         } else if (obj) {
-          parsed = { ok: true, type: 'single', league: { id: 'league_import_' + Date.now(), name: obj.settings?.leagueName || 'Imported League', state: obj } };
+          parsed = {
+            ok: true,
+            type: 'single',
+            league: {
+              id: 'league_import_' + Date.now(),
+              name: obj.settings?.leagueName || 'Imported League',
+              state: obj,
+            },
+          };
         }
       } catch (err) {
         return { ok: false, error: 'Invalid JSON format: ' + err.message };
@@ -1073,14 +1292,17 @@
             }
           } catch (e) {}
         }
-        if (!manifest.leagues.some(existing => existing.id === item.id)) {
+        if (!manifest.leagues.some((existing) => existing.id === item.id)) {
           manifest.leagues.push(item);
         } else {
-          const idx = manifest.leagues.findIndex(existing => existing.id === item.id);
+          const idx = manifest.leagues.findIndex((existing) => existing.id === item.id);
           manifest.leagues[idx] = item;
         }
       }
-      if (incomingManifest.activeLeagueId && manifest.leagues.some(l => l.id === incomingManifest.activeLeagueId)) {
+      if (
+        incomingManifest.activeLeagueId &&
+        manifest.leagues.some((l) => l.id === incomingManifest.activeLeagueId)
+      ) {
         manifest.activeLeagueId = incomingManifest.activeLeagueId;
       }
       saveManifest();
@@ -1103,7 +1325,7 @@
         id: newId,
         name: name,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       });
       manifest.activeLeagueId = newId;
       saveManifest();
@@ -1127,9 +1349,13 @@
 
   function reconcileWithPlayerPool(newPlayers) {
     const list = Array.isArray(newPlayers) ? newPlayers : PLAYERS;
-    const reconcileFn = (typeof reconcileStateWithNewPlayerPool === 'function')
-      ? reconcileStateWithNewPlayerPool
-      : (typeof window !== 'undefined' && typeof window.reconcileStateWithNewPlayerPool === 'function' ? window.reconcileStateWithNewPlayerPool : null);
+    const reconcileFn =
+      typeof reconcileStateWithNewPlayerPool === 'function'
+        ? reconcileStateWithNewPlayerPool
+        : typeof window !== 'undefined' &&
+            typeof window.reconcileStateWithNewPlayerPool === 'function'
+          ? window.reconcileStateWithNewPlayerPool
+          : null;
     if (typeof reconcileFn === 'function' && Array.isArray(list) && list.length > 0) {
       const res = reconcileFn(state, list);
       save();
@@ -1181,4 +1407,3 @@
   global.importLeagueBackup = importLeagueBackup;
   global.reconcileWithPlayerPool = reconcileWithPlayerPool;
 })(typeof window !== 'undefined' ? window : globalThis);
-

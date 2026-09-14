@@ -56,9 +56,19 @@
     on('rounds', 'change', () => {
       global.state.settings.rounds = Math.max(1, +$('rounds').value || 25);
       const rs = global.state.settings.rosterSlots || DEFAULT_ROSTER_SLOTS;
-      const starters = (rs.qb || 0) + (rs.rb || 0) + (rs.wr || 0) + (rs.te || 0) +
-        (rs.flex || 0) + (rs.superflex || 0) + (rs.k || 0) + (rs.dst || 0);
-      global.state.settings.rosterSlots.bench = Math.max(0, global.state.settings.rounds - starters);
+      const starters =
+        (rs.qb || 0) +
+        (rs.rb || 0) +
+        (rs.wr || 0) +
+        (rs.te || 0) +
+        (rs.flex || 0) +
+        (rs.superflex || 0) +
+        (rs.k || 0) +
+        (rs.dst || 0);
+      global.state.settings.rosterSlots.bench = Math.max(
+        0,
+        global.state.settings.rounds - starters,
+      );
       save();
       render();
     });
@@ -120,17 +130,17 @@
     on('rosterTeamSelect', 'change', () => {
       selectRosterSlot($('rosterTeamSelect').value);
     });
-    on('overlay', 'click', e => {
+    on('overlay', 'click', (e) => {
       if (e.target.id === 'overlay') closeModal();
     });
-    on('playerOverlay', 'click', e => {
+    on('playerOverlay', 'click', (e) => {
       if (e.target.id === 'playerOverlay') {
         if (typeof closePlayerModal === 'function') closePlayerModal();
         else closeModal();
       }
     });
 
-    document.addEventListener('keydown', e => {
+    document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         const playerOverlay = $('playerOverlay');
         if (playerOverlay && playerOverlay.classList.contains('show')) {
@@ -147,20 +157,29 @@
         if (searchInput) searchInput.focus();
       }
       // Quick undo on Ctrl+Z or Cmd+Z
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && document.activeElement.tagName !== 'INPUT') {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === 'z' &&
+        !e.shiftKey &&
+        document.activeElement.tagName !== 'INPUT'
+      ) {
         e.preventDefault();
         undo();
       }
       // Copy last draft pick on Ctrl+C / Cmd+C (when nothing is selected) or Alt+C / Ctrl+Shift+C
-      const isCopyKey = (e.key === 'c' || e.key === 'C');
+      const isCopyKey = e.key === 'c' || e.key === 'C';
       const isPlainCopy = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && isCopyKey;
-      const isExplicitCopyVariant = ((e.ctrlKey || e.metaKey) && e.shiftKey && isCopyKey) || (e.altKey && isCopyKey);
+      const isExplicitCopyVariant =
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && isCopyKey) || (e.altKey && isCopyKey);
 
       if (isPlainCopy || isExplicitCopyVariant) {
-        const sel = (typeof window !== 'undefined' && window.getSelection) ? window.getSelection().toString() : '';
+        const sel =
+          typeof window !== 'undefined' && window.getSelection
+            ? window.getSelection().toString()
+            : '';
         const activeEl = document.activeElement;
         const isEditable = activeEl && ['INPUT', 'TEXTAREA'].includes(activeEl.tagName);
-        const hasInputSel = isEditable && (activeEl.selectionStart !== activeEl.selectionEnd);
+        const hasInputSel = isEditable && activeEl.selectionStart !== activeEl.selectionEnd;
 
         if (isPlainCopy && (sel || hasInputSel)) {
           // User highlighted text to copy; allow native browser copy
@@ -168,9 +187,12 @@
         }
 
         if (!sel && !hasInputSel) {
-          const fn = (typeof copyLastDraftPick === 'function')
-            ? copyLastDraftPick
-            : (typeof global !== 'undefined' && typeof global.copyLastDraftPick === 'function' ? global.copyLastDraftPick : null);
+          const fn =
+            typeof copyLastDraftPick === 'function'
+              ? copyLastDraftPick
+              : typeof global !== 'undefined' && typeof global.copyLastDraftPick === 'function'
+                ? global.copyLastDraftPick
+                : null;
           if (typeof fn === 'function') {
             const res = fn();
             if (res) {
@@ -180,11 +202,21 @@
         }
       }
       // Toggle Draft Board modal on 'b' or 'B' if not inside an input/textarea
-      if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+      if (
+        (e.key === 'b' || e.key === 'B') &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)
+      ) {
         e.preventDefault();
         const modalBox = $('modalbox');
         const overlay = $('overlay');
-        if (overlay && overlay.classList.contains('show') && modalBox && modalBox.classList.contains('modal-board')) {
+        if (
+          overlay &&
+          overlay.classList.contains('show') &&
+          modalBox &&
+          modalBox.classList.contains('modal-board')
+        ) {
           closeModal();
         } else {
           openDraftBoardModal();
@@ -212,4 +244,3 @@
     }
   }
 })(typeof window !== 'undefined' ? window : globalThis);
-

@@ -26,7 +26,11 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  font:
+    14px / 1.45 -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
 
 header {
@@ -45,7 +49,7 @@ header {
   align-items: center;
 }
 
-.hrow+.hrow {
+.hrow + .hrow {
   margin-top: 8px;
 }
 
@@ -294,7 +298,6 @@ tr.tierbreak td {
   letter-spacing: -0.2px;
 }
 
-
 .scarcity-tag {
   display: inline-flex;
   align-items: center;
@@ -318,8 +321,13 @@ tr.tierbreak td {
 }
 
 @keyframes subtle-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.75; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.75;
+  }
 }
 
 .tierpills-bar {
@@ -379,7 +387,6 @@ tr.tierbreak td {
   color: #0f172a;
   border-color: #f59e0b;
 }
-
 
 .pname {
   font-weight: 600;
@@ -570,7 +577,7 @@ h2 {
   margin-bottom: 8px;
 }
 
-.side .panel+.panel {
+.side .panel + .panel {
   margin-top: 14px;
 }
 
@@ -700,7 +707,10 @@ h2 {
   justify-content: center;
   vertical-align: middle;
   border-radius: 4px;
-  transition: color 0.15s, background-color 0.15s, transform 0.1s;
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    transform 0.1s;
 }
 
 .watchbtn:hover {
@@ -726,7 +736,9 @@ h2 {
   font-size: 12px;
   border-radius: 4px;
   background: transparent;
-  transition: background-color 0.15s, border-color 0.15s;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
   min-width: 0;
   user-select: none;
   cursor: grab;
@@ -764,7 +776,9 @@ h2 {
 tr.watch-drag-row {
   cursor: grab;
   user-select: none;
-  transition: background-color 0.15s, opacity 0.15s;
+  transition:
+    background-color 0.15s,
+    opacity 0.15s;
 }
 
 tr.watch-drag-row:active {
@@ -788,7 +802,9 @@ tr.watch-drag-row.drag-over td {
   font-size: 11px;
   color: var(--dim);
   cursor: grab;
-  transition: opacity 0.15s, color 0.15s;
+  transition:
+    opacity 0.15s,
+    color 0.15s;
 }
 
 tr.watch-drag-row:hover .watch-drag-grip {
@@ -799,7 +815,6 @@ tr.watch-drag-row:hover .watch-drag-grip {
 .watch-rk-cell {
   white-space: nowrap;
 }
-
 
 .needs {
   display: flex;
@@ -1113,11 +1128,26 @@ td.clickname:hover .pname {
   color: var(--dim);
 }
 
-.dc-pos-badge.qb { color: var(--qb); border-color: rgba(224, 90, 109, 0.4); }
-.dc-pos-badge.rb { color: var(--rb); border-color: rgba(61, 220, 132, 0.4); }
-.dc-pos-badge.wr { color: var(--wr); border-color: rgba(88, 166, 255, 0.4); }
-.dc-pos-badge.te { color: var(--te); border-color: rgba(255, 180, 84, 0.4); }
-.dc-pos-badge.k  { color: var(--k); border-color: rgba(192, 132, 252, 0.4); }
+.dc-pos-badge.qb {
+  color: var(--qb);
+  border-color: rgba(224, 90, 109, 0.4);
+}
+.dc-pos-badge.rb {
+  color: var(--rb);
+  border-color: rgba(61, 220, 132, 0.4);
+}
+.dc-pos-badge.wr {
+  color: var(--wr);
+  border-color: rgba(88, 166, 255, 0.4);
+}
+.dc-pos-badge.te {
+  color: var(--te);
+  border-color: rgba(255, 180, 84, 0.4);
+}
+.dc-pos-badge.k {
+  color: var(--k);
+  border-color: rgba(192, 132, 252, 0.4);
+}
 
 .dc-athletes-list {
   display: flex;
@@ -1478,7 +1508,7 @@ td.clickname:hover .pname {
   color: var(--dim);
 }
 
-.radio-cell input:checked+span {
+.radio-cell input:checked + span {
   color: var(--good);
   font-weight: 700;
 }
@@ -1585,7 +1615,6 @@ td.clickname:hover .pname {
 }
 
 @keyframes pulseDot {
-
   0%,
   100% {
     opacity: 1;
@@ -1788,13 +1817,41 @@ td.clickname:hover .pname {
   color: #fff;
 }
 
-.board-filter-btn.active.filter-qb { background: var(--qb); border-color: var(--qb); color: #111; }
-.board-filter-btn.active.filter-rb { background: var(--rb); border-color: var(--rb); color: #111; }
-.board-filter-btn.active.filter-wr { background: var(--wr); border-color: var(--wr); color: #111; }
-.board-filter-btn.active.filter-te { background: var(--te); border-color: var(--te); color: #111; }
-.board-filter-btn.active.filter-k  { background: var(--k);  border-color: var(--k);  color: #111; }
-.board-filter-btn.active.filter-dst{ background: var(--dst);border-color: var(--dst);color: #111; }
-.board-filter-btn.active.filter-mine { background: var(--good); border-color: var(--good); color: #111; }
+.board-filter-btn.active.filter-qb {
+  background: var(--qb);
+  border-color: var(--qb);
+  color: #111;
+}
+.board-filter-btn.active.filter-rb {
+  background: var(--rb);
+  border-color: var(--rb);
+  color: #111;
+}
+.board-filter-btn.active.filter-wr {
+  background: var(--wr);
+  border-color: var(--wr);
+  color: #111;
+}
+.board-filter-btn.active.filter-te {
+  background: var(--te);
+  border-color: var(--te);
+  color: #111;
+}
+.board-filter-btn.active.filter-k {
+  background: var(--k);
+  border-color: var(--k);
+  color: #111;
+}
+.board-filter-btn.active.filter-dst {
+  background: var(--dst);
+  border-color: var(--dst);
+  color: #111;
+}
+.board-filter-btn.active.filter-mine {
+  background: var(--good);
+  border-color: var(--good);
+  color: #111;
+}
 
 .board-actions {
   display: flex;
@@ -1979,7 +2036,10 @@ td.clickname:hover .pname {
   box-sizing: border-box;
   position: relative;
   overflow: hidden;
-  transition: transform 0.1s ease, filter 0.15s ease, box-shadow 0.1s ease;
+  transition:
+    transform 0.1s ease,
+    filter 0.15s ease,
+    box-shadow 0.1s ease;
 }
 
 .board-table.board-compact .board-card {
@@ -2026,7 +2086,7 @@ td.clickname:hover .pname {
 }
 
 .board-card.other {
-  background: linear-gradient(135deg, rgba(139, 150, 173, 0.25) 0%, rgba(139, 150, 173, 0.10) 100%);
+  background: linear-gradient(135deg, rgba(139, 150, 173, 0.25) 0%, rgba(139, 150, 173, 0.1) 100%);
   border-left: 4px solid var(--dim);
 }
 
@@ -2082,13 +2142,27 @@ td.clickname:hover .pname {
   padding: 0.5px 3px;
 }
 
-.board-card.qb .board-card-pos { background: var(--qb); }
-.board-card.rb .board-card-pos { background: var(--rb); }
-.board-card.wr .board-card-pos { background: var(--wr); }
-.board-card.te .board-card-pos { background: var(--te); }
-.board-card.k .board-card-pos  { background: var(--k); }
-.board-card.dst .board-card-pos{ background: var(--dst); }
-.board-card.other .board-card-pos { background: var(--dim); }
+.board-card.qb .board-card-pos {
+  background: var(--qb);
+}
+.board-card.rb .board-card-pos {
+  background: var(--rb);
+}
+.board-card.wr .board-card-pos {
+  background: var(--wr);
+}
+.board-card.te .board-card-pos {
+  background: var(--te);
+}
+.board-card.k .board-card-pos {
+  background: var(--k);
+}
+.board-card.dst .board-card-pos {
+  background: var(--dst);
+}
+.board-card.other .board-card-pos {
+  background: var(--dim);
+}
 
 .board-card-name {
   font-size: 12.5px;
@@ -2605,7 +2679,9 @@ td.clickname:hover .pname {
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: background-color 0.15s, border-color 0.15s;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
   cursor: grab;
 }
 
@@ -2691,10 +2767,26 @@ td.clickname:hover .pname {
   display: inline-block;
 }
 
-.grade-badge.a { background: rgba(61, 220, 132, 0.25); color: var(--good); border: 1px solid var(--good); }
-.grade-badge.b { background: rgba(79, 143, 247, 0.25); color: var(--accent); border: 1px solid var(--accent); }
-.grade-badge.c { background: rgba(255, 180, 84, 0.25); color: var(--warn); border: 1px solid var(--warn); }
-.grade-badge.d { background: rgba(224, 90, 109, 0.25); color: var(--qb); border: 1px solid var(--qb); }
+.grade-badge.a {
+  background: rgba(61, 220, 132, 0.25);
+  color: var(--good);
+  border: 1px solid var(--good);
+}
+.grade-badge.b {
+  background: rgba(79, 143, 247, 0.25);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.grade-badge.c {
+  background: rgba(255, 180, 84, 0.25);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+}
+.grade-badge.d {
+  background: rgba(224, 90, 109, 0.25);
+  color: var(--qb);
+  border: 1px solid var(--qb);
+}
 
 /* Superlatives Grid */
 .superlatives-grid {
@@ -2922,7 +3014,9 @@ td.clickname:hover .pname {
   color: var(--good);
   opacity: 0;
   transform: translateY(8px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
   pointer-events: none;
 }
 

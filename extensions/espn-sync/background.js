@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         const options = {
           method: method,
-          headers: {}
+          headers: {},
         };
 
         if (payload && method !== 'GET') {
@@ -60,4 +60,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return true; // Keep message channel open for async sendResponse
 });
-
