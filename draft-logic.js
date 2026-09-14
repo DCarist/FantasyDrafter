@@ -2245,6 +2245,7 @@ function duplicateLeagueSettings(sourceState, newName, newId) {
   const clonedSettings = JSON.parse(JSON.stringify(srcSettings));
   clonedSettings.leagueName = leagueName;
   clonedSettings.sleeperDraftId = '';
+  clonedSettings.sleeperUsername = '';
 
   return {
     id: profileId,

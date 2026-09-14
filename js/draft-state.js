@@ -1000,6 +1000,7 @@
     const freshSettings = Object.assign({}, DEFAULTS, {
       leagueName: finalName,
       sleeperDraftId: '',
+      sleeperUsername: '',
     });
     const freshState = normalizeState({
       settings: freshSettings,
@@ -1061,6 +1062,7 @@
       const clonedSettings = JSON.parse(JSON.stringify(state.settings));
       clonedSettings.leagueName = finalName;
       clonedSettings.sleeperDraftId = '';
+      clonedSettings.sleeperUsername = '';
       clonedPayload = {
         id: newId,
         name: finalName,
