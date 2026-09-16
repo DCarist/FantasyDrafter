@@ -7,7 +7,10 @@ resetFailures();
 printSuiteHeader('ESPN Live Sync Robustness & Event Logging');
 
 // Load players dataset
-const playersDataRaw = readFileSync('players-data.js', 'utf-8');
+const playersJsPath = existsSync('data/players-data.js')
+  ? 'data/players-data.js'
+  : 'players-data.js';
+const playersDataRaw = readFileSync(playersJsPath, 'utf-8');
 const jsonStr = playersDataRaw
   .slice(playersDataRaw.indexOf('=') + 1)
   .trim()

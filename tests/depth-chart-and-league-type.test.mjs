@@ -158,9 +158,11 @@ assert(!dynastyLabels.includes('1QB PPR'), 'Dynasty hides 1QB PPR');
 assert(!dynastyLabels.includes('SF PPR'), 'Dynasty hides SF PPR');
 assert(!dynastyLabels.includes('Bye'), 'Bye week is removed from top stats in Dynasty');
 
-// --- 3. ESPN Depth Charts Dataset Schema & Linking ---
-assert(existsSync('players-data.json'), 'players-data.json exists');
-const rawJson = readFileSync('players-data.json', 'utf-8');
+const playersJsonPath = existsSync('data/players-data.json')
+  ? 'data/players-data.json'
+  : 'players-data.json';
+assert(existsSync(playersJsonPath), 'players-data.json exists');
+const rawJson = readFileSync(playersJsonPath, 'utf-8');
 const data = JSON.parse(rawJson);
 
 assert(data.depthCharts != null, 'players-data.json contains depthCharts dictionary');

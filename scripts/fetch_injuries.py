@@ -182,8 +182,8 @@ def sync_injuries_into_data(data, verbose=True):
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_OUT_JS = os.path.join(PROJECT_ROOT, "players-data.js")
-DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "players-data.json")
+DEFAULT_OUT_JS = os.path.join(PROJECT_ROOT, "data", "players-data.js")
+DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "data", "players-data.json")
 
 
 def main():

@@ -5,9 +5,12 @@ import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test
 resetFailures();
 printSuiteHeader('Data Pipeline & Schema Integrity');
 
-assert(existsSync('players-data.js'), 'players-data.js exists');
+const playersJsPath = existsSync('data/players-data.js')
+  ? 'data/players-data.js'
+  : 'players-data.js';
+assert(existsSync(playersJsPath), 'players-data.js exists');
 
-const jsContent = readFileSync('players-data.js', 'utf-8');
+const jsContent = readFileSync(playersJsPath, 'utf-8');
 const eqIdx = jsContent.indexOf('=');
 assert(eqIdx !== -1, 'players-data.js contains assignment');
 const jsonStr = jsContent

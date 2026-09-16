@@ -9,7 +9,7 @@ resetFailures();
 
 const scriptsToVerify = [
   'draft-logic.js',
-  'players-data.js',
+  existsSync('data/players-data.js') ? 'data/players-data.js' : 'players-data.js',
   'js/draft-audio.js',
   'js/draft-state.js',
   'js/draft-sync-client.js',

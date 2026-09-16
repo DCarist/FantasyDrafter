@@ -326,8 +326,8 @@ def fetch_url(url):
 
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_OUT_JS = os.path.join(PROJECT_ROOT, "players-data.js")
-DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "players-data.json")
+DEFAULT_OUT_JS = os.path.join(PROJECT_ROOT, "data", "players-data.js")
+DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "data", "players-data.json")
 
 
 def update_rankings(
@@ -367,6 +367,10 @@ def update_rankings(
     existing_depth_charts = {}
     try:
         source_js = out_js if (out_js and os.path.exists(out_js)) else DEFAULT_OUT_JS
+        if not os.path.exists(source_js):
+            fallback_root_js = os.path.join(PROJECT_ROOT, "players-data.js")
+            if os.path.exists(fallback_root_js):
+                source_js = fallback_root_js
         if os.path.exists(source_js):
             with open(source_js, encoding="utf-8") as f:
                 content = f.read()

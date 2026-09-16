@@ -149,6 +149,10 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         global last_espn_ping, latest_snapshot, latest_league_info, last_reset_timestamp
+        if self.path.startswith("/api/manager/"):
+            self.handle_manager_post()
+            return
+
         if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
             self.handle_data_refresh()
             return
@@ -602,6 +606,10 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                         sse_clients.remove(self.wfile)
             return
 
+        if self.path.startswith("/api/manager/"):
+            self.handle_manager_get()
+            return
+
         if self.path == "/api/data/refresh" or self.path.startswith("/api/data/refresh"):
             self.handle_data_refresh()
             return
@@ -644,6 +652,153 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_json(self, data, status=200):
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def handle_manager_get(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        params = urllib.parse.parse_qs(parsed.query)
+
+        try:
+            import scripts.in_season_manager as mgr
+
+            if path == "/api/manager/status":
+                leagues = mgr.get_leagues()
+                self.send_json(
+                    {
+                        "ok": True,
+                        "status": "online",
+                        "leagues_count": len(leagues),
+                        "db_path": mgr.DB_PATH,
+                    }
+                )
+                return
+
+            if path == "/api/manager/leagues":
+                leagues = mgr.get_leagues()
+                self.send_json({"ok": True, "leagues": leagues})
+                return
+
+            if path == "/api/manager/roster":
+                league_id = params.get("league_id", [""])[0]
+                team_id = params.get("team_id", [None])[0]
+                data = mgr.get_team_view_data(league_id, team_id)
+                self.send_json({"ok": True, "data": data})
+                return
+
+            if path == "/api/manager/history":
+                league_id = params.get("league_id", [""])[0]
+                team_id = params.get("team_id", [""])[0]
+                limit = int(params.get("limit", ["14"])[0])
+                history = mgr.get_roster_history(league_id, team_id, limit=limit)
+                self.send_json({"ok": True, "history": history})
+                return
+
+            if path == "/api/manager/news":
+                impact = params.get("impact", [None])[0]
+                limit = int(params.get("limit", ["50"])[0])
+                players = params.get("player", []) or params.get("players", [])
+                news = mgr.get_player_news(
+                    player_names=players if players else None, impact=impact, limit=limit
+                )
+                self.send_json({"ok": True, "news": news})
+                return
+
+            if path == "/api/manager/waivers":
+                limit = int(params.get("limit", ["50"])[0])
+                matrix = mgr.get_waiver_matrix(limit=limit)
+                self.send_json({"ok": True, "waivers": matrix})
+                return
+
+            if path == "/api/manager/power-rankings":
+                league_id = params.get("league_id", [""])[0]
+                date = params.get("date", [None])[0]
+                rankings = mgr.get_league_power_rankings(league_id, snapshot_date=date)
+                self.send_json({"ok": True, "rankings": rankings})
+                return
+
+            self.send_error(404, f"Manager endpoint {path} not found")
+        except Exception as e:
+            self.send_json({"ok": False, "error": str(e)}, status=500)
+
+    def handle_manager_post(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        raw_body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
+        try:
+            body = json.loads(raw_body)
+        except Exception:
+            body = {}
+
+        try:
+            import scripts.in_season_manager as mgr
+
+            if path == "/api/manager/seed-demo":
+                res = mgr.seed_demo_data()
+                log_event("🌱 Seeded in-season demo leagues and rosters")
+                self.send_json(res)
+                return
+
+            if path == "/api/manager/leagues/add":
+                lid = body.get("id") or f"league_{int(time.time() * 1000)}"
+                platform = body.get("platform", "manual")
+                name = body.get("name", "New League")
+                season = body.get("season", "2026")
+                settings = body.get("settings", {})
+                my_team_id = body.get("my_team_id")
+                saved = mgr.save_league(lid, platform, name, season, settings, my_team_id)
+                self.send_json({"ok": True, "league": saved})
+                return
+
+            if path == "/api/manager/leagues/delete":
+                lid = body.get("id") or body.get("league_id")
+                if not lid:
+                    self.send_json({"ok": False, "error": "Missing league id"}, status=400)
+                    return
+                ok = mgr.delete_league(lid)
+                self.send_json({"ok": ok, "deleted": lid})
+                return
+
+            if path == "/api/manager/sync":
+                action = body.get("action", "sync")
+                if action == "discover" or body.get("discover"):
+                    username = body.get("username", "")
+                    season = body.get("season", "2026")
+                    leagues = mgr.discover_sleeper_leagues(username, season=season)
+                    self.send_json({"ok": True, "leagues": leagues})
+                    return
+
+                platform = body.get("platform", "sleeper")
+                if platform == "sleeper":
+                    remote_id = str(body.get("remote_league_id") or body.get("league_id") or "")
+                    if not remote_id:
+                        self.send_json(
+                            {"ok": False, "error": "Missing remote league id"}, status=400
+                        )
+                        return
+                    my_user = str(body["username"]) if body.get("username") else None
+                    res = mgr.sync_sleeper_league(remote_id, my_username=my_user)
+                    self.send_json(res)
+                    return
+
+                self.send_json(
+                    {"ok": False, "error": f"Unsupported platform '{platform}'"}, status=400
+                )
+                return
+
+            self.send_error(404, f"Manager endpoint {path} not found")
+        except Exception as e:
+            self.send_json({"ok": False, "error": str(e)}, status=500)
+
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 if DIRECTORY:
@@ -652,8 +807,16 @@ if DIRECTORY:
 
 def get_player_data_age():
     """Returns the age of player data in days (float) and the generated date string."""
-    json_path = "players-data.json"
-    js_path = "players-data.js"
+    json_path = (
+        os.path.join("data", "players-data.json")
+        if os.path.exists(os.path.join("data", "players-data.json"))
+        else "players-data.json"
+    )
+    js_path = (
+        os.path.join("data", "players-data.js")
+        if os.path.exists(os.path.join("data", "players-data.js"))
+        else "players-data.js"
+    )
 
     gen_date_str = None
     age_days = None

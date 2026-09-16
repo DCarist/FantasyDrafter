@@ -24,8 +24,11 @@ assert(!existsSync('merge-data.py'), 'Root merge-data.py is eliminated');
 assert(!existsSync('patch-extras.py'), 'Root patch-extras.py is eliminated');
 
 // --- 2. Dataset Schema & Injury Metadata ---
-assert(existsSync('players-data.json'), 'players-data.json exists');
-const rawData = JSON.parse(readFileSync('players-data.json', 'utf-8'));
+const playersJsonPath = existsSync('data/players-data.json')
+  ? 'data/players-data.json'
+  : 'players-data.json';
+assert(existsSync(playersJsonPath), 'players-data.json exists');
+const rawData = JSON.parse(readFileSync(playersJsonPath, 'utf-8'));
 assert(rawData.injuriesUpdated != null, 'Dataset defines injuriesUpdated timestamp');
 
 const injuredPlayers = rawData.players.filter((p) => p.injury != null);
