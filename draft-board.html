@@ -14,25 +14,25 @@
 
   <header>
     <div class="hrow">
-      <h1 id="leaguetitle">🏈 Ken's Draft Board</h1>
+      <h1 id="leaguetitle">🏈 Your Draft Board</h1>
       <span id="clock" class="clock">—</span>
       <span id="nextpicks" class="nextpicks"></span>
       <span style="margin-left:auto"></span>
-      <button class="act" id="boardbtn"
+      <button type="button" class="act" id="boardbtn"
         style="border-color:var(--accent); color:var(--text); font-weight:700">📊 Draft Board</button>
-      <button class="act" id="syncbtn" onclick="openSyncModal()"
+      <button type="button" class="act" id="syncbtn" onclick="openSyncModal()"
         style="border-color:var(--accent); color:var(--text); font-weight:600">⚡ Live Sync <span id="syncbadge"
           class="sync-badge off">OFF</span></button>
-      <button class="act" id="setupbtn" style="border-color:var(--accent); color:var(--accent); font-weight:700">⚙️
+      <button type="button" class="act" id="setupbtn" style="border-color:var(--accent); color:var(--accent); font-weight:700">⚙️
         League Setup</button>
-      <label class="set">Jump to pick <input type="number" id="jumppick" min="1" style="width:64px"> <button class="act"
+      <label class="set">Jump to pick <input type="number" id="jumppick" min="1" style="width:64px"> <button type="button" class="act"
           id="jumpbtn">Go</button></label>
-      <button class="small" id="undobtn">↩ Undo last</button>
-      <button class="small" id="resetbtn">Reset draft</button>
+      <button type="button" class="small" id="undobtn">↩ Undo last</button>
+      <button type="button" class="small" id="resetbtn">Reset draft</button>
     </div>
     <div class="hrow">
       <label class="set">My slot <select id="hdrslot"></select></label>
-      <label class="set">Teams <b id="hdrteams" style="color:var(--text)">12</b></label>
+      <span class="set">Teams <b id="hdrteams" style="color:var(--text)">12</b></span>
       <label class="set">Rounds <input type="number" id="rounds" min="1" max="40"></label>
       <label class="set">Order <select id="mode">
           <option value="3rr">3rd-Round Reversal</option>
@@ -127,7 +127,7 @@
       <div class="panel">
         <div class="roster-header">
           <select id="rosterTeamSelect" class="roster-select"></select>
-          <button class="small" id="onclockquickbtn" style="display:none; white-space:nowrap"
+          <button type="button" class="small" id="onclockquickbtn" style="display:none; white-space:nowrap"
             onclick="selectRosterSlot(null)">Follow Clock</button>
         </div>
         <div id="clockteamlabel" style="font-size:11.5px; color:var(--dim); margin-bottom:6px"></div>
@@ -136,8 +136,11 @@
         <div id="byewarn"></div>
       </div>
       <div class="panel">
-        <h2>Draft Log</h2>
-        <button class="act gone" id="unknownbtn" style="width:100%; margin-bottom:8px">Unlisted pick ➜</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
+          <h2 style="margin:0">Draft Log</h2>
+          <button type="button" class="small" id="copylastpickbtn" title="Copy last draft pick to clipboard (Ctrl+C)" onclick="copyLastDraftPick()" style="font-size:11px; padding:2px 8px; color:var(--dim); cursor:pointer">📋 Copy Last (Ctrl+C)</button>
+        </div>
+        <button type="button" class="act gone" id="unknownbtn" style="width:100%; margin-bottom:8px">Unlisted pick ➜</button>
         <div id="log" style="max-height: 30vh; overflow-y: auto;"></div>
       </div>
     </aside>
@@ -152,6 +155,8 @@
   <div id="playerOverlay">
     <div class="modal" id="playerModalbox"></div>
   </div>
+
+  <div id="copy_toast" class="copy-toast"></div>
 
   <!-- Scripts -->
   <script src="draft-logic.js?v=20260831"></script>

@@ -2,6 +2,11 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.ruff_cache/
+
+# Node dependencies
+node_modules/
+
 
 # Operating System Files
 Thumbs.db
@@ -22,7 +27,7 @@ players-data.json
 data/
 data/*.csv
 
-# Project skills and setup. Let's keep local for now.
-.agents
+# Project skills and setup.
+!.agents/skills/**
 Fantasy Football Draft - ESPN.html
 Fantasy Football Draft - Espn_files/

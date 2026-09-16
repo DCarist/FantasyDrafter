@@ -22,7 +22,8 @@ def main():
     with open(sys.argv[1]) as f:
         extras = json.load(f)["result"]
 
-    raw = open("players-data.js").read()
+    with open("players-data.js", encoding="utf-8") as f:
+        raw = f.read()
     data = json.loads(raw.split("=", 1)[1].rstrip().rstrip(";"))
 
     # --- Schedules: {ABBR: ["KC", "@DAL", ..., "BYE"]} indexed by week-1 ---

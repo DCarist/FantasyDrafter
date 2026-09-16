@@ -19,6 +19,13 @@ Fantasy Drafter is a fast, responsive fantasy football draft board designed for 
 - **Unlisted Player Resolution**: Seamlessly record and track custom/unlisted players without breaking consensus ranking data.
 - **Support for Keepers**: Easily add/modify delete keepers for leagues that have keeper rules. Full support for draft modification after keeper addition.
 
+### 🗂️ Multi-League Profiles & Quick Switching
+- **Isolated Draft Workspaces**: Maintain multiple distinct league drafts (e.g. dynasty startup, work redraft, friends keeper league) simultaneously without cross-contaminating draft logs or settings.
+- **Active League Toolbar**: Seamlessly switch between saved leagues with a single dropdown click right inside the "⚙️ League Setup" modal.
+- **One-Click Duplication & Creation**: "+ New League" initializes fresh defaults, while "📋 Duplicate League" copies all rules and roster slots from your active league with a clean draft board.
+- **Guardrails & Unsaved Changes Warning**: Prompts before switching if you have uncommitted setup edits; prevents deleting the last remaining league.
+- **Full JSON Backup & Restore**: Export individual league configurations or all leagues into a multi-league `.json` archive, and restore from backups anytime.
+
 ### 🎯 Live Team-Centric Strategy Radar
 - **Proximity Counter**: Real-time distance to your next draft turn (e.g. `⏳ 5 Picks Until Your Turn · Pick #28 (3.08)`), switching to an active on-the-clock banner on your pick.
 - **Opponent Threat Timeline**: Chronological strip detailing upcoming opponent picks between turns and predicting what starting spots they urgently need with position-colored badges.
@@ -183,6 +190,46 @@ Run the full test suite with:
 ```bash
 npm test
 ```
+
+---
+
+## 🔍 Code Quality & Tooling
+
+Code quality is enforced across all language types using dedicated, fast modern tooling:
+- **JS / HTML / CSS**: [Biome](https://biomejs.dev/) for formatting and linting
+- **Python**: [Ruff](https://astral.sh/ruff) (linter and formatter) & [Ty](https://github.com/astral-sh/ty) (type checker) via `uv`
+
+### Consolidated Quality Runner
+Run all quality tools across the entire project in one step:
+```bash
+npm run check
+# Or native PowerShell:
+.\scripts\check-quality.ps1
+```
+
+To auto-format and fix autofixable linting issues:
+```bash
+npm run check -- --fix
+# Or:
+.\scripts\check-quality.ps1 -Fix
+```
+
+### Independent Tool Execution
+Each tool can also be run independently as needed by developers or AI agents:
+```bash
+# Biome (JS, HTML, CSS)
+npm run check:biome      # Biome format & lint check
+npm run lint:biome       # Biome lint check only
+npm run format:biome     # Biome auto-format
+
+# Python (Ruff + Ty)
+npm run check:py         # Ruff lint + format check + Ty type check
+npm run check:ruff       # Ruff lint check
+npm run format:ruff      # Ruff format check
+npm run format:ruff:fix  # Ruff auto-format
+npm run check:ty         # Ty type check
+```
+
 
 ---
 

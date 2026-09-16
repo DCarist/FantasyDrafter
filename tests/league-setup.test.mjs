@@ -1,6 +1,6 @@
 // Test suite for League Setup, Multi-team Slot Mapping, and Draft Reversals
-import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { createRequire } from 'node:module';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -39,11 +39,14 @@ for (const size of [8, 10, 12, 14, 16]) {
       pickMap.set(p, slot);
     }
   }
-  eq(pickMap.size, size * totalRounds, `${size}-team: all ${size * totalRounds} picks assigned without gaps`);
+  eq(
+    pickMap.size,
+    size * totalRounds,
+    `${size}-team: all ${size * totalRounds} picks assigned without gaps`,
+  );
 }
 
 const success = finishSuite('League Setup & Draft Simulation');
 if (!success) {
   process.exit(1);
 }
-

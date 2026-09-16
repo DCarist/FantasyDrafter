@@ -15,10 +15,12 @@ from datetime import date
 # Ensure UTF-8 console output on Windows
 if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure_out = getattr(sys.stdout, "reconfigure", None)
+        if callable(reconfigure_out):
+            reconfigure_out(encoding="utf-8", errors="replace")
+        reconfigure_err = getattr(sys.stderr, "reconfigure", None)
+        if callable(reconfigure_err):
+            reconfigure_err(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -31,9 +33,7 @@ try:
 except ImportError:
     from scripts.espn_client import fetch_espn_json
 
-ESPN_INJURIES_URL = (
-    "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
-)
+ESPN_INJURIES_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
 
 STATUS_CODE_MAP = {
     "questionable": "Q",
@@ -124,13 +124,11 @@ def sync_injuries_into_data(data, verbose=True):
 
     if not raw_data or "injuries" not in raw_data:
         if verbose:
-            print(
-                "Warning: No injury data returned by ESPN. Preserving existing injuries."
-            )
+            print("Warning: No injury data returned by ESPN. Preserving existing injuries.")
         return 0
 
     players = data.get("players", [])
-    lookup_exact, lookup_name = build_player_lookup(players)
+    _lookup_exact, lookup_name = build_player_lookup(players)
 
     # Reset all players' injury property to None now that fresh data is confirmed
     for p in players:
@@ -159,7 +157,7 @@ def sync_injuries_into_data(data, verbose=True):
 
     # Link injuries to depth charts
     depth_charts = data.get("depthCharts", {})
-    for team_abbr, tdata in depth_charts.items():
+    for _team_abbr, tdata in depth_charts.items():
         for group_key in ["qb", "rb", "te", "pk"]:
             for ath in tdata.get(group_key, []):
                 pid = ath.get("playerId")
@@ -167,7 +165,7 @@ def sync_injuries_into_data(data, verbose=True):
                     ath["injury"] = injuries_by_id[pid]
                 else:
                     ath["injury"] = None
-        for role_key, wr_list in tdata.get("wr", {}).items():
+        for _role_key, wr_list in tdata.get("wr", {}).items():
             for ath in wr_list:
                 pid = ath.get("playerId")
                 if pid is not None and pid in injuries_by_id:
@@ -190,31 +188,25 @@ DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "players-data.json")
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch NFL Injury Reports from ESPN")
-    parser.add_argument(
-        "--out-js", default=DEFAULT_OUT_JS, help="Path to players-data.js"
-    )
-    parser.add_argument(
-        "--out-json", default=DEFAULT_OUT_JSON, help="Path to players-data.json"
-    )
+    parser.add_argument("--out-js", default=DEFAULT_OUT_JS, help="Path to players-data.js")
+    parser.add_argument("--out-json", default=DEFAULT_OUT_JSON, help="Path to players-data.json")
     args = parser.parse_args()
 
     # Locate source file
     source_file = (
-        args.out_json
-        if (args.out_json and os.path.exists(args.out_json))
-        else args.out_js
+        args.out_json if (args.out_json and os.path.exists(args.out_json)) else args.out_js
     )
     if not os.path.exists(source_file):
         print(f"Error: {source_file} not found.")
         sys.exit(1)
 
     if source_file.endswith(".js"):
-        with open(source_file, "r", encoding="utf-8") as f:
+        with open(source_file, encoding="utf-8") as f:
             content = f.read()
             json_str = content.split("=", 1)[1].rstrip().rstrip(";")
             data = json.loads(json_str)
     else:
-        with open(source_file, "r", encoding="utf-8") as f:
+        with open(source_file, encoding="utf-8") as f:
             data = json.load(f)
 
     sync_injuries_into_data(data, verbose=True)
@@ -228,9 +220,7 @@ def main():
     # Write out JS
     if args.out_js:
         with open(args.out_js, "w", encoding="utf-8") as f:
-            f.write(
-                "// Master players and rankings dataset for Ken's Fantasy Drafter\n"
-            )
+            f.write("// Master players and rankings dataset for Ken's Fantasy Drafter\n")
             f.write("window.DRAFT_DATA = ")
             json.dump(data, f, indent=1)
             f.write(";\n")

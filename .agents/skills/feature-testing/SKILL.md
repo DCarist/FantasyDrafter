@@ -90,6 +90,21 @@ npm test
 ### Step 4: Verify All Suites Pass
 Ensure both the legacy baseline suite (`test-draft-logic.mjs`) and your new test suite (`tests/<feature>.test.mjs`) pass with 0 failures before committing.
 
+### Step 5: Verify Code Quality Checks Pass 100%
+Prior to committing any code, run the code quality checks for your modified code types and ensure 100% compliance:
+
+```powershell
+# For JS, HTML, or CSS changes:
+npm run check:biome
+
+# For Python changes:
+npm run check:py
+
+# Full pre-commit check (all tools + tests):
+npm run check
+```
+If formatting adjustments are needed, run `npm run format:biome` or `npm run format:ruff:fix`.
+
 ---
 
 ## 4. Testing Specific Feature Areas
