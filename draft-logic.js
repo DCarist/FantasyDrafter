@@ -2229,6 +2229,12 @@ function createLeagueProfile(name, id, baseState) {
   };
 }
 
+function getDefaultSeason(dateObj) {
+  const now = dateObj instanceof Date ? dateObj : new Date();
+  const year = now.getFullYear();
+  return now.getMonth() === 0 ? String(year - 1) : String(year);
+}
+
 function duplicateLeagueSettings(sourceState, newName, newId) {
   const profileId = newId || `league_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
   const srcName = sourceState?.settings?.leagueName ? sourceState.settings.leagueName : 'League';
@@ -2240,6 +2246,9 @@ function duplicateLeagueSettings(sourceState, newName, newId) {
   clonedSettings.leagueName = leagueName;
   clonedSettings.sleeperDraftId = '';
   clonedSettings.sleeperUsername = '';
+  clonedSettings.platformLeagueId = '';
+  clonedSettings.inSeasonLeagueId = '';
+  clonedSettings.inSeasonConnected = false;
 
   return {
     id: profileId,
@@ -3070,6 +3079,7 @@ if (typeof module !== 'undefined' && module.exports) {
     createDefaultLeagueManifest: createDefaultLeagueManifest,
     createLeagueProfile: createLeagueProfile,
     duplicateLeagueSettings: duplicateLeagueSettings,
+    getDefaultSeason: getDefaultSeason,
     serializeLeagueBackup: serializeLeagueBackup,
     deserializeLeagueBackup: deserializeLeagueBackup,
   };
@@ -3087,6 +3097,7 @@ if (typeof window !== 'undefined') {
   window.createDefaultLeagueManifest = createDefaultLeagueManifest;
   window.createLeagueProfile = createLeagueProfile;
   window.duplicateLeagueSettings = duplicateLeagueSettings;
+  window.getDefaultSeason = getDefaultSeason;
   window.serializeLeagueBackup = serializeLeagueBackup;
   window.deserializeLeagueBackup = deserializeLeagueBackup;
 }

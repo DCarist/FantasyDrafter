@@ -5,6 +5,15 @@
   const LEAGUE_STORE_PREFIX = 'fantasy_drafter_league_';
   const STORE_KEY = LEAGUES_MANIFEST_KEY;
 
+  function getDefaultSeason(dateObj) {
+    if (typeof global.getDefaultSeason === 'function') {
+      return global.getDefaultSeason(dateObj);
+    }
+    const now = dateObj instanceof Date ? dateObj : new Date();
+    const year = now.getFullYear();
+    return now.getMonth() === 0 ? String(year - 1) : String(year);
+  }
+
   const DEFAULTS = {
     leagueName: 'Your Draft Board',
     teams: 12,
@@ -23,6 +32,14 @@
     syncRollback: true,
     sleeperDraftId: '',
     sleeperUsername: '',
+    platform: 'manual',
+    platformLeagueId: '',
+    platformUserId: '',
+    season: getDefaultSeason(),
+    espnSwid: '',
+    espnS2: '',
+    inSeasonLeagueId: '',
+    inSeasonConnected: false,
     teamNames: [
       'Team 1',
       'You',
@@ -186,6 +203,14 @@
     if (s.settings.syncRollback === undefined) s.settings.syncRollback = true;
     if (!s.settings.sleeperDraftId) s.settings.sleeperDraftId = '';
     if (!s.settings.sleeperUsername) s.settings.sleeperUsername = '';
+    if (!['manual', 'sleeper', 'espn'].includes(s.settings.platform)) s.settings.platform = 'manual';
+    if (!s.settings.platformLeagueId) s.settings.platformLeagueId = '';
+    if (!s.settings.platformUserId) s.settings.platformUserId = '';
+    if (!s.settings.season) s.settings.season = getDefaultSeason();
+    if (!s.settings.espnSwid) s.settings.espnSwid = '';
+    if (!s.settings.espnS2) s.settings.espnS2 = '';
+    if (!s.settings.inSeasonLeagueId) s.settings.inSeasonLeagueId = '';
+    s.settings.inSeasonConnected = !!s.settings.inSeasonConnected;
     s.settings.hideTaken = !!s.settings.hideTaken;
     s.settings.hideOutIR = !!s.settings.hideOutIR;
 
@@ -1404,4 +1429,5 @@
   global.exportLeagueBackup = exportLeagueBackup;
   global.importLeagueBackup = importLeagueBackup;
   global.reconcileWithPlayerPool = reconcileWithPlayerPool;
+  global.getDefaultSeason = getDefaultSeason;
 })(typeof window !== 'undefined' ? window : globalThis);

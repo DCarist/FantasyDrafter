@@ -43,6 +43,7 @@
             </select>
           </label>
           <span class="platform-badge ${platName.toLowerCase()}">${esc(platName)}</span>
+          <button type="button" class="act small league-setup-subhdr-btn" onclick="global.openLeagueSetupForManager(global.inSeasonState.activeLeagueId)" title="Open League Setup & Draft Rules for Active League">⚙️ League Setup</button>
           ${
             curLeague?.last_refreshed
               ? `<span class="meta" style="font-size:12px; color:var(--dim)">Updated ${esc(
@@ -253,6 +254,9 @@
           <div class="league-card-actions">
             <button type="button" class="act primary" onclick="global.inSeasonManager.selectLeague('${esc(lg.id)}'); global.inSeasonManager.setView('team');">
               ${isSel ? '⭐ View Roster' : 'Select League'}
+            </button>
+            <button type="button" class="act league-setup-btn" onclick="global.openLeagueSetupForManager('${esc(lg.id)}')" title="Configure rules, roster slots, and draft settings">
+              ⚙️ League Setup
             </button>
             <button type="button" class="small btn-delete" onclick="global.deleteManagerLeague('${esc(lg.id)}')">🗑️</button>
           </div>
@@ -690,6 +694,12 @@
     const input = document.getElementById('espn_import_league_id');
     const lid = input ? input.value.trim() : '';
     if (!lid) return alert('Please enter an ESPN League ID');
+    const defSeason =
+      typeof global.getDefaultSeason === 'function'
+        ? global.getDefaultSeason()
+        : new Date().getMonth() === 0
+          ? String(new Date().getFullYear() - 1)
+          : String(new Date().getFullYear());
     // Save league stub and seed
     await fetch('/api/manager/leagues/add', {
       method: 'POST',
@@ -698,12 +708,87 @@
         id: `espn_${lid}`,
         platform: 'espn',
         name: `ESPN League ${lid}`,
-        season: '2026',
+        season: defSeason,
       }),
     });
     await global.inSeasonManager.fetchLeagues();
     global.inSeasonManager.selectLeague(`espn_${lid}`);
     global.inSeasonManager.setView('team');
+  };
+
+  global.openLeagueSetupForManager = (inSeasonLeagueId) => {
+    const targetId = inSeasonLeagueId || global.inSeasonState?.activeLeagueId;
+    const inSeasonLeague = (global.inSeasonState?.leagues || []).find((l) => l.id === targetId);
+
+    // Look for matching draft league in manifest
+    const draftLeagues = typeof global.getLeagueList === 'function' ? global.getLeagueList() : [];
+    let matchingDraftId = null;
+
+    if (targetId) {
+      // 1. Direct ID match
+      if (draftLeagues.some((l) => l.id === targetId)) {
+        matchingDraftId = targetId;
+      }
+      // 2. Check stored settings for inSeasonLeagueId or platformLeagueId match
+      if (!matchingDraftId && typeof localStorage !== 'undefined') {
+        for (const dl of draftLeagues) {
+          try {
+            const raw = localStorage.getItem(`fantasy_drafter_league_${dl.id}`);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (
+                parsed?.settings?.inSeasonLeagueId === targetId ||
+                parsed?.settings?.platformLeagueId === targetId ||
+                (inSeasonLeague &&
+                  parsed?.settings?.leagueName?.toLowerCase() === inSeasonLeague.name?.toLowerCase())
+              ) {
+                matchingDraftId = dl.id;
+                break;
+              }
+            }
+          } catch (_e) {}
+        }
+      }
+    }
+
+    if (matchingDraftId) {
+      if (typeof global.switchLeague === 'function') {
+        global.switchLeague(matchingDraftId);
+      }
+    } else if (inSeasonLeague) {
+      // Create and link draft league from in-season league
+      if (typeof global.createNewLeague === 'function') {
+        const res = global.createNewLeague(inSeasonLeague.name);
+        if (res?.ok && global.state?.settings) {
+          global.state.settings.platform = inSeasonLeague.platform || 'manual';
+          const defSeason =
+            typeof global.getDefaultSeason === 'function'
+              ? global.getDefaultSeason()
+              : new Date().getMonth() === 0
+                ? String(new Date().getFullYear() - 1)
+                : String(new Date().getFullYear());
+          global.state.settings.season = inSeasonLeague.season || defSeason;
+          global.state.settings.inSeasonLeagueId = inSeasonLeague.id;
+          global.state.settings.inSeasonConnected = true;
+          if (inSeasonLeague.team_count) {
+            global.state.settings.teams = Math.max(
+              2,
+              Math.min(32, parseInt(inSeasonLeague.team_count, 10) || 12),
+            );
+          }
+          if (inSeasonLeague.my_team_id) {
+            global.state.settings.platformUserId = inSeasonLeague.my_team_id;
+          }
+          if (typeof global.save === 'function') {
+            global.save();
+          }
+        }
+      }
+    }
+
+    if (typeof global.openLeagueSetup === 'function') {
+      global.openLeagueSetup();
+    }
   };
 
   global.renderManagerView = renderManagerView;

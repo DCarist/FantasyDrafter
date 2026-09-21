@@ -3818,6 +3818,70 @@
 
     const keeperCount = (global.state.keepers || []).length;
     const maxKeepersVal = s.maxKeepers !== undefined && s.maxKeepers !== null ? s.maxKeepers : 2;
+    const defSeason =
+      typeof global.getDefaultSeason === 'function'
+        ? global.getDefaultSeason()
+        : new Date().getMonth() === 0
+          ? String(new Date().getFullYear() - 1)
+          : String(new Date().getFullYear());
+    const curSeason = s.season || defSeason;
+    const curPlatform = s.platform || 'manual';
+    const isEspn = curPlatform === 'espn';
+    const inSeasonLinked = !!(s.inSeasonConnected || s.inSeasonLeagueId);
+
+    const inSeasonSectionHtml =
+      '<div style="margin-top:14px; padding:12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px;">' +
+      '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">' +
+      '<div>' +
+      '<div style="font-weight:700; color:var(--text); font-size:13.5px">🏈 In-Season Manager & Platform Connection</div>' +
+      '<div class="meta" style="font-size:12px; margin-top:2px">Capture platform and league identifiers to enable weekly in-season roster, waiver, and power rankings tracking.</div>' +
+      '</div>' +
+      '<div style="display:flex; align-items:center; gap:6px;">' +
+      '<span class="sync-badge ' +
+      (inSeasonLinked ? 'on' : 'off') +
+      '" id="setup_in_season_badge">' +
+      (inSeasonLinked ? 'LINKED' : 'LOCAL DRAFT ONLY') +
+      '</span>' +
+      '</div>' +
+      '</div>' +
+      '<div class="setup-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;">' +
+      '<div class="setup-field"><label>Platform Provider</label><select id="setup_platform_select" onchange="onSetupPlatformChange(this.value)">' +
+      '<option value="manual"' +
+      (curPlatform === 'manual' ? ' selected' : '') +
+      '>Manual / Custom</option>' +
+      '<option value="sleeper"' +
+      (curPlatform === 'sleeper' ? ' selected' : '') +
+      '>Sleeper Fantasy</option>' +
+      '<option value="espn"' +
+      (curPlatform === 'espn' ? ' selected' : '') +
+      '>ESPN Fantasy</option>' +
+      '</select></div>' +
+      '<div class="setup-field"><label>Platform League ID</label><input type="text" id="setup_platform_league_id" value="' +
+      (s.platformLeagueId || '').replace(/"/g, '&quot;') +
+      '" placeholder="e.g. 1049281928..."></div>' +
+      '<div class="setup-field"><label>My Team / User ID</label><input type="text" id="setup_platform_user_id" value="' +
+      (s.platformUserId || '').replace(/"/g, '&quot;') +
+      '" placeholder="Username or Slot #"></div>' +
+      '<div class="setup-field"><label>Season</label><input type="text" id="setup_season" value="' +
+      curSeason.replace(/"/g, '&quot;') +
+      '" placeholder="' +
+      defSeason +
+      '"></div>' +
+      '</div>' +
+      '<div id="setup_espn_creds_container" style="' +
+      (isEspn ? 'display:block;' : 'display:none;') +
+      ' margin-top:10px; padding:10px; background:#141923; border:1px solid var(--border); border-radius:6px;">' +
+      '<div style="font-weight:600; font-size:12px; margin-bottom:4px; color:var(--text)">ESPN Private League Cookies (Required only for private leagues):</div>' +
+      '<div class="setup-grid" style="grid-template-columns: 1fr 1fr; gap:8px;">' +
+      '<div class="setup-field"><label>SWID</label><input type="text" id="setup_espn_swid" value="' +
+      (s.espnSwid || '').replace(/"/g, '&quot;') +
+      '" placeholder="{12345678-ABCD-1234-ABCD-1234567890AB}"></div>' +
+      '<div class="setup-field"><label>espn_s2</label><input type="text" id="setup_espn_s2" value="' +
+      (s.espnS2 || '').replace(/"/g, '&quot;') +
+      '" placeholder="AE... (espn_s2 cookie string)"></div>' +
+      '</div>' +
+      '</div>' +
+      '</div>';
 
     $('modalbox').innerHTML =
       '<h3>⚙️ League Setup & Draft Positions' +
@@ -3859,6 +3923,7 @@
       maxKeepersVal +
       '"></div>' +
       '</div>' +
+      inSeasonSectionHtml +
       '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px; margin-bottom:6px; padding:10px 12px; background:var(--panel2); border:1px solid var(--border); border-radius:8px; flex-wrap:wrap; gap:10px">' +
       '<div>' +
       '<div style="font-weight:700; color:var(--text); font-size:13.5px">🔒 Keepers & Pre-Drafted Players</div>' +
@@ -3984,12 +4049,8 @@
     $('setup_rounds_count').addEventListener('input', () => updateRosterMath(true));
 
     $('setup_team_count').addEventListener('input', () => {
-      syncSetupInputsFromDom();
       const newCount = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
-      while (setupDraftNames.length < newCount)
-        setupDraftNames.push(`Team ${setupDraftNames.length + 1}`);
-      if (setupMySlot > newCount) setupMySlot = 1;
-      $('setup_teams_body').innerHTML = renderSetupTable(newCount);
+      onSetupTeamCountChange(newCount);
     });
 
     const dirtyInputIds = [
@@ -4001,6 +4062,12 @@
       'setup_scoring_select',
       'setup_qb_select',
       'setup_max_keepers',
+      'setup_platform_select',
+      'setup_platform_league_id',
+      'setup_platform_user_id',
+      'setup_season',
+      'setup_espn_swid',
+      'setup_espn_s2',
       'setup_roster_qb',
       'setup_roster_rb',
       'setup_roster_wr',
@@ -4021,6 +4088,14 @@
     const teamsBody = $('setup_teams_body');
     if (teamsBody) {
       teamsBody.addEventListener('input', markSetupDirty);
+    }
+  }
+
+  function onSetupPlatformChange(val) {
+    markSetupDirty();
+    const espnCreds = $('setup_espn_creds_container');
+    if (espnCreds) {
+      espnCreds.style.display = val === 'espn' ? 'block' : 'none';
     }
   }
 
@@ -4058,10 +4133,6 @@
     setupDraftNames[slot - 1] = setupDraftNames[targetSlot - 1];
     setupDraftNames[targetSlot - 1] = tempName;
 
-    // Update mySlot if one of the swapped was my slot
-    if (setupMySlot === slot) setupMySlot = targetSlot;
-    else if (setupMySlot === targetSlot) setupMySlot = slot;
-
     // Remap keepers to travel with the moved team
     if (Array.isArray(global.state.keepers) && global.state.keepers.length > 0) {
       if (typeof remapKeepersOnSlotSwap === 'function') {
@@ -4075,9 +4146,42 @@
       global.save();
     }
 
-    // Re-render table
-    const countVal = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
-    $('setup_teams_body').innerHTML = (() => {
+    const rowA = $(`setup_row_${slot}`);
+    const rowB = $(`setup_row_${targetSlot}`);
+    if (rowA && rowB) {
+      const valA = $(`team_input_${slot}`)?.value || '';
+      const valB = $(`team_input_${targetSlot}`)?.value || '';
+      const inA = $(`team_input_${slot}`);
+      const inB = $(`team_input_${targetSlot}`);
+      if (inA) inA.value = valB;
+      if (inB) inB.value = valA;
+    }
+
+    if (setupMySlot === slot) {
+      setupMySlot = targetSlot;
+    } else if (setupMySlot === targetSlot) {
+      setupMySlot = slot;
+    }
+
+    for (let i = 1; i <= count; i++) {
+      const row = $(`setup_row_${i}`);
+      if (row) row.className = i === setupMySlot ? 'is-me' : '';
+      const radio = row?.querySelector('input[type="radio"]');
+      if (radio) radio.checked = i === setupMySlot;
+    }
+  }
+
+  function onSetupTeamCountChange(countVal) {
+    markSetupDirty();
+    syncSetupInputsFromDom();
+    while (setupDraftNames.length < countVal) {
+      setupDraftNames.push(`Team ${setupDraftNames.length + 1}`);
+    }
+    if (setupMySlot > countVal) setupMySlot = 1;
+
+    const teamsBody = $('setup_teams_body');
+    if (!teamsBody) return;
+    teamsBody.innerHTML = (() => {
       let rows = '';
       for (let i = 1; i <= countVal; i++) {
         const name = setupDraftNames[i - 1] || `Team ${i}`;
@@ -4143,6 +4247,13 @@
     syncSetupInputsFromDom();
     const s = global.state.settings;
     const prevLeagueType = s.leagueType;
+    const defSeason =
+      typeof global.getDefaultSeason === 'function'
+        ? global.getDefaultSeason()
+        : new Date().getMonth() === 0
+          ? String(new Date().getFullYear() - 1)
+          : String(new Date().getFullYear());
+
     s.leagueName = ($('setup_league_name').value || 'Your Draft Board').trim();
     s.teams = Math.max(2, Math.min(32, parseInt($('setup_team_count').value, 10) || 12));
     s.mode = $('setup_mode_select').value;
@@ -4164,6 +4275,26 @@
 
     if ($('setup_max_keepers')) {
       s.maxKeepers = Math.max(0, Math.min(10, parseInt($('setup_max_keepers').value, 10) || 0));
+    }
+
+    // In-Season Manager platform configuration
+    if ($('setup_platform_select')) {
+      s.platform = $('setup_platform_select').value;
+    }
+    if ($('setup_platform_league_id')) {
+      s.platformLeagueId = ($('setup_platform_league_id').value || '').trim();
+    }
+    if ($('setup_platform_user_id')) {
+      s.platformUserId = ($('setup_platform_user_id').value || '').trim();
+    }
+    if ($('setup_season')) {
+      s.season = ($('setup_season').value || '').trim() || defSeason;
+    }
+    if ($('setup_espn_swid')) {
+      s.espnSwid = ($('setup_espn_swid').value || '').trim();
+    }
+    if ($('setup_espn_s2')) {
+      s.espnS2 = ($('setup_espn_s2').value || '').trim();
     }
 
     s.rosterSlots = {
@@ -4189,6 +4320,52 @@
       s.rosterSlots.dst;
     s.rounds = Math.max(1, starters + s.rosterSlots.bench);
 
+    // Synchronize league with In-Season Manager SQLite store
+    const activeId =
+      typeof global.getActiveLeagueId === 'function'
+        ? global.getActiveLeagueId()
+        : 'league_default';
+    const inSeasonId = s.inSeasonLeagueId || activeId;
+    s.inSeasonLeagueId = inSeasonId;
+    s.inSeasonConnected = true;
+
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/manager/leagues/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: inSeasonId,
+          platform: s.platform || 'manual',
+          name: s.leagueName,
+          season: s.season || defSeason,
+          my_team_id: s.platformUserId || String(s.slot || 1),
+          settings: {
+            teams: s.teams,
+            scoring: s.scoring,
+            qbFormat: s.qbFormat,
+            leagueType: s.leagueType,
+            rosterSlots: s.rosterSlots,
+            mode: s.mode,
+            maxKeepers: s.maxKeepers,
+            platformLeagueId: s.platformLeagueId || '',
+            espnSwid: s.espnSwid || '',
+            espnS2: s.espnS2 || '',
+          },
+        }),
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.ok && typeof global.inSeasonManager?.fetchLeagues === 'function') {
+            global.inSeasonManager.fetchLeagues().then(() => {
+              if (typeof global.renderManagerView === 'function') {
+                global.renderManagerView();
+              }
+            });
+          }
+        })
+        .catch((_e) => {});
+    }
+
     global.save();
     closeModal();
     if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
@@ -4199,6 +4376,16 @@
       }
       document.title = `${s.leagueName} — Draft Board`;
     }
+
+    if (global.inSeasonState?.currentView && global.inSeasonState.currentView !== 'draft') {
+      if (typeof global.inSeasonManager?.fetchLeagues === 'function') {
+        global.inSeasonManager.fetchLeagues();
+      }
+      if (typeof global.renderManagerView === 'function') {
+        global.renderManagerView();
+      }
+    }
+
     render();
   }
 
@@ -5152,4 +5339,5 @@
   global.handleExportLeagueClick = handleExportLeagueClick;
   global.triggerLeagueImportFile = triggerLeagueImportFile;
   global.handleLeagueFileImportSelected = handleLeagueFileImportSelected;
+  global.onSetupPlatformChange = onSetupPlatformChange;
 })(typeof window !== 'undefined' ? window : globalThis);
