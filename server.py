@@ -844,6 +844,50 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     self.send_json(res)
                     return
 
+                if platform == "espn":
+                    clean_id = mgr.extract_espn_league_id(remote_id)
+                    if not clean_id or not clean_id.isdigit():
+                        self.send_json(
+                            {
+                                "ok": False,
+                                "error": (
+                                    "No valid numeric ESPN League ID found. "
+                                    "Please check your ESPN League ID in League Setup."
+                                ),
+                            },
+                            status=400,
+                        )
+                        return
+
+                    # Resolve cookies from body or stored settings
+                    swid = body.get("espn_swid") or body.get("swid")
+                    espn_s2 = body.get("espn_s2")
+                    if existing:
+                        settings = existing.get("settings") or {}
+                        if not swid:
+                            swid = settings.get("espnSwid") or settings.get("swid")
+                        if not espn_s2:
+                            espn_s2 = settings.get("espnS2")
+
+                    season = body.get("season")
+                    if not season and existing:
+                        season = existing.get("season")
+
+                    my_team = body.get("team_id") or body.get("my_team_id")
+                    if not my_team and existing:
+                        my_team = existing.get("my_team_id")
+
+                    res = mgr.sync_espn_league(
+                        clean_id,
+                        season=season,
+                        swid=swid,
+                        espn_s2=espn_s2,
+                        my_team_id=my_team,
+                        target_league_id=target_league_id,
+                    )
+                    self.send_json(res)
+                    return
+
                 self.send_json(
                     {"ok": False, "error": f"Unsupported platform '{platform}'"}, status=400
                 )

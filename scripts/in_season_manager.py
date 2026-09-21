@@ -1029,6 +1029,85 @@ def extract_sleeper_league_id(raw_id: str | int | None) -> str:
     return match.group(1) if match else s.replace("sleeper_", "").strip()
 
 
+def extract_espn_league_id(raw_id: str | int | None) -> str:
+    """Extracts numeric ESPN league ID from a raw ID, prefixed string, or full URL."""
+    s = str(raw_id or "").strip()
+    url_match = re.search(r"[?&]leagueId=(\d+)", s, re.IGNORECASE)
+    if url_match:
+        return url_match.group(1)
+    digits_match = re.search(r"(\d{5,14})", s)
+    if digits_match:
+        return digits_match.group(1)
+    return s.replace("espn_", "").strip()
+
+
+ESPN_POSITION_MAP = {
+    1: "QB",
+    2: "RB",
+    3: "WR",
+    4: "TE",
+    5: "K",
+    16: "DST",
+}
+
+ESPN_PRO_TEAM_MAP = {
+    0: "FA",
+    1: "ATL",
+    2: "BUF",
+    3: "CHI",
+    4: "CIN",
+    5: "CLE",
+    6: "DAL",
+    7: "DEN",
+    8: "DET",
+    9: "GB",
+    10: "TEN",
+    11: "IND",
+    12: "KC",
+    13: "LV",
+    14: "LAR",
+    15: "MIA",
+    16: "MIN",
+    17: "NE",
+    18: "NO",
+    19: "NYG",
+    20: "NYJ",
+    21: "PHI",
+    22: "ARI",
+    23: "PIT",
+    24: "LAC",
+    25: "SF",
+    26: "SEA",
+    27: "TB",
+    28: "WAS",
+    29: "CAR",
+    30: "JAX",
+    33: "BAL",
+    34: "HOU",
+}
+
+
+def resolve_defense_name(raw_name: str) -> str | None:
+    """Normalizes ESPN defense names (e.g. 'Eagles D/ST') to consensus team defense names."""
+    clean = re.sub(r"\s*(D/ST|DEF|DST)\s*$", "", raw_name, flags=re.IGNORECASE).strip()
+    match = get_player_by_name(clean)
+    if match and match.get("pos") == "DST":
+        return match.get("name")
+
+    words = clean.split()
+    if words:
+        nickname = words[-1].lower()
+        load_players_data()
+        global _PLAYERS_CACHE
+        if _PLAYERS_CACHE:
+            for p in _PLAYERS_CACHE:
+                if p.get("pos") == "DST":
+                    p_name = p.get("name", "")
+                    if p_name.lower().endswith(nickname) or nickname in p_name.lower():
+                        return p_name
+    return None
+
+
 def load_sleeper_players(cache_dir: str | None = None) -> dict[str, dict[str, Any]]:
     """Loads or fetches Sleeper NFL player database mapping sleeper_id -> player info."""
     global _SLEEPER_PLAYERS_CACHE
@@ -1319,6 +1398,264 @@ def sync_sleeper_league(
         "name": lg_data.get("name"),
         "teams_synced": len(roster_rows),
         "my_team_id": my_team_id or "1",
+    }
+
+
+def sync_espn_league(
+    remote_league_id: str | int,
+    season: str | None = None,
+    swid: str | None = None,
+    espn_s2: str | None = None,
+    my_team_id: str | None = None,
+    db_path: str = DB_PATH,
+    target_league_id: str | None = None,
+) -> dict[str, Any]:
+    """Syncs an ESPN fantasy football league's rosters, teams, and standings into SQLite.
+
+    Supports both public leagues and private leagues requiring SWID and espn_s2 cookies.
+    """
+    clean_id = extract_espn_league_id(str(remote_league_id))
+    if not clean_id or not clean_id.isdigit():
+        return {"ok": False, "error": f"Invalid ESPN league ID '{remote_league_id}'"}
+
+    # Determine cookie header if provided
+    cookie_parts = []
+    if swid:
+        clean_swid = str(swid).strip()
+        if not clean_swid.startswith("{"):
+            clean_swid = f"{{{clean_swid}}}"
+        cookie_parts.append(f"SWID={clean_swid}")
+    if espn_s2:
+        cookie_parts.append(f"espn_s2={str(espn_s2).strip()}")
+    cookie_header = "; ".join(cookie_parts) if cookie_parts else None
+
+    # Probe seasons: requested season first, with fallbacks to adjacent seasons
+    req_season = str(season).strip() if season else None
+    seasons_to_check: list[str] = [req_season] if req_season else []
+    for s_cand in ["2026", "2025", "2024"]:
+        if s_cand not in seasons_to_check:
+            seasons_to_check.append(s_cand)
+
+    league_data: dict[str, Any] | None = None
+    actual_season = req_season or "2026"
+    last_err = None
+
+    try:
+        from scripts import espn_client as ec
+    except ImportError:
+        import espn_client as ec  # type: ignore[no-redef]
+
+    for s_year in seasons_to_check:
+        url = (
+            f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/{s_year}/segments/0/leagues/{clean_id}"
+            f"?view=mRoster&view=mTeam&view=mSettings"
+        )
+        try:
+            raw_text = ec.fetch_espn_text(url, timeout=12, cookie=cookie_header)
+            if raw_text:
+                parsed = json.loads(raw_text)
+                if isinstance(parsed, dict) and "teams" in parsed:
+                    league_data = parsed
+                    actual_season = s_year
+                    break
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    # If standard endpoint didn't succeed, attempt leagueHistory endpoint
+    if not league_data:
+        for s_year in seasons_to_check:
+            hist_url = (
+                f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/leagueHistory/{clean_id}"
+                f"?seasonId={s_year}&view=mRoster&view=mTeam&view=mSettings"
+            )
+            try:
+                raw_text = ec.fetch_espn_text(hist_url, timeout=12, cookie=cookie_header)
+                if raw_text:
+                    parsed = json.loads(raw_text)
+                    if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+                        league_data = parsed[0]
+                        actual_season = s_year
+                        break
+            except Exception as e:
+                last_err = str(e)
+                continue
+
+    if not league_data:
+        err_hint = f"Could not retrieve ESPN league {clean_id}: {last_err or 'League not found or unauthorized'}"
+        if not cookie_header:
+            err_hint += ". If this is a private league, please provide SWID and espn_s2 cookies."
+        return {"ok": False, "error": err_hint}
+
+    teams_data = league_data.get("teams", [])
+    if not teams_data:
+        return {"ok": False, "error": f"No teams found in ESPN league {clean_id}"}
+
+    # Member mapping
+    members_list = league_data.get("members", [])
+    member_map = {}
+    for m in members_list:
+        m_id = str(m.get("id", "")).strip().upper()
+        if m_id:
+            m_name = (
+                m.get("displayName")
+                or f"{m.get('firstName', '')} {m.get('lastName', '')}".strip()
+                or m_id
+            )
+            member_map[m_id] = m_name
+
+    # Identify user team
+    resolved_my_team_id = None
+    target_swid = (str(swid).strip().upper()) if swid else None
+    if target_swid:
+        for t in teams_data:
+            pri = str(t.get("primaryOwner") or "").strip().upper()
+            owners = [str(o).strip().upper() for o in (t.get("owners") or [])]
+            if target_swid == pri or target_swid in owners:
+                resolved_my_team_id = str(t.get("id"))
+                break
+
+    if not resolved_my_team_id and my_team_id:
+        for t in teams_data:
+            if str(t.get("id")) == str(my_team_id):
+                resolved_my_team_id = str(t.get("id"))
+                break
+
+    load_players_data()
+    roster_rows = []
+
+    for t in teams_data:
+        t_id = str(t.get("id", ""))
+        pri_owner = str(t.get("primaryOwner") or "").strip().upper()
+        owner_name = member_map.get(pri_owner, f"Team {t_id}")
+        team_name = (
+            t.get("name")
+            or f"{t.get('location', '')} {t.get('nickname', '')}".strip()
+            or owner_name
+        )
+
+        entries = t.get("roster", {}).get("entries", [])
+        starters = []
+        bench = []
+        ir = []
+
+        for e in entries:
+            slot_id = int(e.get("lineupSlotId", 20))
+            p_entry = e.get("playerPoolEntry", {})
+            pl = p_entry.get("player", {})
+
+            player_id = str(pl.get("id") or e.get("playerId") or "")
+            full_name = str(pl.get("fullName") or "").strip()
+            pos_id = pl.get("defaultPositionId")
+            pos_str = ESPN_POSITION_MAP.get(pos_id, "FLEX")
+            pro_team_id = pl.get("proTeamId")
+            pro_team_str = ESPN_PRO_TEAM_MAP.get(pro_team_id, "FA")
+
+            # Player resolution
+            resolved = None
+            if (
+                pos_str == "DST"
+                or full_name.upper().endswith("D/ST")
+                or full_name.upper().endswith("DST")
+            ):
+                def_name = resolve_defense_name(full_name)
+                if def_name:
+                    m = get_player_by_name(def_name)
+                    if m:
+                        resolved = dict(m)
+                        resolved["id"] = player_id
+                    else:
+                        resolved = {
+                            "id": player_id,
+                            "name": def_name,
+                            "pos": "DST",
+                            "team": pro_team_str,
+                            "rank": 999,
+                            "score": 50,
+                        }
+
+            if not resolved and full_name:
+                m = get_player_by_name(full_name)
+                if m:
+                    resolved = dict(m)
+                    resolved["id"] = player_id
+
+            if not resolved:
+                resolved = {
+                    "id": player_id,
+                    "name": full_name or f"Player {player_id}",
+                    "pos": pos_str,
+                    "team": pro_team_str,
+                    "rank": 999,
+                    "score": 50,
+                }
+
+            if slot_id == 20:
+                bench.append(resolved)
+            elif slot_id == 21:
+                ir.append(resolved)
+            else:
+                starters.append(resolved)
+
+        record_overall = t.get("record", {}).get("overall", {})
+        wins = int(record_overall.get("wins", 0))
+        losses = int(record_overall.get("losses", 0))
+        pts = float(record_overall.get("pointsFor", 0.0))
+
+        roster_rows.append(
+            {
+                "team_id": t_id,
+                "owner_name": owner_name,
+                "team_name": team_name,
+                "starters": starters,
+                "bench": bench,
+                "taxi": [],
+                "ir": ir,
+                "wins": wins,
+                "losses": losses,
+                "points": round(pts, 2),
+            }
+        )
+
+    # Save league and snapshots
+    local_lid = target_league_id or f"espn_{clean_id}"
+    lg_name = league_data.get("settings", {}).get("name") or f"ESPN League {clean_id}"
+
+    new_settings = {
+        "platformLeagueId": clean_id,
+        "espnSwid": swid or "",
+        "espnS2": espn_s2 or "",
+        "total_teams": len(teams_data),
+        "scoring_settings": league_data.get("settings", {}).get("scoringSettings", {}),
+        "roster_settings": league_data.get("settings", {}).get("rosterSettings", {}),
+    }
+
+    existing_list = get_leagues(db_path=db_path)
+    existing_league = next((lg for lg in existing_list if lg.get("id") == local_lid), None)
+    if existing_league and existing_league.get("settings"):
+        merged = dict(existing_league["settings"])
+        merged.update(new_settings)
+        new_settings = merged
+
+    save_league(
+        league_id=local_lid,
+        platform="espn",
+        name=lg_name,
+        season=str(actual_season),
+        settings=new_settings,
+        my_team_id=resolved_my_team_id or my_team_id or "1",
+        db_path=db_path,
+    )
+    save_roster_snapshots(local_lid, roster_rows, db_path=db_path)
+
+    return {
+        "ok": True,
+        "league_id": local_lid,
+        "remote_league_id": clean_id,
+        "name": lg_name,
+        "season": str(actual_season),
+        "teams_synced": len(roster_rows),
+        "my_team_id": resolved_my_team_id or my_team_id or "1",
     }
 
 

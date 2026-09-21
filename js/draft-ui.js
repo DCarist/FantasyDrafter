@@ -4358,7 +4358,7 @@
           if (data?.ok && typeof global.inSeasonManager?.fetchLeagues === 'function') {
             global.inSeasonManager.fetchLeagues().then(() => {
               if (
-                s.platform === 'sleeper' &&
+                (s.platform === 'sleeper' || s.platform === 'espn') &&
                 s.platformLeagueId &&
                 typeof global.inSeasonManager?.syncLeague === 'function'
               ) {

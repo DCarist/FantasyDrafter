@@ -80,7 +80,7 @@ def find_curl():
     return None
 
 
-def fetch_with_curl(url, timeout=15):
+def fetch_with_curl(url, timeout=15, cookie=None, extra_headers=None):
     """Fetch URL using system curl binary."""
     curl_path = find_curl()
     if not curl_path:
@@ -96,8 +96,13 @@ def fetch_with_curl(url, timeout=15):
         str(timeout),
         "-H",
         "Accept: application/json, text/plain, */*",
-        url,
     ]
+    if cookie:
+        cmd.extend(["-b", str(cookie)])
+    if extra_headers and isinstance(extra_headers, dict):
+        for k, v in extra_headers.items():
+            cmd.extend(["-H", f"{k}: {v}"])
+    cmd.append(url)
 
     try:
         proc = subprocess.run(
@@ -134,7 +139,7 @@ def _decompress_response(raw_bytes, encoding_header):
     return raw_bytes
 
 
-def fetch_with_urllib(url, timeout=15, profile=None):
+def fetch_with_urllib(url, timeout=15, profile=None, cookie=None, extra_headers=None):
     """Fetch URL using Python urllib with an explicit client profile."""
     raw_headers = (
         profile.get("headers")
@@ -142,6 +147,10 @@ def fetch_with_urllib(url, timeout=15, profile=None):
         else CLIENT_PROFILES[0]["headers"]
     )
     headers: dict[str, str] = dict(raw_headers) if isinstance(raw_headers, dict) else {}
+    if cookie:
+        headers["Cookie"] = str(cookie)
+    if extra_headers and isinstance(extra_headers, dict):
+        headers.update(extra_headers)
     req = urllib.request.Request(url, headers=headers)
 
     # Standard TLS context with fallback if corporate captive portal issues self-signed cert
@@ -175,7 +184,16 @@ def fetch_with_urllib(url, timeout=15, profile=None):
         return None, f"Exception: {e}"
 
 
-def fetch_espn_text(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, verbose=False):
+def fetch_espn_text(
+    url,
+    timeout=15,
+    retries=2,
+    backoff=0.6,
+    delay_before=0.0,
+    verbose=False,
+    cookie=None,
+    extra_headers=None,
+):
     """Fetch text from ESPN API using curl with urllib fallback and retry logic."""
     if delay_before > 0:
         time.sleep(delay_before)
@@ -183,7 +201,7 @@ def fetch_espn_text(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, v
     last_error = None
 
     # Strategy 1: System curl (highest success rate against Akamai Bot Manager)
-    text, err = fetch_with_curl(url, timeout=timeout)
+    text, err = fetch_with_curl(url, timeout=timeout, cookie=cookie, extra_headers=extra_headers)
     if text is not None:
         return text
     last_error = err
@@ -193,7 +211,13 @@ def fetch_espn_text(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, v
     # Strategy 2: Python urllib trying client profiles in sequence
     for attempt in range(retries + 1):
         for profile in CLIENT_PROFILES:
-            text, err = fetch_with_urllib(url, timeout=timeout, profile=profile)
+            text, err = fetch_with_urllib(
+                url,
+                timeout=timeout,
+                profile=profile,
+                cookie=cookie,
+                extra_headers=extra_headers,
+            )
             if text is not None:
                 return text
             last_error = err
@@ -205,7 +229,16 @@ def fetch_espn_text(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, v
     raise RuntimeError(f"Failed to fetch {url}: {last_error}")
 
 
-def fetch_espn_json(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, verbose=False):
+def fetch_espn_json(
+    url,
+    timeout=15,
+    retries=2,
+    backoff=0.6,
+    delay_before=0.0,
+    verbose=False,
+    cookie=None,
+    extra_headers=None,
+):
     """Fetch and parse JSON from ESPN API with complete resilience."""
     text = fetch_espn_text(
         url,
@@ -214,6 +247,8 @@ def fetch_espn_json(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, v
         backoff=backoff,
         delay_before=delay_before,
         verbose=verbose,
+        cookie=cookie,
+        extra_headers=extra_headers,
     )
     try:
         return json.loads(text)

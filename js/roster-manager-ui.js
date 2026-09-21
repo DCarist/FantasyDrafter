@@ -304,9 +304,17 @@ if (typeof window !== 'undefined' && !window.global) {
               <h4>🏈 ESPN Fantasy Sync</h4>
               <p>Enter your ESPN League ID (and cookies for private leagues):</p>
               <div class="input-action-row">
-                <input type="text" id="espn_import_league_id" placeholder="ESPN League ID">
-                <button type="button" class="act" onclick="global.syncEspnLeague()">Sync ESPN</button>
+                <input type="text" id="espn_import_league_id" placeholder="ESPN League ID or URL">
+                <button type="button" class="act primary" onclick="global.syncEspnLeague(this)">⚡ Sync ESPN</button>
               </div>
+              <details style="margin-top:8px">
+                <summary style="font-size:12px; cursor:pointer; color:var(--dim)">🔒 Private League Cookies (SWID & espn_s2)</summary>
+                <div style="margin-top:8px; display:flex; flex-direction:column; gap:6px">
+                  <input type="text" id="espn_import_swid" placeholder="SWID (e.g. {12345678-ABCD-...})">
+                  <input type="text" id="espn_import_s2" placeholder="espn_s2 cookie string">
+                  <div class="meta" style="font-size:11px">See <a href="espn_cookies.md" target="_blank" style="color:var(--pri)">espn_cookies.md</a> for quick cookie retrieval steps.</div>
+                </div>
+              </details>
             </div>
           </div>
         </div>
@@ -801,30 +809,58 @@ if (typeof window !== 'undefined' && !window.global) {
     }
   };
 
-  global.syncEspnLeague = async () => {
+  global.syncEspnLeague = async (btn) => {
     const input = document.getElementById('espn_import_league_id');
     const lid = input ? input.value.trim() : '';
-    if (!lid) return alert('Please enter an ESPN League ID');
+    if (!lid) return alert('Please enter an ESPN League ID or URL');
+
+    const swidInput = document.getElementById('espn_import_swid');
+    const s2Input = document.getElementById('espn_import_s2');
+    const swid = swidInput ? swidInput.value.trim() : '';
+    const espnS2 = s2Input ? s2Input.value.trim() : '';
+
     const defSeason =
       typeof global.getDefaultSeason === 'function'
         ? global.getDefaultSeason()
         : new Date().getMonth() === 0
           ? String(new Date().getFullYear() - 1)
           : String(new Date().getFullYear());
-    // Save league stub and seed
-    await fetch('/api/manager/leagues/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: `espn_${lid}`,
-        platform: 'espn',
-        name: `ESPN League ${lid}`,
-        season: defSeason,
-      }),
-    });
-    await global.inSeasonManager.fetchLeagues();
-    global.inSeasonManager.selectLeague(`espn_${lid}`);
-    global.inSeasonManager.setView('team');
+
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⚡ Syncing...';
+    }
+
+    try {
+      const res = await fetch('/api/manager/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: 'espn',
+          remote_league_id: lid,
+          season: defSeason,
+          espn_swid: swid,
+          espn_s2: espnS2,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        alert(`Synced ${data.name || 'ESPN League'}!`);
+        await global.inSeasonManager.fetchLeagues();
+        await global.inSeasonManager.selectLeague(data.league_id);
+        await global.inSeasonManager.setView('team');
+      } else {
+        alert(`Sync failed: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Sync error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
   };
 
   global.openLeagueSetupForManager = (inSeasonLeagueId) => {
