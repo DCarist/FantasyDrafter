@@ -258,6 +258,9 @@ if (typeof window !== 'undefined' && !window.global) {
             <button type="button" class="act primary" onclick="global.inSeasonManager.selectLeague('${esc(lg.id)}'); global.inSeasonManager.setView('team');">
               ${isSel ? '⭐ View Roster' : 'Select League'}
             </button>
+            <button type="button" class="act" onclick="global.syncManagerLeague('${esc(lg.id)}', this)" title="Sync latest rosters from platform">
+              🔄 Sync
+            </button>
             <button type="button" class="act league-setup-btn" onclick="global.openLeagueSetupForManager('${esc(lg.id)}')" title="Configure rules, roster slots, and draft settings">
               ⚙️ League Setup
             </button>
@@ -285,10 +288,14 @@ if (typeof window !== 'undefined' && !window.global) {
           <div class="onboarding-tabs">
             <div class="onboarding-section">
               <h4>⚡ Sleeper Auto-Sync</h4>
-              <p>Enter your Sleeper username to automatically discover and import your leagues:</p>
+              <p>Enter your Sleeper username to automatically discover and import your leagues, or enter a League ID / URL:</p>
               <div class="input-action-row">
                 <input type="text" id="sleeper_import_username" placeholder="Sleeper Username (e.g. your_name)">
                 <button type="button" class="act primary" onclick="global.discoverSleeperLeagues()">Discover Leagues</button>
+              </div>
+              <div class="input-action-row" style="margin-top:8px">
+                <input type="text" id="sleeper_import_league_id" placeholder="Or paste Sleeper League ID / URL">
+                <button type="button" class="act" onclick="global.syncDirectSleeperLeague(this)">⚡ Sync League</button>
               </div>
               <div id="sleeper_discovered_container"></div>
             </div>
@@ -570,12 +577,60 @@ if (typeof window !== 'undefined' && !window.global) {
   // Event handlers
   global.refreshActiveManagerView = async () => {
     const v = global.inSeasonState.currentView;
-    if (v === 'team') await global.inSeasonManager.fetchTeamView();
-    else if (v === 'leagues') await global.inSeasonManager.fetchLeagues();
-    else if (v === 'news') await global.inSeasonManager.fetchNews(global.inSeasonState.newsFilter);
-    else if (v === 'waivers') await global.inSeasonManager.fetchWaivers();
-    else if (v === 'rankings') await global.inSeasonManager.fetchPowerRankings();
-    renderManagerView();
+    const syncBtn = document.querySelector('.manager-sub-header .act.primary');
+    const origText = syncBtn ? syncBtn.textContent : '';
+    if (syncBtn) {
+      syncBtn.disabled = true;
+      syncBtn.textContent = '🔄 Syncing...';
+    }
+
+    try {
+      if (global.inSeasonState.activeLeagueId) {
+        const syncRes = await global.inSeasonManager.syncLeague(
+          global.inSeasonState.activeLeagueId,
+        );
+        if (syncRes && !syncRes.ok && syncRes.error) {
+          console.warn('[InSeasonManager] Active league sync warning:', syncRes.error);
+        }
+      }
+
+      if (v === 'team') await global.inSeasonManager.fetchTeamView();
+      else if (v === 'leagues') await global.inSeasonManager.fetchLeagues();
+      else if (v === 'news') await global.inSeasonManager.fetchNews(global.inSeasonState.newsFilter);
+      else if (v === 'waivers') await global.inSeasonManager.fetchWaivers();
+      else if (v === 'rankings') await global.inSeasonManager.fetchPowerRankings();
+    } finally {
+      if (syncBtn) {
+        syncBtn.disabled = false;
+        syncBtn.textContent = origText;
+      }
+      renderManagerView();
+    }
+  };
+
+  global.syncManagerLeague = async (leagueId, btn) => {
+    if (!leagueId) return;
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '🔄 Syncing...';
+    }
+    try {
+      const res = await global.inSeasonManager.syncLeague(leagueId);
+      if (res?.ok) {
+        await global.inSeasonManager.fetchLeagues();
+        renderManagerView();
+      } else {
+        alert(`Sync failed: ${res?.error || 'Unable to sync league'}`);
+      }
+    } catch (err) {
+      alert(`Sync error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
   };
 
   global.setNewsFilter = async (filter) => {
@@ -662,7 +717,7 @@ if (typeof window !== 'undefined' && !window.global) {
                 <b>${esc(lg.name)}</b>
                 <div class="meta">${esc(lg.teams)} Teams · ${esc(lg.season)}</div>
               </div>
-              <button type="button" class="act primary small" onclick="global.importDiscoveredSleeperLeague('${esc(lg.remote_id)}', '${esc(username)}')">Import</button>
+              <button type="button" class="act primary small" onclick="global.importDiscoveredSleeperLeague('${esc(lg.remote_id)}', '${esc(username)}', this)">Import</button>
             </div>
           `;
         }
@@ -676,20 +731,73 @@ if (typeof window !== 'undefined' && !window.global) {
     }
   };
 
-  global.importDiscoveredSleeperLeague = async (remoteId, username) => {
-    const res = await fetch('/api/manager/sync', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform: 'sleeper', remote_league_id: remoteId, username: username }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      alert(`Imported ${data.name}!`);
-      await global.inSeasonManager.fetchLeagues();
-      global.inSeasonManager.selectLeague(data.league_id);
-      global.inSeasonManager.setView('team');
-    } else {
-      alert(`Import failed: ${data.error || 'Unknown error'}`);
+  global.importDiscoveredSleeperLeague = async (remoteId, username, btn) => {
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Importing...';
+    }
+    try {
+      const res = await fetch('/api/manager/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platform: 'sleeper',
+          remote_league_id: remoteId,
+          username: username,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        alert(`Imported ${data.name}!`);
+        await global.inSeasonManager.fetchLeagues();
+        global.inSeasonManager.selectLeague(data.league_id);
+        global.inSeasonManager.setView('team');
+      } else {
+        alert(`Import failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Import error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+  };
+
+  global.syncDirectSleeperLeague = async (btn) => {
+    const input = document.getElementById('sleeper_import_league_id');
+    const rawVal = input ? input.value.trim() : '';
+    if (!rawVal) return alert('Please enter a Sleeper League ID or URL');
+
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '⚡ Syncing...';
+    }
+    try {
+      const res = await fetch('/api/manager/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: 'sleeper', remote_league_id: rawVal }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        alert(`Synced ${data.name || 'Sleeper League'}!`);
+        await global.inSeasonManager.fetchLeagues();
+        global.inSeasonManager.selectLeague(data.league_id);
+        global.inSeasonManager.setView('team');
+      } else {
+        alert(`Sync failed: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Sync error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
     }
   };
 

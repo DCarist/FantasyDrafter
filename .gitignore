@@ -24,7 +24,8 @@ players-data.js
 players-data.json
 data/players-data.js
 data/players-data.json
-data/in_season_store.db*
+data/*.db*
+data/sleeper_players_cache.json
 
 # Local data cache and inspection files
 data/*.csv

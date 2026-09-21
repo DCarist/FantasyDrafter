@@ -772,21 +772,75 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 action = body.get("action", "sync")
                 if action == "discover" or body.get("discover"):
                     username = body.get("username", "")
-                    season = body.get("season", "2026")
+                    season = body.get("season")
                     leagues = mgr.discover_sleeper_leagues(username, season=season)
                     self.send_json({"ok": True, "leagues": leagues})
                     return
 
-                platform = body.get("platform", "sleeper")
+                target_league_id = body.get("league_id")
+                remote_id = str(body.get("remote_league_id") or "")
+                platform = body.get("platform")
+
+                # If league_id is provided, resolve from stored settings in SQLite
+                if target_league_id:
+                    existing_leagues = mgr.get_leagues()
+                    existing = next(
+                        (lg for lg in existing_leagues if lg.get("id") == target_league_id), None
+                    )
+                    if existing:
+                        if not platform:
+                            platform = existing.get("platform")
+                        settings = existing.get("settings") or {}
+                        if not remote_id:
+                            remote_id = str(
+                                settings.get("platformLeagueId")
+                                or settings.get("remote_league_id")
+                                or ""
+                            )
+                        if not body.get("username") and existing.get("my_team_id"):
+                            body["username"] = existing.get("my_team_id")
+
+                # Handle demo leagues gracefully
+                if target_league_id and str(target_league_id).startswith("league_demo_"):
+                    mgr.seed_demo_data()
+                    self.send_json(
+                        {
+                            "ok": True,
+                            "league_id": target_league_id,
+                            "name": (
+                                existing.get("name", "Demo League") if existing else "Demo League"
+                            ),
+                            "teams_synced": 12,
+                        }
+                    )
+                    return
+
+                if not platform:
+                    platform = "sleeper"
+
+                if not remote_id and target_league_id:
+                    remote_id = target_league_id
+
                 if platform == "sleeper":
-                    remote_id = str(body.get("remote_league_id") or body.get("league_id") or "")
-                    if not remote_id:
+                    clean_id = mgr.extract_sleeper_league_id(remote_id)
+                    if not clean_id or not clean_id.isdigit():
                         self.send_json(
-                            {"ok": False, "error": "Missing remote league id"}, status=400
+                            {
+                                "ok": False,
+                                "error": (
+                                    "No valid numeric Sleeper League ID found. "
+                                    "Please check your Sleeper League ID in League Setup."
+                                ),
+                            },
+                            status=400,
                         )
                         return
                     my_user = str(body["username"]) if body.get("username") else None
-                    res = mgr.sync_sleeper_league(remote_id, my_username=my_user)
+                    res = mgr.sync_sleeper_league(
+                        clean_id,
+                        my_username=my_user,
+                        target_league_id=target_league_id,
+                    )
                     self.send_json(res)
                     return
 

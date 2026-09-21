@@ -4357,7 +4357,17 @@
         .then((data) => {
           if (data?.ok && typeof global.inSeasonManager?.fetchLeagues === 'function') {
             global.inSeasonManager.fetchLeagues().then(() => {
-              if (typeof global.renderManagerView === 'function') {
+              if (
+                s.platform === 'sleeper' &&
+                s.platformLeagueId &&
+                typeof global.inSeasonManager?.syncLeague === 'function'
+              ) {
+                global.inSeasonManager.syncLeague(targetLeagueId).then(() => {
+                  if (typeof global.renderManagerView === 'function') {
+                    global.renderManagerView();
+                  }
+                });
+              } else if (typeof global.renderManagerView === 'function') {
                 global.renderManagerView();
               }
             });

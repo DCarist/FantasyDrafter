@@ -182,6 +182,33 @@ if (typeof window !== 'undefined' && !window.global) {
     return inSeasonState.powerRankings;
   }
 
+  async function syncLeague(leagueId = inSeasonState.activeLeagueId) {
+    const targetId = leagueId || inSeasonState.activeLeagueId;
+    if (!targetId) {
+      return { ok: false, error: 'No league selected to sync' };
+    }
+    inSeasonState.loading = true;
+    try {
+      const res = await apiRequest('/api/manager/sync', 'POST', { league_id: targetId });
+      inSeasonState.loading = false;
+      if (res?.ok) {
+        inSeasonState.lastSyncTimestamp = new Date().toISOString();
+        await fetchLeagues();
+        if (inSeasonState.activeLeagueId === targetId) {
+          await fetchTeamView(targetId);
+        }
+        await fetchWaivers();
+        await fetchPowerRankings(targetId);
+        saveLocalCache();
+        return res;
+      }
+      return res || { ok: false, error: 'Sync request failed' };
+    } catch (err) {
+      inSeasonState.loading = false;
+      return { ok: false, error: err.message };
+    }
+  }
+
   async function seedDemoData() {
     inSeasonState.loading = true;
     const res = await apiRequest('/api/manager/seed-demo', 'POST', {});
@@ -255,6 +282,7 @@ if (typeof window !== 'undefined' && !window.global) {
   global.inSeasonManager = {
     setView,
     selectLeague,
+    syncLeague,
     fetchLeagues,
     fetchTeamView,
     fetchNews,

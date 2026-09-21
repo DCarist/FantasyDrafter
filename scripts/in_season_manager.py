@@ -9,6 +9,7 @@ matrix calculation, lineup optimization, and league power rankings with trade ma
 import datetime
 import json
 import os
+import re
 import sqlite3
 import urllib.error
 import urllib.parse
@@ -23,11 +24,14 @@ PLAYERS_JSON = os.path.join(DATA_DIR, "players-data.json")
 # In-memory player index cache
 _PLAYERS_CACHE: list[dict[str, Any]] | None = None
 _PLAYER_BY_NAME: dict[str, dict[str, Any]] | None = None
+_SLEEPER_PLAYERS_CACHE: dict[str, dict[str, Any]] | None = None
 
 
 def get_db_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     """Creates a connection to the SQLite database, ensuring directory exists."""
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
@@ -1018,7 +1022,59 @@ def get_league_power_rankings(
 # ==============================================================================
 
 
-def discover_sleeper_leagues(username: str, season: str = "2026") -> list[dict[str, Any]]:
+def extract_sleeper_league_id(raw_id: str | int | None) -> str:
+    """Extracts numeric Sleeper league ID from a raw ID, prefixed string, or full URL."""
+    s = str(raw_id or "").strip()
+    match = re.search(r"(\d{15,22})", s)
+    return match.group(1) if match else s.replace("sleeper_", "").strip()
+
+
+def load_sleeper_players(cache_dir: str | None = None) -> dict[str, dict[str, Any]]:
+    """Loads or fetches Sleeper NFL player database mapping sleeper_id -> player info."""
+    global _SLEEPER_PLAYERS_CACHE
+    if _SLEEPER_PLAYERS_CACHE is not None and len(_SLEEPER_PLAYERS_CACHE) > 0:
+        return _SLEEPER_PLAYERS_CACHE
+
+    c_dir = cache_dir or os.path.join(PROJECT_ROOT, "data")
+    cache_file = os.path.join(c_dir, "sleeper_players_cache.json")
+
+    # 1. Try loading from local cache file if available
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, dict) and len(loaded) > 0:
+                    _SLEEPER_PLAYERS_CACHE = loaded
+                    return _SLEEPER_PLAYERS_CACHE
+        except Exception:
+            pass
+
+    # 2. Fetch from Sleeper API
+    try:
+        url = "https://api.sleeper.app/v1/players/nfl"
+        req = urllib.request.Request(url, headers={"User-Agent": "FantasyDrafter/1.1"})
+        with urllib.request.urlopen(req, timeout=15) as res:
+            raw = json.loads(res.read().decode("utf-8"))
+            if isinstance(raw, dict):
+                _SLEEPER_PLAYERS_CACHE = raw
+                try:
+                    os.makedirs(c_dir, exist_ok=True)
+                    with open(cache_file, "w", encoding="utf-8") as f:
+                        json.dump(raw, f)
+                except Exception:
+                    pass
+                return _SLEEPER_PLAYERS_CACHE
+    except Exception as e:
+        print(f"Warning: Could not fetch Sleeper player dictionary: {e}")
+
+    _SLEEPER_PLAYERS_CACHE = {}
+    return _SLEEPER_PLAYERS_CACHE
+
+
+def discover_sleeper_leagues(
+    username: str,
+    season: str | None = None,
+) -> list[dict[str, Any]]:
     """Fetches user ID and auto-discovers all NFL leagues for a Sleeper username."""
     user_url = f"https://api.sleeper.app/v1/user/{urllib.parse.quote(username.strip())}"
     req = urllib.request.Request(user_url, headers={"User-Agent": "FantasyDrafter/1.1"})
@@ -1033,50 +1089,68 @@ def discover_sleeper_leagues(username: str, season: str = "2026") -> list[dict[s
     if not user_id:
         raise RuntimeError(f"Invalid Sleeper user response for '{username}'")
 
-    leagues_url = f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/{season}"
-    req2 = urllib.request.Request(leagues_url, headers={"User-Agent": "FantasyDrafter/1.1"})
-
-    try:
-        with urllib.request.urlopen(req2, timeout=10) as res:
-            leagues_data = json.loads(res.read().decode("utf-8"))
-    except Exception as e:
-        raise RuntimeError(f"Could not load Sleeper leagues for user {user_id}: {e}") from e
+    seasons_to_check: list[str] = [season] if season else []
+    for s_candidate in ["2026", "2025", "2024"]:
+        if s_candidate not in seasons_to_check:
+            seasons_to_check.append(s_candidate)
 
     discovered = []
-    for lg in leagues_data:
-        discovered.append(
-            {
-                "id": f"sleeper_{lg.get('league_id')}",
-                "remote_id": lg.get("league_id"),
-                "platform": "sleeper",
-                "name": lg.get("name", "Sleeper League"),
-                "season": lg.get("season", season),
-                "teams": lg.get("total_rosters", 12),
-                "scoring": lg.get("scoring_settings", {}),
-                "roster_positions": lg.get("roster_positions", []),
-                "status": lg.get("status"),
-            }
-        )
+    seen_ids = set()
+
+    for s_year in seasons_to_check:
+        leagues_url = f"https://api.sleeper.app/v1/user/{user_id}/leagues/nfl/{s_year}"
+        req2 = urllib.request.Request(leagues_url, headers={"User-Agent": "FantasyDrafter/1.1"})
+        try:
+            with urllib.request.urlopen(req2, timeout=10) as res:
+                leagues_data = json.loads(res.read().decode("utf-8"))
+                if isinstance(leagues_data, list):
+                    for lg in leagues_data:
+                        lid = lg.get("league_id")
+                        if lid and str(lid) not in seen_ids:
+                            seen_ids.add(str(lid))
+                            discovered.append(
+                                {
+                                    "id": f"sleeper_{lid}",
+                                    "remote_id": str(lid),
+                                    "platform": "sleeper",
+                                    "name": lg.get("name", "Sleeper League"),
+                                    "season": lg.get("season", s_year),
+                                    "teams": lg.get("total_rosters", 12),
+                                    "scoring": lg.get("scoring_settings", {}),
+                                    "roster_positions": lg.get("roster_positions", []),
+                                    "status": lg.get("status"),
+                                }
+                            )
+                    if discovered and season:
+                        break
+        except Exception:
+            continue
+
     return discovered
 
 
 def sync_sleeper_league(
-    remote_league_id: str,
+    remote_league_id: str | int,
     my_username: str | None = None,
     db_path: str = DB_PATH,
+    target_league_id: str | None = None,
 ) -> dict[str, Any]:
     """Syncs a Sleeper league's rosters, users, and standings into SQLite."""
+    clean_id = extract_sleeper_league_id(str(remote_league_id))
+    if not clean_id:
+        return {"ok": False, "error": f"Invalid Sleeper league ID '{remote_league_id}'"}
+
     # 1. Fetch league metadata
-    league_url = f"https://api.sleeper.app/v1/league/{remote_league_id}"
+    league_url = f"https://api.sleeper.app/v1/league/{clean_id}"
     req = urllib.request.Request(league_url, headers={"User-Agent": "FantasyDrafter/1.1"})
     try:
         with urllib.request.urlopen(req, timeout=10) as res:
             lg_data = json.loads(res.read().decode("utf-8"))
     except Exception as e:
-        raise RuntimeError(f"Could not fetch Sleeper league {remote_league_id}: {e}") from e
+        return {"ok": False, "error": f"Could not fetch Sleeper league {clean_id}: {e}"}
 
     # 2. Fetch users
-    users_url = f"https://api.sleeper.app/v1/league/{remote_league_id}/users"
+    users_url = f"https://api.sleeper.app/v1/league/{clean_id}/users"
     req_u = urllib.request.Request(users_url, headers={"User-Agent": "FantasyDrafter/1.1"})
     try:
         with urllib.request.urlopen(req_u, timeout=10) as res:
@@ -1091,19 +1165,24 @@ def sync_sleeper_league(
         dname = u.get("display_name", "")
         tname = u.get("metadata", {}).get("team_name") or dname
         user_map[uid] = {"display_name": dname, "team_name": tname}
-        if my_username and normalize_name(dname) == normalize_name(my_username):
+        if my_username and (
+            normalize_name(dname) == normalize_name(my_username)
+            or normalize_name(tname) == normalize_name(my_username)
+        ):
             my_user_id = uid
 
     # 3. Fetch rosters
-    rosters_url = f"https://api.sleeper.app/v1/league/{remote_league_id}/rosters"
+    rosters_url = f"https://api.sleeper.app/v1/league/{clean_id}/rosters"
     req_r = urllib.request.Request(rosters_url, headers={"User-Agent": "FantasyDrafter/1.1"})
     try:
         with urllib.request.urlopen(req_r, timeout=10) as res:
             rosters_data = json.loads(res.read().decode("utf-8"))
     except Exception as e:
-        raise RuntimeError(f"Could not fetch Sleeper rosters: {e}") from e
+        return {"ok": False, "error": f"Could not fetch Sleeper rosters: {e}"}
 
     load_players_data()
+    sleeper_player_dict = load_sleeper_players()
+
     roster_rows = []
     my_team_id = None
 
@@ -1114,32 +1193,71 @@ def sync_sleeper_league(
         owner_name = user_info.get("display_name", f"Team {roster_id}")
         team_name = user_info.get("team_name", owner_name)
 
-        if owner_id and owner_id == my_user_id:
+        if (owner_id and owner_id == my_user_id) or (
+            my_username
+            and (
+                my_username == roster_id
+                or normalize_name(owner_name) == normalize_name(my_username)
+                or normalize_name(team_name) == normalize_name(my_username)
+            )
+        ):
             my_team_id = roster_id
 
-        # Sleeper lists players by Sleeper ID or player identifier
-        # Match starters and bench
         starters_raw = r.get("starters") or []
         players_raw = r.get("players") or []
         taxi_raw = r.get("taxi") or []
         reserve_raw = r.get("reserve") or []
 
         def resolve_player(pid: Any) -> dict[str, Any]:
-            # If pid is alphanumeric Sleeper ID, find in pool
-            info = get_player_by_name(str(pid))
-            if info:
-                return dict(info)
-            return {"id": pid, "name": str(pid), "pos": "FLEX", "team": "FA"}
+            pid_str = str(pid).strip()
+            # 1. Lookup in Sleeper player dictionary
+            sp = sleeper_player_dict.get(pid_str, {})
+            pname = (
+                sp.get("full_name")
+                or f"{sp.get('first_name', '')} {sp.get('last_name', '')}".strip()
+                or sp.get("name")
+            )
+            ppos = sp.get("position") or "FLEX"
+            if ppos == "DEF":
+                ppos = "DST"
+            pteam = sp.get("team") or "FA"
+
+            # 2. Match against consensus dataset
+            if pname:
+                consensus_match = get_player_by_name(pname)
+                if consensus_match:
+                    item = dict(consensus_match)
+                    item["id"] = pid_str
+                    return item
+                return {
+                    "id": pid_str,
+                    "name": pname,
+                    "pos": ppos,
+                    "team": pteam,
+                    "rank": 999,
+                    "score": 50,
+                }
+
+            # 3. Fallback to name search directly
+            consensus_match = get_player_by_name(pid_str)
+            if consensus_match:
+                item = dict(consensus_match)
+                item["id"] = pid_str
+                return item
+
+            return {"id": pid_str, "name": f"Player {pid_str}", "pos": ppos, "team": pteam}
 
         starters = [resolve_player(pid) for pid in starters_raw if pid]
-        starters_set = set(starters_raw)
-        taxi_set = set(taxi_raw)
-        reserve_set = set(reserve_raw)
+        starters_set = set(str(p) for p in starters_raw if p)
+        taxi_set = set(str(p) for p in taxi_raw if p)
+        reserve_set = set(str(p) for p in reserve_raw if p)
 
         bench_ids = [
             pid
             for pid in players_raw
-            if pid not in starters_set and pid not in taxi_set and pid not in reserve_set
+            if str(pid) not in starters_set
+            and str(pid) not in taxi_set
+            and str(pid) not in reserve_set
         ]
         bench = [resolve_player(pid) for pid in bench_ids]
         taxi = [resolve_player(pid) for pid in taxi_raw]
@@ -1169,13 +1287,26 @@ def sync_sleeper_league(
         )
 
     # Save league and snapshots
-    local_lid = f"sleeper_{remote_league_id}"
+    local_lid = target_league_id or f"sleeper_{clean_id}"
+    new_settings = {
+        "platformLeagueId": clean_id,
+        "total_rosters": lg_data.get("total_rosters"),
+        "roster_positions": lg_data.get("roster_positions"),
+        "scoring_settings": lg_data.get("scoring_settings"),
+    }
+    existing_list = get_leagues(db_path=db_path)
+    existing_league = next((lg for lg in existing_list if lg.get("id") == local_lid), None)
+    if existing_league and existing_league.get("settings"):
+        merged = dict(existing_league["settings"])
+        merged.update(new_settings)
+        new_settings = merged
+
     save_league(
         league_id=local_lid,
         platform="sleeper",
         name=lg_data.get("name", "Sleeper League"),
-        season=lg_data.get("season", "2026"),
-        settings=lg_data,
+        season=str(lg_data.get("season", "2026")),
+        settings=new_settings,
         my_team_id=my_team_id or "1",
         db_path=db_path,
     )
@@ -1184,8 +1315,10 @@ def sync_sleeper_league(
     return {
         "ok": True,
         "league_id": local_lid,
+        "remote_league_id": clean_id,
         "name": lg_data.get("name"),
         "teams_synced": len(roster_rows),
+        "my_team_id": my_team_id or "1",
     }
 
 
