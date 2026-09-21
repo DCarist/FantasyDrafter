@@ -1,4 +1,7 @@
 // 🏈 Reactive State & Cache Manager for In-Season Roster Management
+if (typeof window !== 'undefined' && !window.global) {
+  window.global = window;
+}
 ((global) => {
   const CACHE_KEY = 'fantasy_drafter_in_season_latest_cache';
 

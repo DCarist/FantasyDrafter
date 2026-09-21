@@ -1,4 +1,7 @@
 // 🎨 In-Season Roster Management UI Component & View Renderers
+if (typeof window !== 'undefined' && !window.global) {
+  window.global = window;
+}
 ((global) => {
   function esc(str) {
     if (str == null) return '';

@@ -1,5 +1,8 @@
 // Pure draft-math and ranking logic for the draft board.
 // Loaded by draft-board.html via <script>, and testable in Node.
+if (typeof window !== 'undefined' && !window.global) {
+  window.global = window;
+}
 
 // Which direction does a round go?
 // mode 'snake': R1 forward, R2 reverse, alternating.

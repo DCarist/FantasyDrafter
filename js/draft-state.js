@@ -1,4 +1,7 @@
 // 📦 Reactive State & Data Container for Fantasy Drafter
+if (typeof window !== 'undefined' && !window.global) {
+  window.global = window;
+}
 ((global) => {
   const LEGACY_STORE_KEY = 'kenDraftBoard-v1';
   const LEAGUES_MANIFEST_KEY = 'fantasy_drafter_leagues_manifest';
@@ -6,9 +9,6 @@
   const STORE_KEY = LEAGUES_MANIFEST_KEY;
 
   function getDefaultSeason(dateObj) {
-    if (typeof global.getDefaultSeason === 'function') {
-      return global.getDefaultSeason(dateObj);
-    }
     const now = dateObj instanceof Date ? dateObj : new Date();
     const year = now.getFullYear();
     return now.getMonth() === 0 ? String(year - 1) : String(year);
