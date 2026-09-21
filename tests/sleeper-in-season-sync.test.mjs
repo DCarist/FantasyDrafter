@@ -147,7 +147,12 @@ print(json.dumps({
     "has_named_starters": all(
         isinstance(p, dict) and not p.get("name", "").isdigit()
         for p in (my_team.get("starters", []) if my_team else [])
-    )
+    ),
+    "all_have_slots": all(
+        bool(p.get("slot"))
+        for p in (my_team.get("starters", []) if my_team else [])
+    ),
+    "qb_first": (my_team.get("starters", [])[0].get("slot") == "QB") if (my_team and len(my_team.get("starters", [])) > 0) else False
 }))
 `;
 
@@ -160,6 +165,8 @@ assert(res3.my_team_found, 'Matched user team by username');
 eq(res3.my_team_owner, 'DougC95', 'User team owner matched to DougC95');
 assert(res3.starters_count > 0, 'Populated starter players');
 assert(res3.has_named_starters, 'All starters resolved to real player names, no bare numeric IDs');
+assert(res3.all_have_slots, 'All Sleeper starters have slot attribute populated');
+assert(res3.qb_first, 'Sleeper starters are sorted with QB in lead position');
 
 // 4. Client State & UI Integration
 const clientUiScript = execFileSync(

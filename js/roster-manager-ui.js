@@ -118,9 +118,12 @@ if (typeof window !== 'undefined' && !window.global) {
       const score = p.score != null ? Math.round(p.score) : '—';
       const rank = p.rank != null ? `#${p.rank}` : '';
 
+      const finalSlot = slotName || p.slot || p.lineupSlot || pos || 'FLEX';
+      const slotClass = String(finalSlot).toLowerCase().replace(/[^a-z0-9]/g, '_');
+
       return `
-        <tr class="roster-player-row pos-${esc(pos.toLowerCase())}">
-          <td class="slot-col"><b>${esc(slotName || pos)}</b></td>
+        <tr class="roster-player-row player-row-${esc(pos.toLowerCase())}">
+          <td class="slot-col"><span class="slot-badge slot-${esc(slotClass)}"><b>${esc(finalSlot)}</b></span></td>
           <td class="name-col">
             <span class="player-name-link" onclick="global.openPlayerNewsModal('${esc(name)}')">${esc(name)}</span>
             ${injuryHtml}
@@ -140,7 +143,7 @@ if (typeof window !== 'undefined' && !window.global) {
     let startersRows = '';
     for (const [idx, p] of (data.starters || []).entries()) {
       const slotLabel =
-        p.lineupSlot || (idx === 0 ? 'QB' : idx <= 2 ? 'RB' : idx <= 4 ? 'WR' : 'FLEX');
+        p.slot || p.lineupSlot || (idx === 0 ? 'QB' : idx <= 2 ? 'RB' : idx <= 4 ? 'WR' : 'FLEX');
       startersRows += renderPlayerRow(p, slotLabel);
     }
 

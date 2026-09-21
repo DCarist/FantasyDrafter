@@ -725,6 +725,12 @@ def get_team_view_data(
         return dict(base)
 
     starters = [enrich_player(p) for p in my_roster.get("starters", [])]
+    cur_settings = cur_league.get("settings", {}) if cur_league else {}
+    roster_slots = cur_settings.get("rosterSlots")
+    roster_positions = cur_settings.get("roster_positions")
+    starters = align_starters_to_slots(
+        starters, roster_slots=roster_slots, roster_positions=roster_positions
+    )
     bench = [enrich_player(p) for p in my_roster.get("bench", [])]
     taxi = [enrich_player(p) for p in my_roster.get("taxi", [])]
     ir = [enrich_player(p) for p in my_roster.get("ir", [])]
@@ -1086,26 +1092,221 @@ ESPN_PRO_TEAM_MAP = {
     34: "HOU",
 }
 
+ESPN_LINEUP_SLOT_MAP: dict[int, str] = {
+    0: "QB",
+    1: "TQB",
+    2: "RB",
+    3: "FLEX",  # RB/WR
+    4: "WR",
+    5: "FLEX",  # WR/TE
+    6: "TE",
+    7: "SUPERFLEX",  # OP (QB/RB/WR/TE)
+    8: "DT",
+    9: "DE",
+    10: "LB",
+    11: "DL",
+    12: "CB",
+    13: "S",
+    14: "DB",
+    15: "DP",
+    16: "DST",
+    17: "K",
+    18: "P",
+    19: "HC",
+    20: "BENCH",
+    21: "IR",
+    23: "FLEX",  # RB/WR/TE
+    24: "EDRE",
+}
+
+SLOT_ORDER_PRIORITY: dict[str, int] = {
+    "QB": 10,
+    "TQB": 11,
+    "RB": 20,
+    "WR": 30,
+    "TE": 40,
+    "FLEX": 50,
+    "SUPERFLEX": 60,
+    "SUPER_FLEX": 60,
+    "OP": 61,
+    "K": 70,
+    "DST": 80,
+    "DEF": 81,
+    "BENCH": 90,
+    "BN": 90,
+    "BE": 90,
+    "IR": 95,
+    "TAXI": 98,
+}
+
 
 def resolve_defense_name(raw_name: str) -> str | None:
-    """Normalizes ESPN defense names (e.g. 'Eagles D/ST') to consensus team defense names."""
-    clean = re.sub(r"\s*(D/ST|DEF|DST)\s*$", "", raw_name, flags=re.IGNORECASE).strip()
+    """Normalizes ESPN/Sleeper defense names and abbreviations (e.g. 'Eagles D/ST', 'PIT') to consensus team defense names."""
+    clean = re.sub(r"\s*(D/ST|DEF|DST)\s*$", "", str(raw_name), flags=re.IGNORECASE).strip()
     match = get_player_by_name(clean)
     if match and match.get("pos") == "DST":
         return match.get("name")
 
-    words = clean.split()
-    if words:
-        nickname = words[-1].lower()
-        load_players_data()
-        global _PLAYERS_CACHE
-        if _PLAYERS_CACHE:
+    load_players_data()
+    global _PLAYERS_CACHE
+    if _PLAYERS_CACHE:
+        clean_upper = clean.upper()
+        if len(clean_upper) in (2, 3):
+            for p in _PLAYERS_CACHE:
+                if p.get("pos") == "DST" and p.get("team") == clean_upper:
+                    return p.get("name")
+
+        words = clean.split()
+        if words:
+            nickname = words[-1].lower()
             for p in _PLAYERS_CACHE:
                 if p.get("pos") == "DST":
                     p_name = p.get("name", "")
                     if p_name.lower().endswith(nickname) or nickname in p_name.lower():
                         return p_name
     return None
+
+
+def align_starters_to_slots(
+    starters: list[dict[str, Any]],
+    roster_slots: dict[str, Any] | None = None,
+    roster_positions: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Ensures each starter has an appropriate slot assigned and sorts starters in standard fantasy order.
+
+    If starters already have explicit slots (e.g. from ESPN lineupSlotId or Sleeper position indices),
+    preserves their assigned slots and sorts by standard lineup priority (QB -> RB -> WR -> TE -> FLEX -> K -> DST).
+    Otherwise, infers legal slot assignments based on league roster settings.
+    """
+    if not starters:
+        return []
+
+    # Check if starters already have valid explicit slots
+    has_explicit_slots = any(
+        bool(p.get("slot") or p.get("lineupSlot"))
+        and str(p.get("slot") or p.get("lineupSlot")).upper()
+        not in ("BENCH", "BN", "BE", "NONE", "")
+        for p in starters
+    )
+
+    if has_explicit_slots:
+        aligned = []
+        for p in starters:
+            p_copy = dict(p)
+            s_label = str(
+                p_copy.get("slot") or p_copy.get("lineupSlot") or p_copy.get("pos") or "FLEX"
+            ).upper()
+            if s_label in ("DEF", "D/ST"):
+                s_label = "DST"
+            elif s_label in ("SUPER_FLEX", "OP"):
+                s_label = "SUPERFLEX"
+            p_copy["slot"] = s_label
+            p_copy["lineupSlot"] = s_label
+            aligned.append(p_copy)
+
+        aligned.sort(
+            key=lambda item: (
+                SLOT_ORDER_PRIORITY.get(str(item.get("slot", "")).upper(), 99),
+                -float(item.get("score") or 0.0),
+                int(item.get("rank") or 999),
+            )
+        )
+        return aligned
+
+    # Deduce available starting slots from configuration
+    slot_pool: list[str] = []
+    if roster_positions and isinstance(roster_positions, list):
+        for pos in roster_positions:
+            up = str(pos).upper()
+            if up not in ("BN", "BE", "BENCH", "IR", "TAXI"):
+                if up in ("DEF", "D/ST"):
+                    up = "DST"
+                elif up in ("SUPER_FLEX", "OP"):
+                    up = "SUPERFLEX"
+                slot_pool.append(up)
+    elif roster_slots and isinstance(roster_slots, dict):
+        for k in ("qb", "rb", "wr", "te", "flex", "superflex", "k", "dst"):
+            count = int(roster_slots.get(k, 0) or 0)
+            label = k.upper()
+            for _ in range(count):
+                slot_pool.append(label)
+
+    if not slot_pool:
+        slot_pool = ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DST"]
+
+    unassigned = [dict(p) for p in starters]
+    assigned: list[dict[str, Any]] = []
+
+    # 1. Pure positional slots: QB, RB, WR, TE, K, DST
+    for slot_target in ("QB", "RB", "WR", "TE", "K", "DST"):
+        target_count = slot_pool.count(slot_target)
+        for _ in range(target_count):
+            slot_pool.remove(slot_target)
+            match_idx = next(
+                (
+                    i
+                    for i, p in enumerate(unassigned)
+                    if str(p.get("pos", "")).upper() == slot_target
+                ),
+                None,
+            )
+            if match_idx is not None:
+                p = unassigned.pop(match_idx)
+                p["slot"] = slot_target
+                p["lineupSlot"] = slot_target
+                assigned.append(p)
+
+    # 2. FLEX slots (RB, WR, TE)
+    flex_count = slot_pool.count("FLEX")
+    for _ in range(flex_count):
+        slot_pool.remove("FLEX")
+        match_idx = next(
+            (
+                i
+                for i, p in enumerate(unassigned)
+                if str(p.get("pos", "")).upper() in ("RB", "WR", "TE")
+            ),
+            None,
+        )
+        if match_idx is not None:
+            p = unassigned.pop(match_idx)
+            p["slot"] = "FLEX"
+            p["lineupSlot"] = "FLEX"
+            assigned.append(p)
+
+    # 3. SUPERFLEX slots (QB, RB, WR, TE)
+    sf_count = slot_pool.count("SUPERFLEX")
+    for _ in range(sf_count):
+        slot_pool.remove("SUPERFLEX")
+        match_idx = next(
+            (
+                i
+                for i, p in enumerate(unassigned)
+                if str(p.get("pos", "")).upper() in ("QB", "RB", "WR", "TE")
+            ),
+            None,
+        )
+        if match_idx is not None:
+            p = unassigned.pop(match_idx)
+            p["slot"] = "SUPERFLEX"
+            p["lineupSlot"] = "SUPERFLEX"
+            assigned.append(p)
+
+    # 4. Any remaining unassigned players take leftover slots or their own pos
+    for p in unassigned:
+        leftover_slot = slot_pool.pop(0) if slot_pool else str(p.get("pos") or "FLEX").upper()
+        p["slot"] = leftover_slot
+        p["lineupSlot"] = leftover_slot
+        assigned.append(p)
+
+    assigned.sort(
+        key=lambda item: (
+            SLOT_ORDER_PRIORITY.get(str(item.get("slot", "")).upper(), 99),
+            -float(item.get("score") or 0.0),
+            int(item.get("rank") or 999),
+        )
+    )
+    return assigned
 
 
 def load_sleeper_players(cache_dir: str | None = None) -> dict[str, dict[str, Any]]:
@@ -1326,10 +1527,35 @@ def sync_sleeper_league(
 
             return {"id": pid_str, "name": f"Player {pid_str}", "pos": ppos, "team": pteam}
 
-        starters = [resolve_player(pid) for pid in starters_raw if pid]
-        starters_set = set(str(p) for p in starters_raw if p)
-        taxi_set = set(str(p) for p in taxi_raw if p)
-        reserve_set = set(str(p) for p in reserve_raw if p)
+        starter_slots = [
+            str(pos).upper()
+            for pos in (lg_data.get("roster_positions") or [])
+            if str(pos).upper() not in ("BN", "IR", "TAXI")
+        ]
+
+        starters = []
+        for idx, pid in enumerate(starters_raw):
+            if not pid or str(pid).strip() in ("", "0"):
+                continue
+            slot_raw = starter_slots[idx] if idx < len(starter_slots) else "FLEX"
+            slot_label = (
+                "DST"
+                if slot_raw in ("DEF", "D/ST")
+                else "SUPERFLEX"
+                if slot_raw in ("SUPER_FLEX", "OP")
+                else slot_raw
+            )
+            p = resolve_player(pid)
+            p["slot"] = slot_label
+            p["lineupSlot"] = slot_label
+            starters.append(p)
+
+        starters = align_starters_to_slots(
+            starters, roster_positions=lg_data.get("roster_positions")
+        )
+        starters_set = set(str(p) for p in starters_raw if p and str(p).strip() not in ("", "0"))
+        taxi_set = set(str(p) for p in taxi_raw if p and str(p).strip() not in ("", "0"))
+        reserve_set = set(str(p) for p in reserve_raw if p and str(p).strip() not in ("", "0"))
 
         bench_ids = [
             pid
@@ -1337,10 +1563,32 @@ def sync_sleeper_league(
             if str(pid) not in starters_set
             and str(pid) not in taxi_set
             and str(pid) not in reserve_set
+            and str(pid).strip() not in ("", "0")
         ]
-        bench = [resolve_player(pid) for pid in bench_ids]
-        taxi = [resolve_player(pid) for pid in taxi_raw]
-        ir = [resolve_player(pid) for pid in reserve_raw]
+        bench = []
+        for pid in bench_ids:
+            p = resolve_player(pid)
+            p["slot"] = "BENCH"
+            p["lineupSlot"] = "BENCH"
+            bench.append(p)
+
+        taxi = []
+        for pid in taxi_raw:
+            if not pid or str(pid).strip() in ("", "0"):
+                continue
+            p = resolve_player(pid)
+            p["slot"] = "TAXI"
+            p["lineupSlot"] = "TAXI"
+            taxi.append(p)
+
+        ir = []
+        for pid in reserve_raw:
+            if not pid or str(pid).strip() in ("", "0"):
+                continue
+            p = resolve_player(pid)
+            p["slot"] = "IR"
+            p["lineupSlot"] = "IR"
+            ir.append(p)
 
         settings_meta = r.get("settings", {})
         wins = int(settings_meta.get("wins", 0))
@@ -1590,12 +1838,23 @@ def sync_espn_league(
                     "score": 50,
                 }
 
+            slot_label = ESPN_LINEUP_SLOT_MAP.get(slot_id, "FLEX")
+            resolved["lineupSlotId"] = slot_id
+
             if slot_id == 20:
+                resolved["slot"] = "BENCH"
+                resolved["lineupSlot"] = "BENCH"
                 bench.append(resolved)
             elif slot_id == 21:
+                resolved["slot"] = "IR"
+                resolved["lineupSlot"] = "IR"
                 ir.append(resolved)
             else:
+                resolved["slot"] = slot_label
+                resolved["lineupSlot"] = slot_label
                 starters.append(resolved)
+
+        starters = align_starters_to_slots(starters)
 
         record_overall = t.get("record", {}).get("overall", {})
         wins = int(record_overall.get("wins", 0))

@@ -3262,6 +3262,7 @@ div.setup-field select {
 .roster-card .roster-table td {
   padding: 8px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--text, #e2e8f0);
 }
 
 .roster-table tr:hover {
@@ -3303,6 +3304,95 @@ div.setup-field select {
 .injury-badge-q {
   background: var(--warn);
   color: #000;
+}
+
+/* Starter Slot Badges */
+.slot-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--dim, #94a3b8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+  min-width: 44px;
+  box-sizing: border-box;
+}
+
+.slot-badge.slot-qb,
+.slot-badge.slot-tqb {
+  color: var(--qb);
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.slot-badge.slot-rb {
+  color: var(--rb);
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.slot-badge.slot-wr {
+  color: var(--wr);
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.slot-badge.slot-te {
+  color: var(--te);
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.slot-badge.slot-flex {
+  color: #c084fc;
+  border-color: rgba(192, 132, 252, 0.35);
+  background: rgba(192, 132, 252, 0.1);
+}
+
+.slot-badge.slot-superflex,
+.slot-badge.slot-super_flex,
+.slot-badge.slot-op {
+  color: #f472b6;
+  border-color: rgba(244, 114, 182, 0.35);
+  background: rgba(244, 114, 182, 0.1);
+}
+
+.slot-badge.slot-k {
+  color: #22d3ee;
+  border-color: rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.1);
+}
+
+.slot-badge.slot-dst,
+.slot-badge.slot-def {
+  color: #2dd4bf;
+  border-color: rgba(45, 212, 191, 0.35);
+  background: rgba(45, 212, 191, 0.1);
+}
+
+.slot-badge.slot-bench,
+.slot-badge.slot-bn,
+.slot-badge.slot-be {
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.2);
+  background: rgba(148, 163, 184, 0.05);
+}
+
+.slot-badge.slot-ir {
+  color: var(--bad);
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.slot-badge.slot-taxi {
+  color: #facc15;
+  border-color: rgba(250, 204, 21, 0.35);
+  background: rgba(250, 204, 21, 0.1);
 }
 
 /* Positional Tags */

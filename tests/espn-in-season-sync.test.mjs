@@ -149,7 +149,9 @@ print(json.dumps({
     "my_team_name": my_team.get("team_name") if my_team else None,
     "starters_count": len(starters),
     "bench_count": len(bench),
-    "has_named_starters": all(isinstance(p, dict) and len(p.get("name", "")) > 1 for p in starters)
+    "has_named_starters": all(isinstance(p, dict) and len(p.get("name", "")) > 1 for p in starters),
+    "all_have_slots": all(bool(p.get("slot")) for p in starters),
+    "qb_first": starters[0].get("slot") == "QB" if len(starters) > 0 else False
 }))
 `;
 
@@ -164,6 +166,8 @@ eq(res3.my_team_name, 'Corrective and Preventative TDs', 'User team name matches
 assert(res3.starters_count > 0, 'Starters populated from ESPN roster');
 assert(res3.bench_count > 0, 'Bench populated from ESPN lineupSlotId 20');
 assert(res3.has_named_starters, 'All starters resolved to full player names');
+assert(res3.all_have_slots, 'All ESPN starters have slot attribute populated');
+assert(res3.qb_first, 'ESPN starters are sorted with QB in lead position');
 
 // 4. Client State & UI Integration
 const clientUiScript = execFileSync(
