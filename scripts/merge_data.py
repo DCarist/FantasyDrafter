@@ -46,8 +46,7 @@ def norm_team(team):
 
 
 def norm_pos(pos):
-    p = re.sub(r"\d+$", "", str(pos).upper().strip())
-    return p if p in ("QB", "RB", "WR", "TE", "K", "DST", "DEF") else p
+    return re.sub(r"\d+$", "", str(pos).upper().strip())
 
 
 def main():
@@ -70,9 +69,8 @@ def main():
             key = norm_name(row.get("name", ""))
             if not key:
                 continue
-            rec = players.setdefault(
-                key, {"name": row["name"], "teams": [], "positions": []}
-            )
+            rec = players.setdefault(key, {"name": row["name"], "teams": [], "positions": []})
+            rec = players.setdefault(key, {"name": row["name"], "teams": [], "positions": []})
             val = row.get(value_from) if value_from else row.get("rank")
             if val is None:
                 val = row.get("rank")
@@ -116,7 +114,7 @@ def main():
     out, team_conflicts, pos_conflicts = [], 0, 0
     # position priority: redraft consensus first, then dynasty lists
     POS_PRIORITY = ["redraft", "dynastySF", "dynasty1QB", "adp"]
-    for key, rec in players.items():
+    for _key, rec in players.items():
         team_votes = Counter(rec["teams"])
         team = team_votes.most_common(1)[0][0] if team_votes else None
         if len(team_votes) > 1:
@@ -163,9 +161,8 @@ def main():
 
     # Keep only players ranked by at least one source, sorted by best available rank
     out = [p for p in out if p["dynSF"] or p["redraft"] or p["adp"]]
-    out.sort(
-        key=lambda p: min(x for x in (p["dynSF"], p["redraft"], p["adp"], 9999) if x)
-    )
+    out.sort(key=lambda p: min(x for x in (p["dynSF"], p["redraft"], p["adp"], 9999) if x))
+    out.sort(key=lambda p: min(x for x in (p["dynSF"], p["redraft"], p["adp"], 9999) if x))
 
     payload = {
         "generated": date.today().isoformat(),

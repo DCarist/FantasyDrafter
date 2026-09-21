@@ -1,6 +1,6 @@
 // Test suite for Draft Watchlist management and auto-removal
-import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { createRequire } from 'node:module';
+import { eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -41,7 +41,11 @@ eq(cleaned1, [1, 5, 12, 15], 'cleanWatchlist removes drafted player #8');
 
 // Case B: Pick non-watched player #99
 const cleaned2 = L.cleanWatchlist(activeWatchlist, [99]);
-eq(cleaned2, [1, 5, 8, 12, 15], 'cleanWatchlist leaves list unchanged when non-watched player picked');
+eq(
+  cleaned2,
+  [1, 5, 8, 12, 15],
+  'cleanWatchlist leaves list unchanged when non-watched player picked',
+);
 
 // Case C: Multiple picks (e.g. from jumpTo or bulk draft log)
 const cleaned3 = L.cleanWatchlist(activeWatchlist, [1, 12, 99]);
@@ -52,13 +56,20 @@ const takenSet = new Set([5, 15]);
 const cleaned4 = L.cleanWatchlist(activeWatchlist, takenSet);
 eq(cleaned4, [1, 8, 12], 'cleanWatchlist supports Set as taken container');
 
-const takenMap = new Map([[5, 'me'], [12, 'other']]);
+const takenMap = new Map([
+  [5, 'me'],
+  [12, 'other'],
+]);
 const cleaned5 = L.cleanWatchlist(activeWatchlist, takenMap);
 eq(cleaned5, [1, 8, 15], 'cleanWatchlist supports Map as taken container');
 
 // Edge cases
 eq(L.cleanWatchlist(null, [1, 2]), [], 'cleanWatchlist on null returns empty array');
-eq(L.cleanWatchlist([1, 2], null), [1, 2], 'cleanWatchlist with null taken container preserves list');
+eq(
+  L.cleanWatchlist([1, 2], null),
+  [1, 2],
+  'cleanWatchlist with null taken container preserves list',
+);
 
 // --- 4. reorderWatchlist tests ---
 const initialWatch = [10, 20, 30, 40];
@@ -72,26 +83,40 @@ const reordered3 = L.reorderWatchlist(initialWatch, 0, 3); // move 10 to end
 eq(reordered3, [20, 30, 40, 10], 'reorderWatchlist moves item to end');
 
 // Edge cases: out of bounds or invalid inputs
-eq(L.reorderWatchlist(initialWatch, -1, 2), initialWatch, 'reorderWatchlist negative fromIdx returns original list copy');
-eq(L.reorderWatchlist(initialWatch, 1, 10), initialWatch, 'reorderWatchlist out-of-bounds toIdx returns original list copy');
+eq(
+  L.reorderWatchlist(initialWatch, -1, 2),
+  initialWatch,
+  'reorderWatchlist negative fromIdx returns original list copy',
+);
+eq(
+  L.reorderWatchlist(initialWatch, 1, 10),
+  initialWatch,
+  'reorderWatchlist out-of-bounds toIdx returns original list copy',
+);
 eq(L.reorderWatchlist(null, 0, 1), [], 'reorderWatchlist on null returns empty array');
 
 // --- 5. Watchlist Priority Order Resolution for Strategy View ---
 const priorityList = [302, 301, 303]; // 302 first, then 301, then 303
 const watchedOrder = new Map();
-priorityList.forEach((id, idx) => watchedOrder.set(id, idx));
+priorityList.forEach((id, idx) => {
+  watchedOrder.set(id, idx);
+});
 
 const testCandidates = [
   { id: 301, name: 'Marvin Harrison Jr.' },
   { id: 303, name: 'Kyren Williams' },
-  { id: 302, name: 'Malik Nabers' }
+  { id: 302, name: 'Malik Nabers' },
 ];
 
 const sortedByPriority = testCandidates.slice().sort((a, b) => {
   return (watchedOrder.get(a.id) ?? 999) - (watchedOrder.get(b.id) ?? 999);
 });
 
-eq(sortedByPriority[0].id, 302, 'First player in strategy watchlist matches priority order (Malik Nabers)');
+eq(
+  sortedByPriority[0].id,
+  302,
+  'First player in strategy watchlist matches priority order (Malik Nabers)',
+);
 eq(sortedByPriority[1].id, 301, 'Second player matches priority order (Marvin Harrison Jr.)');
 eq(sortedByPriority[2].id, 303, 'Third player matches priority order (Kyren Williams)');
 
@@ -102,10 +127,13 @@ const fromIdx = priorityList.indexOf(fromPlayerId);
 const toIdx = priorityList.indexOf(toPlayerId);
 const reorderedByDrag = L.reorderWatchlist(priorityList, fromIdx, toIdx);
 
-eq(reorderedByDrag, [302, 303, 301], 'Drag and drop reordering by player ID successfully moves Kyren before Marvin');
+eq(
+  reorderedByDrag,
+  [302, 303, 301],
+  'Drag and drop reordering by player ID successfully moves Kyren before Marvin',
+);
 
 const success = finishSuite('Draft Watchlist Management');
 if (!success) {
   process.exit(1);
 }
-

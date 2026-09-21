@@ -1,6 +1,6 @@
 {
   "name": "fantasy-drafter",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Superflex dynasty fantasy football draft board and decision assistant",
   "main": "draft-logic.js",
   "scripts": {
@@ -9,7 +9,16 @@
     "serve": "python server.py",
     "test": "node test-runner.mjs",
     "update": "python scripts/update_rankings.py",
-    "update-rankings": "python scripts/update_rankings.py"
+    "update-rankings": "python scripts/update_rankings.py",
+    "check": "node scripts/check-quality.mjs",
+    "check:biome": "biome check .",
+    "lint:biome": "biome lint .",
+    "format:biome": "biome format --write .",
+    "check:ruff": "ruff check .",
+    "format:ruff": "ruff format --check .",
+    "format:ruff:fix": "ruff format .",
+    "check:ty": "ty check .",
+    "check:py": "node scripts/check-quality.mjs --tool=py"
   },
   "keywords": [
     "fantasy-football",
@@ -17,7 +26,9 @@
     "dynasty",
     "superflex"
   ],
-  "author": "",
-  "license": "MIT"
+  "author": "Douglas Caristo",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13"
+  }
 }
-

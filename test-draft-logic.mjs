@@ -1,5 +1,6 @@
 // Tests for the 3rd-round-reversal pick math. Run: node test-draft-logic.mjs
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
+
 const require = createRequire(import.meta.url);
 const L = require('./draft-logic.js');
 
@@ -27,17 +28,27 @@ eq(L.overallPick(3, 1, 12, '3rr'), 36, 'slot 1 R3 = overall 36 (3.12)');
 
 // --- Ken: slot 2 ---
 // 10 teams
-eq(L.picksForSlot(2, 10, 8, '3rr'), [2, 19, 29, 32, 49, 52, 69, 72], 'Ken slot 2, 10 teams, first 8 rounds');
+eq(
+  L.picksForSlot(2, 10, 8, '3rr'),
+  [2, 19, 29, 32, 49, 52, 69, 72],
+  'Ken slot 2, 10 teams, first 8 rounds',
+);
 // 12 teams (in case league size turns out to be 12)
-eq(L.picksForSlot(2, 12, 6, '3rr'), [2, 23, 35, 38, 59, 62], 'Ken slot 2, 12 teams, first 6 rounds');
+eq(
+  L.picksForSlot(2, 12, 6, '3rr'),
+  [2, 23, 35, 38, 59, 62],
+  'Ken slot 2, 12 teams, first 6 rounds',
+);
 
 // --- Normal snake sanity check ---
 eq(L.picksForSlot(2, 10, 4, 'snake'), [2, 19, 22, 39], 'slot 2 normal snake, 10 teams');
 
 // --- Round direction table for 3RR ---
-eq([1, 2, 3, 4, 5, 6, 7].map(r => L.roundIsForward(r, '3rr')),
+eq(
+  [1, 2, 3, 4, 5, 6, 7].map((r) => L.roundIsForward(r, '3rr')),
   [true, false, false, true, false, true, false],
-  '3RR direction: F, R, R, F, R, F, R');
+  '3RR direction: F, R, R, F, R, F, R',
+);
 
 // --- slotForOverall is the inverse of overallPick ---
 let inverseOk = true;
@@ -75,25 +86,49 @@ eq(L.normalizeName('Kenneth Walker III'), 'kenneth walker', 'strips III');
 eq(L.rankToScore(1, 200), 100, 'rank 1 scores 100');
 eq(L.rankToScore(null, 200), null, 'missing rank scores null');
 const te = { pos: 'TE', dynScore: 50, redScore: 50 };
-eq(L.compositeScore(te, 0.5, true) > L.compositeScore(te, 0.5, false), true, 'TE premium boosts TEs');
+eq(
+  L.compositeScore(te, 0.5, true) > L.compositeScore(te, 0.5, false),
+  true,
+  'TE premium boosts TEs',
+);
 const wr = { pos: 'WR', dynScore: 80, redScore: null };
 eq(L.compositeScore(wr, 0.5, false), 80, 'missing redraft falls back to dynasty score');
 
 // --- Team resolution ---
 const sampleTeams = ['Apex Legends', 'Ken', 'Touchdown Kings', 'Gridiron Gurus'];
-eq(L.defaultTeams(4, 2, 'Ken'), [
-  { slot: 1, name: 'Team 1' },
-  { slot: 2, name: 'Ken' },
-  { slot: 3, name: 'Team 3' },
-  { slot: 4, name: 'Team 4' }
-], 'defaultTeams creates slots with custom name for mySlot');
+eq(
+  L.defaultTeams(4, 2, 'Ken'),
+  [
+    { slot: 1, name: 'Team 1' },
+    { slot: 2, name: 'Ken' },
+    { slot: 3, name: 'Team 3' },
+    { slot: 4, name: 'Team 4' },
+  ],
+  'defaultTeams creates slots with custom name for mySlot',
+);
 
-eq(L.teamForOverall(1, 4, '3rr', sampleTeams, 2), { round: 1, slot: 1, name: 'Apex Legends', isMe: false }, 'Pick 1 is slot 1 Apex Legends');
-eq(L.teamForOverall(2, 4, '3rr', sampleTeams, 2), { round: 1, slot: 2, name: 'Ken', isMe: true }, 'Pick 2 is slot 2 Ken (isMe=true)');
+eq(
+  L.teamForOverall(1, 4, '3rr', sampleTeams, 2),
+  { round: 1, slot: 1, name: 'Apex Legends', isMe: false },
+  'Pick 1 is slot 1 Apex Legends',
+);
+eq(
+  L.teamForOverall(2, 4, '3rr', sampleTeams, 2),
+  { round: 1, slot: 2, name: 'Ken', isMe: true },
+  'Pick 2 is slot 2 Ken (isMe=true)',
+);
 // Round 2 is reverse: pick 5 is slot 4 (Gridiron Gurus), pick 6 is slot 3, pick 7 is slot 2 (Ken)
-eq(L.teamForOverall(7, 4, '3rr', sampleTeams, 2), { round: 2, slot: 2, name: 'Ken', isMe: true }, 'Pick 7 is round 2 slot 2 Ken');
+eq(
+  L.teamForOverall(7, 4, '3rr', sampleTeams, 2),
+  { round: 2, slot: 2, name: 'Ken', isMe: true },
+  'Pick 7 is round 2 slot 2 Ken',
+);
 // Round 3 in 3RR is reverse AGAIN: pick 9 is slot 4 (Gridiron Gurus), pick 10 is slot 3, pick 11 is slot 2 (Ken)
-eq(L.teamForOverall(11, 4, '3rr', sampleTeams, 2), { round: 3, slot: 2, name: 'Ken', isMe: true }, 'Pick 11 in 3RR is round 3 slot 2 Ken');
+eq(
+  L.teamForOverall(11, 4, '3rr', sampleTeams, 2),
+  { round: 3, slot: 2, name: 'Ken', isMe: true },
+  'Pick 11 in 3RR is round 3 slot 2 Ken',
+);
 
 if (failures > 0) {
   console.error(`\n${failures} test(s) FAILED`);

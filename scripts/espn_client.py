@@ -26,10 +26,12 @@ import zlib
 # Ensure UTF-8 console output on Windows
 if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure_out = getattr(sys.stdout, "reconfigure", None)
+        if callable(reconfigure_out):
+            reconfigure_out(encoding="utf-8", errors="replace")
+        reconfigure_err = getattr(sys.stderr, "reconfigure", None)
+        if callable(reconfigure_err):
+            reconfigure_err(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -71,7 +73,7 @@ def find_curl():
     # Check default Windows location
     if sys.platform == "win32":
         default_win_curl = os.path.join(
-            os.environ.get("SystemRoot", r"C:\Windows"), "System32", "curl.exe"
+            os.environ.get("SYSTEMROOT", r"C:\Windows"), "System32", "curl.exe"
         )
         if os.path.exists(default_win_curl):
             return default_win_curl
@@ -134,7 +136,12 @@ def _decompress_response(raw_bytes, encoding_header):
 
 def fetch_with_urllib(url, timeout=15, profile=None):
     """Fetch URL using Python urllib with an explicit client profile."""
-    headers = profile["headers"] if profile else CLIENT_PROFILES[0]["headers"]
+    raw_headers = (
+        profile.get("headers")
+        if (profile and isinstance(profile, dict))
+        else CLIENT_PROFILES[0]["headers"]
+    )
+    headers: dict[str, str] = dict(raw_headers) if isinstance(raw_headers, dict) else {}
     req = urllib.request.Request(url, headers=headers)
 
     # Standard TLS context with fallback if corporate captive portal issues self-signed cert
@@ -156,9 +163,7 @@ def fetch_with_urllib(url, timeout=15, profile=None):
         if "CERTIFICATE_VERIFY_FAILED" in str(e):
             try:
                 unverified_ctx = ssl._create_unverified_context()
-                with urllib.request.urlopen(
-                    req, timeout=timeout, context=unverified_ctx
-                ) as res:
+                with urllib.request.urlopen(req, timeout=timeout, context=unverified_ctx) as res:
                     raw = res.read()
                     encoding = res.info().get("Content-Encoding", "")
                     data_bytes = _decompress_response(raw, encoding)
@@ -170,9 +175,7 @@ def fetch_with_urllib(url, timeout=15, profile=None):
         return None, f"Exception: {e}"
 
 
-def fetch_espn_text(
-    url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, verbose=False
-):
+def fetch_espn_text(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, verbose=False):
     """Fetch text from ESPN API using curl with urllib fallback and retry logic."""
     if delay_before > 0:
         time.sleep(delay_before)
@@ -202,9 +205,7 @@ def fetch_espn_text(
     raise RuntimeError(f"Failed to fetch {url}: {last_error}")
 
 
-def fetch_espn_json(
-    url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, verbose=False
-):
+def fetch_espn_json(url, timeout=15, retries=2, backoff=0.6, delay_before=0.0, verbose=False):
     """Fetch and parse JSON from ESPN API with complete resilience."""
     text = fetch_espn_text(
         url,
@@ -218,7 +219,7 @@ def fetch_espn_json(
         return json.loads(text)
     except json.JSONDecodeError as e:
         snippet = text[:200] if text else "<empty>"
-        raise ValueError(f"Invalid JSON received from {url}: {e} (body: {snippet})")
+        raise ValueError(f"Invalid JSON received from {url}: {e} (body: {snippet})") from e
 
 
 if __name__ == "__main__":

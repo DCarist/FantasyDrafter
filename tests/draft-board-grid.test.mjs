@@ -1,6 +1,6 @@
 // Test suite for Draft Board Grid matrix generation and pick resolution
-import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { createRequire } from 'node:module';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -10,14 +10,14 @@ printSuiteHeader('Draft Board Grid Matrix & Pick Resolution');
 
 const mockPlayers = {
   101: { id: 101, name: 'Josh Allen', pos: 'QB', team: 'BUF', bye: 12 },
-  102: { id: 102, name: 'Ja\'Marr Chase', pos: 'WR', team: 'CIN', bye: 12 },
+  102: { id: 102, name: "Ja'Marr Chase", pos: 'WR', team: 'CIN', bye: 12 },
   103: { id: 103, name: 'Bijan Robinson', pos: 'RB', team: 'ATL', bye: 12 },
   104: { id: 104, name: 'Brock Bowers', pos: 'TE', team: 'LV', bye: 10 },
   105: { id: 105, name: 'Justin Tucker', pos: 'K', team: 'BAL', bye: 14 },
-  106: { id: 106, name: 'San Francisco 49ers', pos: 'DST', team: 'SF', bye: 9 }
+  106: { id: 106, name: 'San Francisco 49ers', pos: 'DST', team: 'SF', bye: 9 },
 };
 
-const byIdLookup = id => mockPlayers[id] || null;
+const byIdLookup = (id) => mockPlayers[id] || null;
 
 // 1. Grid structure & dimensions
 const gridRes = L.generateDraftBoardGrid({
@@ -30,7 +30,7 @@ const gridRes = L.generateDraftBoardGrid({
   teamNames: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
   mySlot: 2,
   currentPickNum: 1,
-  playersLookup: byIdLookup
+  playersLookup: byIdLookup,
 });
 
 assert(gridRes != null, 'Grid result is generated');
@@ -65,7 +65,7 @@ const grid3rr = L.generateDraftBoardGrid({
   keepers: [],
   tradedPicks: {},
   mySlot: 1,
-  currentPickNum: 1
+  currentPickNum: 1,
 });
 
 // In 3RR 4-team:
@@ -93,14 +93,14 @@ const gridWithPicks = L.generateDraftBoardGrid({
   log: [
     { overall: 1, playerId: 101, mine: false },
     { overall: 2, playerId: 102, mine: true },
-    { overall: 3, customName: 'Caleb Williams', customPos: 'QB', customTeam: 'CHI', customBye: 7 }
+    { overall: 3, customName: 'Caleb Williams', customPos: 'QB', customTeam: 'CHI', customBye: 7 },
   ],
   keepers: [],
   tradedPicks: {},
   teamNames: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
   mySlot: 2,
   currentPickNum: 4,
-  playersLookup: byIdLookup
+  playersLookup: byIdLookup,
 });
 
 const r1p1 = gridWithPicks.grid[0].picks[0];
@@ -113,7 +113,7 @@ eq(r1p1.player.team, 'BUF', 'Pick 1 team is BUF');
 const r1p2 = gridWithPicks.grid[0].picks[1];
 eq(r1p2.isDrafted, true, 'Pick 2 is drafted');
 eq(r1p2.isMe, true, 'Pick 2 is my pick');
-eq(r1p2.player.name, 'Ja\'Marr Chase', 'Pick 2 player is Ja\'Marr Chase');
+eq(r1p2.player.name, "Ja'Marr Chase", "Pick 2 player is Ja'Marr Chase");
 
 const r1p3 = gridWithPicks.grid[0].picks[2];
 eq(r1p3.isDrafted, true, 'Pick 3 is drafted unlisted player');
@@ -130,16 +130,14 @@ const gridWithKeepers = L.generateDraftBoardGrid({
   teams: 4,
   rounds: 3,
   mode: 'snake',
-  log: [
-    { overall: 1, playerId: 101 }
-  ],
+  log: [{ overall: 1, playerId: 101 }],
   keepers: [
-    { slot: 3, round: 2, playerId: 104 } // Slot 3, Round 2 in 4-team snake = Pick #6
+    { slot: 3, round: 2, playerId: 104 }, // Slot 3, Round 2 in 4-team snake = Pick #6
   ],
   tradedPicks: {},
   mySlot: 1,
   currentPickNum: 2,
-  playersLookup: byIdLookup
+  playersLookup: byIdLookup,
 });
 
 // Slot 3 Round 2 is Pick #6
@@ -160,7 +158,7 @@ const gridWithTrades = L.generateDraftBoardGrid({
   tradedPicks: { 7: 4 }, // Pick 7 (Slot 2 R2) traded to Slot 4
   teamNames: ['Alpha', 'Bravo', 'Charlie', 'Delta'],
   mySlot: 4,
-  currentPickNum: 1
+  currentPickNum: 1,
 });
 
 const r2col2 = gridWithTrades.grid[1].picks[1]; // Slot 2, R2 = Pick 7
@@ -178,7 +176,7 @@ const largeGrid = L.generateDraftBoardGrid({
   tradedPicks: {},
   mySlot: 1,
   currentPickNum: 301, // Draft completed
-  playersLookup: byIdLookup
+  playersLookup: byIdLookup,
 });
 
 eq(largeGrid.teams, 12, '12 teams handled');
@@ -203,13 +201,13 @@ const mockContainer = {
   scrollHeight: 3000,
   clientHeight: 800,
   scrollLeft: 500, // 50% horizontal
-  scrollTop: 1100  // 50% vertical
+  scrollTop: 1100, // 50% vertical
 };
 
 const maxScrollX = mockContainer.scrollWidth - mockContainer.clientWidth;
 const maxScrollY = mockContainer.scrollHeight - mockContainer.clientHeight;
-const ratioX = maxScrollX > 0 ? (mockContainer.scrollLeft / maxScrollX) : 0;
-const ratioY = maxScrollY > 0 ? (mockContainer.scrollTop / maxScrollY) : 0;
+const ratioX = maxScrollX > 0 ? mockContainer.scrollLeft / maxScrollX : 0;
+const ratioY = maxScrollY > 0 ? mockContainer.scrollTop / maxScrollY : 0;
 
 eq(ratioX, 0.5, 'Scroll ratio X correctly computed at 50%');
 eq(ratioY, 0.5, 'Scroll ratio Y correctly computed at 50%');
@@ -219,7 +217,7 @@ const mockCompactContainer = {
   scrollWidth: 1500,
   clientWidth: 1000,
   scrollHeight: 2000,
-  clientHeight: 800
+  clientHeight: 800,
 };
 const newMaxScrollX = mockCompactContainer.scrollWidth - mockCompactContainer.clientWidth;
 const newMaxScrollY = mockCompactContainer.scrollHeight - mockCompactContainer.clientHeight;

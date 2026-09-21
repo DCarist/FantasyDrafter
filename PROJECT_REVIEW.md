@@ -93,6 +93,10 @@ FantasyDrafter/
   - Manages prioritized target queues with deduplication, drag-and-drop reordering, and automated cleanup upon player selection (`addToQueue`, `removeFromQueue`, `reorderQueue`, `cleanQueue`, `getAvailableQueue`).
 - **💾 State Serialization & Schema Migration:**
   - Versioned draft state storage (`DRAFT_SCHEMA_VERSION = 2`) with automated migration from legacy V1 stores (`serializeDraftState`, `deserializeDraftState`).
+- **🏆 Multi-League Workspaces & Manifest Persistence:**
+  - Dedicated multi-league draft profiles (`fantasy_drafter_leagues_manifest`, `fantasy_drafter_league_<id>`) allowing quick back-and-forth switching between multiple active drafts without losing progress.
+  - Top "Active League" management control bar in League Setup modal supporting instant switching, "+ New League", "📋 Duplicate League" (cloning settings and roster slots with a clean draft board), "🗑️ Delete League" (with last-league protection), and JSON backup export/import.
+  - Clean migration from legacy `kenDraftBoard-v1` into the first default profile on startup without ongoing write mirroring.
 
 ### 3.3 Server, 1-Click Launchers & Automated Data Freshness
 - **🚀 1-Click Windows Launchers:**

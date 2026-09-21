@@ -1,6 +1,6 @@
 // Test suite for Pick Ownership, Grid Generation, and Pick Trading
-import { createRequire } from 'module';
-import { eq, assert, printSuiteHeader, finishSuite, resetFailures } from './test-helper.mjs';
+import { createRequire } from 'node:module';
+import { eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
@@ -13,27 +13,35 @@ const sampleTeams = ['Team 1', 'Team 2', 'Team 3', 'Team 4'];
 const standardGrid = L.generateDraftPicks(4, 3, '3rr', {}, sampleTeams, 2);
 
 eq(standardGrid.length, 12, '12 picks generated for 4 teams x 3 rounds');
-eq(standardGrid[0], {
-  overall: 1,
-  round: 1,
-  originalSlot: 1,
-  currentSlot: 1,
-  originalTeam: 'Team 1',
-  currentTeam: 'Team 1',
-  isTraded: false,
-  isMe: false
-}, 'Pick 1.01 natural ownership');
+eq(
+  standardGrid[0],
+  {
+    overall: 1,
+    round: 1,
+    originalSlot: 1,
+    currentSlot: 1,
+    originalTeam: 'Team 1',
+    currentTeam: 'Team 1',
+    isTraded: false,
+    isMe: false,
+  },
+  'Pick 1.01 natural ownership',
+);
 
-eq(standardGrid[1], {
-  overall: 2,
-  round: 1,
-  originalSlot: 2,
-  currentSlot: 2,
-  originalTeam: 'Team 2',
-  currentTeam: 'Team 2',
-  isTraded: false,
-  isMe: true
-}, 'Pick 1.02 natural ownership (isMe=true for Slot 2)');
+eq(
+  standardGrid[1],
+  {
+    overall: 2,
+    round: 1,
+    originalSlot: 2,
+    currentSlot: 2,
+    originalTeam: 'Team 2',
+    currentTeam: 'Team 2',
+    isTraded: false,
+    isMe: true,
+  },
+  'Pick 1.02 natural ownership (isMe=true for Slot 2)',
+);
 
 // Round 2 (reversal): Slot 4 -> Slot 3 -> Slot 2 -> Slot 1
 // Pick 5 is Slot 4, Pick 6 is Slot 3, Pick 7 is Slot 2 (Ken), Pick 8 is Slot 1
@@ -74,20 +82,31 @@ eq(tradedGrid[6].isMe, false, 'Pick 7 is no longer mine');
 
 // 4. getPicksForTeam
 const myPicks = L.getPicksForTeam(2, tradedGrid);
-eq(myPicks.map(p => p.overall), [1, 2, 11], 'My picks include acquired Pick 1, natural Pick 2, and 3RR Pick 11 (Pick 7 traded away)');
+eq(
+  myPicks.map((p) => p.overall),
+  [1, 2, 11],
+  'My picks include acquired Pick 1, natural Pick 2, and 3RR Pick 11 (Pick 7 traded away)',
+);
 
 const slot4Picks = L.getPicksForTeam(4, tradedGrid);
-eq(slot4Picks.map(p => p.overall), [4, 5, 7, 9], 'Slot 4 picks include natural Picks 4, 5, 9 plus acquired Pick 7');
+eq(
+  slot4Picks.map((p) => p.overall),
+  [4, 5, 7, 9],
+  'Slot 4 picks include natural Picks 4, 5, 9 plus acquired Pick 7',
+);
 
 // 5. picksForSlot with tradedPicks map
 const slot2EffectivePicks = L.picksForSlot(2, 4, 3, '3rr', tradedMap2);
 eq(slot2EffectivePicks, [1, 2, 11], 'picksForSlot computes correct picks with tradedPicks map');
 
 const slot4EffectivePicks = L.picksForSlot(4, 4, 3, '3rr', tradedMap2);
-eq(slot4EffectivePicks, [4, 5, 7, 9], 'picksForSlot computes correct picks for slot 4 with tradedPicks map');
+eq(
+  slot4EffectivePicks,
+  [4, 5, 7, 9],
+  'picksForSlot computes correct picks for slot 4 with tradedPicks map',
+);
 
 const success = finishSuite('Draft Pick Trading & Ownership Grid');
 if (!success) {
   process.exit(1);
 }
-

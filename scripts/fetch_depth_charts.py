@@ -15,10 +15,12 @@ from datetime import date
 # Ensure UTF-8 console output on Windows
 if sys.platform == "win32":
     try:
-        if hasattr(sys.stdout, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        if hasattr(sys.stderr, "reconfigure"):
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        reconfigure_out = getattr(sys.stdout, "reconfigure", None)
+        if callable(reconfigure_out):
+            reconfigure_out(encoding="utf-8", errors="replace")
+        reconfigure_err = getattr(sys.stderr, "reconfigure", None)
+        if callable(reconfigure_err):
+            reconfigure_err(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -89,7 +91,9 @@ def build_player_lookup(players):
 
 
 def fetch_team_depth_chart(team_abbr, espn_code, lookup_exact, lookup_name):
-    url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{espn_code}/depthcharts"
+    url = (
+        f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{espn_code}/depthcharts"
+    )
     data = fetch_espn_json(url, timeout=12, delay_before=0.08)
 
     off = next(
@@ -147,9 +151,7 @@ def fetch_all_depth_charts(players, verbose=True, existing_depth_charts=None):
         if verbose:
             print(f"[{idx}/{total}] Fetching depth chart for {abbr} ({code})...")
         try:
-            depth_charts[abbr] = fetch_team_depth_chart(
-                abbr, code, lookup_exact, lookup_name
-            )
+            depth_charts[abbr] = fetch_team_depth_chart(abbr, code, lookup_exact, lookup_name)
         except Exception as e:
             print(f"Warning: Failed to fetch depth chart for {abbr}: {e}")
             if existing_depth_charts and abbr in existing_depth_charts:
@@ -174,40 +176,32 @@ DEFAULT_OUT_JSON = os.path.join(PROJECT_ROOT, "players-data.json")
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch NFL Depth Charts from ESPN")
-    parser.add_argument(
-        "--out-js", default=DEFAULT_OUT_JS, help="Path to players-data.js"
-    )
-    parser.add_argument(
-        "--out-json", default=DEFAULT_OUT_JSON, help="Path to players-data.json"
-    )
+    parser.add_argument("--out-js", default=DEFAULT_OUT_JS, help="Path to players-data.js")
+    parser.add_argument("--out-json", default=DEFAULT_OUT_JSON, help="Path to players-data.json")
     args = parser.parse_args()
 
     # Load existing players data
     source_file = (
-        args.out_json
-        if (args.out_json and os.path.exists(args.out_json))
-        else args.out_js
+        args.out_json if (args.out_json and os.path.exists(args.out_json)) else args.out_js
     )
     if not os.path.exists(source_file):
         print(f"Error: {source_file} not found.")
         sys.exit(1)
 
     if source_file.endswith(".js"):
-        with open(source_file, "r", encoding="utf-8") as f:
+        with open(source_file, encoding="utf-8") as f:
             content = f.read()
             json_str = content.split("=", 1)[1].rstrip().rstrip(";")
             data = json.loads(json_str)
     else:
-        with open(source_file, "r", encoding="utf-8") as f:
+        with open(source_file, encoding="utf-8") as f:
             data = json.load(f)
 
     players = data.get("players", [])
     print(f"Found {len(players)} players in dataset. Fetching depth charts...")
 
     existing_dc = data.get("depthCharts", {})
-    depth_charts = fetch_all_depth_charts(
-        players, verbose=True, existing_depth_charts=existing_dc
-    )
+    depth_charts = fetch_all_depth_charts(players, verbose=True, existing_depth_charts=existing_dc)
     data["depthCharts"] = depth_charts
 
     # Write out JSON
@@ -219,9 +213,7 @@ def main():
     # Write out JS
     if args.out_js:
         with open(args.out_js, "w", encoding="utf-8") as f:
-            f.write(
-                "// Master players and rankings dataset for Ken's Fantasy Drafter\n"
-            )
+            f.write("// Master players and rankings dataset for Ken's Fantasy Drafter\n")
             f.write("window.DRAFT_DATA = ")
             json.dump(data, f, indent=1)
             f.write(";\n")
