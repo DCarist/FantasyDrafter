@@ -3657,7 +3657,229 @@ div.setup-field select {
   background: rgba(79, 143, 247, 0.05);
 }
 
-.avail-badge {
+/* Waivers Radar Controls Bar */
+.waivers-controls-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 12px;
+}
+
+.waivers-control-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.format-pills,
+.pos-pills {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.format-pill-btn,
+.pos-pill-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.format-pill-btn:hover,
+.pos-pill-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.format-pill-btn.active,
+.pos-pill-btn.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  border-color: var(--accent);
+}
+
+.waiver-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.waiver-toggle-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.waiver-toggle-btn.active {
+  background: rgba(79, 143, 247, 0.2);
+  border-color: var(--accent);
+  color: #79b8ff;
+  font-weight: 700;
+}
+
+.waiver-search-input {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 5px 10px;
+  font-size: 12px;
+  min-width: 170px;
+}
+
+.waiver-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Watchlist & Notes */
+.watchlist-star-btn {
+  background: none;
+  border: none;
+  font-size: 17px;
+  cursor: pointer;
+  color: var(--dim);
+  padding: 2px 4px;
+  line-height: 1;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.watchlist-star-btn:hover {
+  transform: scale(1.25);
+  color: #fbbf24;
+}
+
+.watchlist-star-btn.is-active {
+  color: #f59e0b;
+  text-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+}
+
+.watchlist-note-chip {
+  font-size: 11px;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  cursor: pointer;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchlist-note-chip:hover {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+/* Need Match Badges */
+.need-badges-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.need-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.need-badge.badge-injury {
+  background: rgba(255, 100, 112, 0.2);
+  color: #ff8b94;
+  border: 1px solid rgba(255, 100, 112, 0.4);
+}
+
+.need-badge.badge-bye {
+  background: rgba(88, 166, 255, 0.18);
+  color: #79b8ff;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+}
+
+.need-badge.badge-upgrade {
+  background: rgba(61, 220, 132, 0.18);
+  color: var(--good);
+  border: 1px solid rgba(61, 220, 132, 0.35);
+}
+
+.need-badge.badge-handcuff {
+  background: rgba(187, 134, 252, 0.18);
+  color: #d7b5fd;
+  border: 1px solid rgba(187, 134, 252, 0.35);
+}
+
+.need-badge.badge-empty {
+  background: rgba(255, 180, 84, 0.2);
+  color: var(--warn);
+  border: 1px solid rgba(255, 180, 84, 0.4);
+}
+
+/* Claim & Availability Chips */
+.waiver-claim-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin: 2px 3px 2px 0;
+  transition: all 0.15s ease;
+}
+
+.waiver-claim-chip.platform-sleeper {
+  background: rgba(30, 190, 230, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.waiver-claim-chip.platform-espn {
+  background: rgba(229, 57, 53, 0.15);
+  color: #ff7675;
+  border: 1px solid rgba(229, 57, 53, 0.35);
+}
+
+.waiver-claim-chip:hover {
+  filter: brightness(1.25);
+  transform: translateY(-1px);
+}
+
+.waiver-avail-chip {
   display: inline-block;
   background: rgba(61, 220, 132, 0.15);
   color: var(--good);
@@ -3669,15 +3891,94 @@ div.setup-field select {
   margin-bottom: 2px;
 }
 
-.need-match-badge {
-  display: inline-block;
-  background: rgba(255, 100, 112, 0.2);
-  color: #ff8b94;
-  border: 1px solid rgba(255, 100, 112, 0.4);
-  padding: 2px 6px;
-  border-radius: 4px;
+/* Positional Depth Charts & Room Hierarchy (Team View) */
+.team-rooms-section {
+  margin-top: 22px;
+}
+
+.team-rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.room-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 6px;
+}
+
+.room-players-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.room-player-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.room-player-item.room-starter {
+  border-left: 3px solid var(--accent);
+  background: rgba(79, 143, 247, 0.06);
+}
+
+.depth-num {
+  font-weight: 800;
   font-size: 11px;
+  color: var(--dim);
+  width: 22px;
+}
+
+.room-player-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.room-player-name {
   font-weight: 600;
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-role-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+.room-role-badge.role-starter {
+  background: rgba(79, 143, 247, 0.25);
+  color: #79b8ff;
+}
+
+.room-role-badge.role-bench {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim);
 }
 
 /* Power Rankings */

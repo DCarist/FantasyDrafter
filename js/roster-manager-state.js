@@ -14,6 +14,15 @@ if (typeof window !== 'undefined' && !window.global) {
     news: [],
     newsFilter: 'all', // 'all' | 'breaking' | 'injury' | 'outlook'
     waivers: [],
+    waiverFilters: {
+      leagueId: 'all',
+      format: 'dyn_sf',
+      pos: 'ALL',
+      needsOnly: false,
+      watchlistOnly: false,
+      search: '',
+    },
+    watchlist: {},
     powerRankings: null,
     isServerOnline: true,
     lastSyncTimestamp: null,
@@ -32,6 +41,16 @@ if (typeof window !== 'undefined' && !window.global) {
             inSeasonState.rosterData = cached.rosterData || null;
             inSeasonState.news = Array.isArray(cached.news) ? cached.news : [];
             inSeasonState.waivers = Array.isArray(cached.waivers) ? cached.waivers : [];
+            inSeasonState.waiverFilters = {
+              leagueId: cached.waiverFilters?.leagueId || 'all',
+              format: cached.waiverFilters?.format || 'dyn_sf',
+              pos: cached.waiverFilters?.pos || 'ALL',
+              needsOnly: Boolean(cached.waiverFilters?.needsOnly),
+              watchlistOnly: Boolean(cached.waiverFilters?.watchlistOnly),
+              search: cached.waiverFilters?.search || '',
+            };
+            inSeasonState.watchlist =
+              cached.watchlist && typeof cached.watchlist === 'object' ? cached.watchlist : {};
             inSeasonState.powerRankings = cached.powerRankings || null;
             inSeasonState.lastSyncTimestamp = cached.lastSyncTimestamp || null;
           }
@@ -51,6 +70,8 @@ if (typeof window !== 'undefined' && !window.global) {
           rosterData: inSeasonState.rosterData,
           news: inSeasonState.news,
           waivers: inSeasonState.waivers,
+          waiverFilters: inSeasonState.waiverFilters,
+          watchlist: inSeasonState.watchlist,
           powerRankings: inSeasonState.powerRankings,
           lastSyncTimestamp: inSeasonState.lastSyncTimestamp,
         };
@@ -157,15 +178,94 @@ if (typeof window !== 'undefined' && !window.global) {
     return inSeasonState.news;
   }
 
-  async function fetchWaivers(limit = 50) {
+  async function fetchWaivers(filters = {}) {
     inSeasonState.loading = true;
-    const res = await apiRequest(`/api/manager/waivers?limit=${limit}`);
+    if (filters && typeof filters === 'object') {
+      inSeasonState.waiverFilters = { ...inSeasonState.waiverFilters, ...filters };
+    }
+    const wf = inSeasonState.waiverFilters;
+    const params = new URLSearchParams();
+    params.set('limit', '100');
+    if (wf.leagueId && wf.leagueId !== 'all') {
+      params.set('league_id', wf.leagueId);
+    }
+    if (wf.format) {
+      params.set('format', wf.format);
+    }
+    if (wf.pos && wf.pos !== 'ALL') {
+      params.set('pos', wf.pos);
+    }
+    if (wf.needsOnly) {
+      params.set('needs_only', 'true');
+    }
+    if (wf.watchlistOnly) {
+      params.set('watchlist_only', 'true');
+    }
+    if (wf.search?.trim()) {
+      params.set('search', wf.search.trim());
+    }
+
+    const res = await apiRequest(`/api/manager/waivers?${params.toString()}`);
     inSeasonState.loading = false;
     if (res?.ok && Array.isArray(res.waivers)) {
       inSeasonState.waivers = res.waivers;
       saveLocalCache();
     }
     return inSeasonState.waivers;
+  }
+
+  async function fetchWatchlist() {
+    const res = await apiRequest('/api/manager/watchlist');
+    if (res?.ok && res.watchlist && typeof res.watchlist === 'object') {
+      inSeasonState.watchlist = res.watchlist;
+      saveLocalCache();
+    }
+    return inSeasonState.watchlist;
+  }
+
+  async function toggleWatchlist(playerName, note = '') {
+    if (!playerName) return { ok: false };
+    const res = await apiRequest('/api/manager/watchlist/toggle', 'POST', {
+      player_name: playerName,
+      note,
+    });
+    if (res?.ok) {
+      const normKey = res.player_name || playerName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (res.is_watchlisted) {
+        inSeasonState.watchlist[normKey] = res.note || '';
+      } else {
+        delete inSeasonState.watchlist[normKey];
+      }
+      for (const w of inSeasonState.waivers) {
+        const pNorm = (w.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (pNorm === normKey) {
+          w.is_watchlisted = res.is_watchlisted;
+          w.watchlist_note = res.is_watchlisted ? res.note || '' : '';
+        }
+      }
+      saveLocalCache();
+    }
+    return res;
+  }
+
+  async function saveWatchlistNote(playerName, note = '') {
+    if (!playerName) return { ok: false };
+    const res = await apiRequest('/api/manager/watchlist/note', 'POST', {
+      player_name: playerName,
+      note,
+    });
+    if (res?.ok) {
+      const normKey = res.player_name || playerName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      inSeasonState.watchlist[normKey] = res.note || '';
+      for (const w of inSeasonState.waivers) {
+        const pNorm = (w.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (pNorm === normKey) {
+          w.watchlist_note = res.note || '';
+        }
+      }
+      saveLocalCache();
+    }
+    return res;
   }
 
   async function fetchPowerRankings(leagueId = inSeasonState.activeLeagueId) {
@@ -265,6 +365,7 @@ if (typeof window !== 'undefined' && !window.global) {
         } else if (viewName === 'news') {
           await fetchNews(inSeasonState.newsFilter);
         } else if (viewName === 'waivers') {
+          await fetchWatchlist();
           await fetchWaivers();
         } else if (viewName === 'rankings') {
           await fetchPowerRankings();
@@ -287,6 +388,9 @@ if (typeof window !== 'undefined' && !window.global) {
     fetchTeamView,
     fetchNews,
     fetchWaivers,
+    fetchWatchlist,
+    toggleWatchlist,
+    saveWatchlistNote,
     fetchPowerRankings,
     seedDemoData,
     saveLocalCache,

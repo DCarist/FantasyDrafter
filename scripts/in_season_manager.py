@@ -93,6 +93,13 @@ def init_db(db_path: str = DB_PATH) -> None:
                     FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE
                 );
 
+                CREATE TABLE IF NOT EXISTS waiver_watchlist (
+                    player_name TEXT PRIMARY KEY,
+                    note TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_roster_date ON roster_snapshots(snapshot_date);
                 CREATE INDEX IF NOT EXISTS idx_roster_league ON roster_snapshots(league_id);
                 CREATE INDEX IF NOT EXISTS idx_news_player ON player_news(player_name);
@@ -519,40 +526,210 @@ def save_waiver_snapshot(
         conn.close()
 
 
+def get_watchlist(db_path: str = DB_PATH) -> dict[str, str]:
+    """Retrieves all watchlisted players mapped to their notes."""
+    init_db(db_path)
+    conn = get_db_connection(db_path)
+    try:
+        cur = conn.execute(
+            "SELECT player_name, note FROM waiver_watchlist ORDER BY updated_at DESC"
+        )
+        return {r["player_name"]: (r["note"] or "") for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+def toggle_watchlist_item(
+    player_name: str, note: str = "", db_path: str = DB_PATH
+) -> dict[str, Any]:
+    """Toggles a player's watchlisted status. If on watchlist, removes; else adds."""
+    init_db(db_path)
+    conn = get_db_connection(db_path)
+    norm = normalize_name(player_name)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with conn:
+            cur = conn.execute(
+                "SELECT player_name FROM waiver_watchlist WHERE player_name = ?", (norm,)
+            )
+            row = cur.fetchone()
+            if row:
+                conn.execute("DELETE FROM waiver_watchlist WHERE player_name = ?", (norm,))
+                is_watchlisted = False
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO waiver_watchlist (player_name, note, created_at, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (norm, note or "", now_iso, now_iso),
+                )
+                is_watchlisted = True
+            return {
+                "ok": True,
+                "player_name": norm,
+                "is_watchlisted": is_watchlisted,
+                "note": note if is_watchlisted else "",
+            }
+    finally:
+        conn.close()
+
+
+def save_watchlist_note(player_name: str, note: str, db_path: str = DB_PATH) -> dict[str, Any]:
+    """Saves or updates a custom note for a watchlisted player."""
+    init_db(db_path)
+    conn = get_db_connection(db_path)
+    norm = normalize_name(player_name)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    try:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO waiver_watchlist (player_name, note, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(player_name) DO UPDATE SET
+                    note = excluded.note,
+                    updated_at = excluded.updated_at
+                """,
+                (norm, note or "", now_iso, now_iso),
+            )
+            return {"ok": True, "player_name": norm, "note": note}
+    finally:
+        conn.close()
+
+
+def calculate_player_rank_and_score(
+    player: dict[str, Any],
+    format_key: str = "dyn_sf",
+) -> tuple[float, float]:
+    """Resolves format-aware rank and normalized 0-100 score for a player.
+
+    Supported formats:
+    - 'dyn_sf': Dynasty Superflex
+    - 'dyn_1qb': Dynasty 1QB
+    - 'red_ppr': Redraft PPR
+    - 'red_half': Redraft Half-PPR
+    - 'red_std': Redraft Standard
+    """
+    if not player or not isinstance(player, dict):
+        return (999.0, 0.0)
+
+    fmt = str(format_key or "dyn_sf").lower().replace("-", "_")
+    rank_cand = None
+
+    if fmt in ("dyn_sf", "dynasty_sf", "sf"):
+        rank_cand = player.get("dynSF") or player.get("dyn_sf")
+        if rank_cand is None and str(player.get("pos", "")).upper() != "QB":
+            rank_cand = player.get("dyn1QB") or player.get("dyn_1qb")
+    elif fmt in ("dyn_1qb", "dynasty_1qb", "1qb"):
+        rank_cand = player.get("dyn1QB") or player.get("dyn_1qb")
+        if rank_cand is None and str(player.get("pos", "")).upper() != "QB":
+            rank_cand = player.get("dynSF") or player.get("dyn_sf")
+    elif fmt in ("red_ppr", "redraft_ppr", "ppr"):
+        rank_cand = (
+            player.get("red_sf_ppr")
+            or player.get("red_1qb_ppr")
+            or player.get("espn_ppr")
+            or player.get("boris_ppr")
+            or player.get("redraft")
+        )
+    elif fmt in ("red_half", "redraft_half", "half"):
+        rank_cand = (
+            player.get("red_sf_half")
+            or player.get("red_1qb_half")
+            or player.get("boris_half")
+            or player.get("redraft")
+        )
+    elif fmt in ("red_std", "redraft_std", "std", "standard"):
+        rank_cand = (
+            player.get("red_sf_std")
+            or player.get("red_1qb_std")
+            or player.get("espn_std")
+            or player.get("boris_std")
+            or player.get("redraft")
+        )
+
+    # Fallbacks across rank columns
+    if rank_cand is None:
+        rank_cand = (
+            player.get("dynSF")
+            or player.get("redraft")
+            or player.get("dyn1QB")
+            or player.get("red_1qb_half")
+            or player.get("adp")
+        )
+
+    if rank_cand is not None:
+        try:
+            r = float(rank_cand)
+            score = max(0.0, min(100.0, round(100.0 - (r - 1.0) * (100.0 / 300.0), 1)))
+            return (round(r, 1), score)
+        except (ValueError, TypeError):
+            pass
+
+    return (999.0, 0.0)
+
+
 def get_waiver_matrix(
-    limit: int = 50,
+    limit: int = 100,
+    league_id: str | None = None,
+    format_key: str = "dyn_sf",
+    pos_filter: str | None = None,
+    needs_only: bool = False,
+    search: str | None = None,
+    watchlist_only: bool = False,
     db_path: str = DB_PATH,
 ) -> list[dict[str, Any]]:
-    """Calculates cross-league waiver wire recommendations.
+    """Calculates cross-league waiver wire recommendations and market radar.
 
-    Aggregates top unowned players across all configured leagues, ranks them
-    by consensus score and trending value, tags which leagues they are available in,
-    and highlights direct team need matches (e.g. injured starter holes).
+    Aggregates unowned free agents across leagues, ranks them using format-aware
+    projections, surfaces 4-tier need matches (Injuries, Upcoming Byes, Upgrades, Handcuffs),
+    and attaches deep-links for Sleeper and ESPN.
     """
     init_db(db_path)
-    leagues = get_leagues(db_path)
-    if not leagues:
+    all_leagues = get_leagues(db_path)
+    if not all_leagues:
+        return []
+
+    # Scope filtering: single league or all connected leagues
+    if league_id:
+        target_leagues = [lg for lg in all_leagues if str(lg.get("id")) == str(league_id)]
+    else:
+        target_leagues = all_leagues
+
+    if not target_leagues:
         return []
 
     conn = get_db_connection(db_path)
-    league_rosters: dict[str, list[dict[str, Any]]] = {}
-    league_my_teams: dict[str, dict[str, Any] | None] = {}
-    league_free_agents: dict[str, set[str]] = {}
+    watchlist = get_watchlist(db_path)
+
+    # League metadata & roster index caches
+    league_contexts: list[dict[str, Any]] = []
 
     try:
-        for lg in leagues:
-            lid = lg["id"]
+        for lg in target_leagues:
+            lid = str(lg.get("id", ""))
             rosters = get_roster_snapshots(lid, db_path=db_path)
-            league_rosters[lid] = rosters
-
             my_team_id = lg.get("my_team_id")
-            my_team = next((r for r in rosters if str(r["team_id"]) == str(my_team_id)), None)
+            my_team = next((r for r in rosters if str(r.get("team_id")) == str(my_team_id)), None)
             if not my_team and rosters:
-                # Default to first team if not explicitly tagged
                 my_team = rosters[0]
-            league_my_teams[lid] = my_team
 
-            # Check waiver snapshot
+            # Collect all rostered players across the league
+            owned_names = set()
+            for r in rosters:
+                for group in [
+                    r.get("starters", []),
+                    r.get("bench", []),
+                    r.get("taxi", []),
+                    r.get("ir", []),
+                ]:
+                    for p in group:
+                        name = p.get("name") if isinstance(p, dict) else str(p)
+                        if name:
+                            owned_names.add(normalize_name(name))
+
+            # Check for explicit waiver snapshot
             cur = conn.execute(
                 """
                 SELECT available_players_json FROM waiver_snapshots
@@ -561,35 +738,104 @@ def get_waiver_matrix(
                 (lid,),
             )
             row = cur.fetchone()
+            explicit_fa = None
             if row and row["available_players_json"]:
-                raw_avail = json.loads(row["available_players_json"])
-                avail_names = set()
-                for item in raw_avail:
-                    name = item.get("name") if isinstance(item, dict) else str(item)
-                    if name:
-                        avail_names.add(normalize_name(name))
-                league_free_agents[lid] = avail_names
-            else:
-                # Compute free agents from all drafted/owned players in rosters
-                owned_names = set()
-                for r in rosters:
-                    for group in [
-                        r.get("starters", []),
-                        r.get("bench", []),
-                        r.get("taxi", []),
-                        r.get("ir", []),
-                    ]:
-                        for p in group:
-                            name = p.get("name") if isinstance(p, dict) else str(p)
-                            if name:
-                                owned_names.add(normalize_name(name))
-                league_free_agents[lid] = owned_names  # Inverse will be evaluated against pool
+                try:
+                    raw_list = json.loads(row["available_players_json"])
+                    if isinstance(raw_list, list) and len(raw_list) > 0:
+                        explicit_fa = {
+                            normalize_name(x.get("name") if isinstance(x, dict) else str(x))
+                            for x in raw_list
+                        }
+                except Exception:
+                    pass
+
+            # Construct direct platform claim deep links
+            settings = lg.get("settings", {})
+            remote_id = settings.get("platformLeagueId")
+            season = lg.get("season", "2026")
+            claim_url = ""
+            platform = lg.get("platform", "custom")
+            if platform == "sleeper" and remote_id:
+                clean_rem = extract_sleeper_league_id(str(remote_id))
+                claim_url = f"https://sleeper.com/leagues/{clean_rem}/market" if clean_rem else ""
+            elif platform == "espn" and remote_id:
+                clean_rem = extract_espn_league_id(str(remote_id))
+                claim_url = (
+                    f"https://fantasy.espn.com/football/players/add?leagueId={clean_rem}&seasonId={season}"
+                    if clean_rem
+                    else ""
+                )
+
+            # Analyze user team for need matching
+            my_starters = my_team.get("starters", []) if my_team else []
+            my_bench = my_team.get("bench", []) if my_team else []
+
+            # A. Injured starters by position
+            injured_starters_by_pos: dict[str, list[dict[str, Any]]] = {}
+            for s in my_starters:
+                if isinstance(s, dict):
+                    spos = str(s.get("pos", "")).upper()
+                    inj = s.get("injury")
+                    if isinstance(inj, dict) and inj.get("status") in (
+                        "OUT",
+                        "IR",
+                        "DOUBTFUL",
+                    ):
+                        injured_starters_by_pos.setdefault(spos, []).append(s)
+
+            # B. Owned RBs by NFL team (for direct handcuff matching)
+            owned_rbs_by_team: dict[str, list[str]] = {}
+            for p in my_starters + my_bench:
+                if isinstance(p, dict) and str(p.get("pos", "")).upper() == "RB":
+                    tm = str(p.get("team", "")).upper()
+                    if tm and tm != "FA":
+                        owned_rbs_by_team.setdefault(tm, []).append(p.get("name", "RB"))
+
+            # C. Starters count by position
+            starter_pos_counts: dict[str, int] = {}
+            for s in my_starters:
+                if isinstance(s, dict):
+                    spos = str(s.get("pos", "")).upper()
+                    starter_pos_counts[spos] = starter_pos_counts.get(spos, 0) + 1
+
+            # D. Lowest rank bench player by position (for upgrade matching)
+            bench_lowest_by_pos: dict[str, dict[str, Any]] = {}
+            for b in my_bench:
+                if isinstance(b, dict):
+                    bpos = str(b.get("pos", "")).upper()
+                    brank = float(b.get("rank") or 999.0)
+                    if bpos not in bench_lowest_by_pos or brank > float(
+                        bench_lowest_by_pos[bpos].get("rank") or 999.0
+                    ):
+                        bench_lowest_by_pos[bpos] = b
+
+            league_contexts.append(
+                {
+                    "id": lid,
+                    "name": lg.get("name", "League"),
+                    "platform": platform,
+                    "claim_url": claim_url,
+                    "owned_names": owned_names,
+                    "explicit_fa": explicit_fa,
+                    "my_starters": my_starters,
+                    "my_bench": my_bench,
+                    "injured_starters_by_pos": injured_starters_by_pos,
+                    "owned_rbs_by_team": owned_rbs_by_team,
+                    "starter_pos_counts": starter_pos_counts,
+                    "bench_lowest_by_pos": bench_lowest_by_pos,
+                }
+            )
     finally:
         conn.close()
 
     # Load master player pool
     pool = load_players_data()
     recommendations = []
+    clean_search = search.lower().strip() if search else None
+    clean_pos_filter = (
+        pos_filter.upper().strip() if pos_filter and pos_filter.upper() != "ALL" else None
+    )
 
     for p in pool:
         p_name = p.get("name", "")
@@ -597,91 +843,175 @@ def get_waiver_matrix(
         if not norm:
             continue
 
-        available_in: list[dict[str, str]] = []
-        need_matches: list[dict[str, str]] = []
+        p_pos = str(p.get("pos", "")).upper()
+        p_team = str(p.get("team", "")).upper()
 
-        for lg in leagues:
-            lid = lg["id"]
-            lname = lg["name"]
-            is_avail = False
+        # Position filter
+        if clean_pos_filter and p_pos != clean_pos_filter:
+            continue
 
-            # If explicit waiver snapshot exists
-            if (
-                lid in league_free_agents
-                and isinstance(league_free_agents[lid], set)
-                and len(league_free_agents[lid]) > 0
-            ):
-                # Check if this set contains free agents or owned agents
-                cur_set = league_free_agents[lid]
-                is_avail = True if norm in cur_set else norm not in cur_set
+        # Search filter
+        if clean_search and clean_search not in norm and clean_search not in p_team.lower():
+            continue
 
-            if is_avail:
-                available_in.append({"league_id": lid, "league_name": lname})
+        # Watchlist filter
+        is_watchlisted = norm in watchlist
+        if watchlist_only and not is_watchlisted:
+            continue
 
-                # Check if this player fulfills a direct need for my team in this league
-                my_t = league_my_teams.get(lid)
-                if my_t:
-                    pos = p.get("pos", "").upper()
-                    # Check for injured starters at that position
-                    starters = my_t.get("starters", [])
-                    has_injured_starter = any(
-                        s.get("pos") == pos
-                        and s.get("injury")
-                        and s.get("injury", {}).get("status") in ("OUT", "IR", "DOUBTFUL")
-                        for s in starters
-                        if isinstance(s, dict)
-                    )
-                    starter_count_at_pos = sum(
-                        1 for s in starters if isinstance(s, dict) and s.get("pos") == pos
-                    )
+        # Compute format-aware rank and score
+        rank, score = calculate_player_rank_and_score(p, format_key=format_key)
 
-                    if has_injured_starter:
-                        need_matches.append(
-                            {
-                                "league_id": lid,
-                                "league_name": lname,
-                                "reason": f"Fills injured {pos} starter hole",
-                            }
-                        )
-                    elif starter_count_at_pos == 0 and pos in ("QB", "TE", "K", "DST"):
-                        need_matches.append(
-                            {
-                                "league_id": lid,
-                                "league_name": lname,
-                                "reason": f"Fills empty {pos} slot",
-                            }
-                        )
+        available_in: list[dict[str, Any]] = []
+        need_matches: list[dict[str, Any]] = []
 
-        if available_in:
-            recommendations.append(
+        for ctx in league_contexts:
+            # Check availability
+            if ctx["explicit_fa"] is not None:
+                is_avail = norm in ctx["explicit_fa"]
+            else:
+                is_avail = norm not in ctx["owned_names"]
+
+            if not is_avail:
+                continue
+
+            available_in.append(
                 {
-                    "player": p,
-                    "name": p_name,
-                    "pos": p.get("pos", ""),
-                    "team": p.get("team", ""),
-                    "score": p.get("score", 0),
-                    "rank": p.get("rank", 999),
-                    "dynSF": p.get("dynSF"),
-                    "redraft": p.get("redraft"),
-                    "injury": p.get("injury"),
-                    "available_in": available_in,
-                    "available_count": len(available_in),
-                    "need_matches": need_matches,
-                    "is_priority": len(need_matches) > 0 or p.get("score", 0) > 60,
+                    "league_id": ctx["id"],
+                    "league_name": ctx["name"],
+                    "platform": ctx["platform"],
+                    "claim_url": ctx["claim_url"],
                 }
             )
 
-    def _rec_sort_key(item: dict[str, Any]) -> tuple[bool, int, float, float]:
-        matches = item.get("need_matches")
-        has_needs = bool(matches and isinstance(matches, list) and len(matches) > 0)
+            # Need Matching Engine
+            # Tier A: Injury Replacement (status OUT, IR, DOUBTFUL)
+            if p_pos in ctx["injured_starters_by_pos"]:
+                for inj_s in ctx["injured_starters_by_pos"][p_pos]:
+                    st_name = inj_s.get("name", "Starter")
+                    status_tag = inj_s.get("injury", {}).get("status", "OUT")
+                    need_matches.append(
+                        {
+                            "league_id": ctx["id"],
+                            "league_name": ctx["name"],
+                            "type": "INJURY_SUB",
+                            "icon": "🚨",
+                            "tag": f"Fills {st_name} ({status_tag}) starter hole",
+                            "severity": "high",
+                        }
+                    )
+
+            # Tier D: Direct Handcuff (RB on same NFL team as owned RB)
+            if p_pos == "RB" and p_team in ctx["owned_rbs_by_team"]:
+                owned_rbs = ctx["owned_rbs_by_team"][p_team]
+                other_rbs = [o for o in owned_rbs if normalize_name(o) != norm]
+                if other_rbs:
+                    need_matches.append(
+                        {
+                            "league_id": ctx["id"],
+                            "league_name": ctx["name"],
+                            "type": "HANDCUFF",
+                            "icon": "🛡️",
+                            "tag": f"Direct handcuff for {other_rbs[0]} ({p_team})",
+                            "severity": "medium",
+                        }
+                    )
+
+            # Tier C: Upgrade Opportunity
+            if p_pos in ctx["bench_lowest_by_pos"] and rank < 200:
+                bench_target = ctx["bench_lowest_by_pos"][p_pos]
+                bench_rank = float(bench_target.get("rank") or 999.0)
+                if bench_rank - rank >= 15:
+                    diff = round(bench_rank - rank)
+                    need_matches.append(
+                        {
+                            "league_id": ctx["id"],
+                            "league_name": ctx["name"],
+                            "type": "UPGRADE",
+                            "icon": "📈",
+                            "tag": f"+{diff} rank upgrade over {bench_target.get('name')}",
+                            "severity": "medium",
+                        }
+                    )
+
+            # Tier B: Upcoming Bye Week Filler
+            p_bye = p.get("bye")
+            if p_bye is not None and ctx["my_starters"]:
+                for s in ctx["my_starters"]:
+                    if isinstance(s, dict) and str(s.get("pos", "")).upper() == p_pos:
+                        s_bye = s.get("bye")
+                        if s_bye and s_bye != p_bye:
+                            bench_covers = any(
+                                isinstance(b, dict)
+                                and str(b.get("pos", "")).upper() == p_pos
+                                and b.get("bye") != s_bye
+                                and not (
+                                    b.get("injury")
+                                    and b.get("injury", {}).get("status") in ("OUT", "IR")
+                                )
+                                for b in ctx["my_bench"]
+                            )
+                            if not bench_covers:
+                                need_matches.append(
+                                    {
+                                        "league_id": ctx["id"],
+                                        "league_name": ctx["name"],
+                                        "type": "BYE_FILLER",
+                                        "icon": "⏰",
+                                        "tag": f"Bye cover for {s.get('name')} (Week {s_bye})",
+                                        "severity": "info",
+                                    }
+                                )
+                                break
+
+            # Tier E: Empty Slot
+            if ctx["starter_pos_counts"].get(p_pos, 0) == 0 and p_pos in ("QB", "TE", "K", "DST"):
+                need_matches.append(
+                    {
+                        "league_id": ctx["id"],
+                        "league_name": ctx["name"],
+                        "type": "EMPTY_SLOT",
+                        "icon": "⚠️",
+                        "tag": f"Fills empty {p_pos} starting slot",
+                        "severity": "high",
+                    }
+                )
+
+        if not available_in:
+            continue
+
+        if needs_only and not need_matches:
+            continue
+
+        recommendations.append(
+            {
+                "player": p,
+                "name": p_name,
+                "pos": p_pos,
+                "team": p_team,
+                "bye": p.get("bye"),
+                "score": score,
+                "rank": rank,
+                "format_key": format_key,
+                "injury": p.get("injury"),
+                "available_in": available_in,
+                "available_count": len(available_in),
+                "need_matches": need_matches,
+                "is_priority": len(need_matches) > 0 or score > 60,
+                "is_watchlisted": is_watchlisted,
+                "watchlist_note": watchlist.get(norm, ""),
+            }
+        )
+
+    def _waiver_sort_key(item: dict[str, Any]) -> tuple[bool, float, float, int]:
+        matches = item.get("need_matches") or []
+        has_needs = len(matches) > 0
         avail = int(item.get("available_count", 0))
-        score = float(item.get("score") or 0.0)
+        score_val = float(item.get("score") or 0.0)
         rank_val = float(item.get("rank") or 999.0)
-        return (has_needs, avail, score, -rank_val)
+        return (has_needs, -rank_val, score_val, avail)
 
-    # Sort recommendations: first by presence of need matches, then score/rank
-    recommendations.sort(key=_rec_sort_key, reverse=True)
-
+    recommendations.sort(key=_waiver_sort_key, reverse=True)
     return recommendations[:limit]
 
 
@@ -803,6 +1133,39 @@ def get_team_view_data(
     team_player_names = [p.get("name", "") for p in starters + bench + taxi + ir if p.get("name")]
     team_news = get_player_news(player_names=team_player_names, limit=15, db_path=db_path)
 
+    # 4. Build positional depth rooms / hierarchy
+    rooms: dict[str, list[dict[str, Any]]] = {
+        "QB": [],
+        "RB": [],
+        "WR": [],
+        "TE": [],
+        "K": [],
+        "DST": [],
+    }
+    starter_ids = {str(s.get("id") or s.get("name", "")) for s in starters}
+
+    for p in starters + bench:
+        pos = str(p.get("pos", "")).upper()
+        if pos in rooms:
+            p_room = dict(p)
+            p_room["is_starter"] = str(p.get("id") or p.get("name", "")) in starter_ids
+            rooms[pos].append(p_room)
+
+    position_rooms: dict[str, list[dict[str, Any]]] = {}
+    for pos, p_list in rooms.items():
+        if not p_list:
+            continue
+        p_list.sort(
+            key=lambda item: (
+                0 if item.get("is_starter") else 1,
+                -float(item.get("score") or 0.0),
+                float(item.get("rank") or 999.0),
+            )
+        )
+        for depth_idx, item in enumerate(p_list):
+            item["room_depth"] = depth_idx + 1
+        position_rooms[pos] = p_list
+
     return {
         "league_id": league_id,
         "team_id": my_roster.get("team_id"),
@@ -815,6 +1178,7 @@ def get_team_view_data(
         "bench": bench,
         "taxi": taxi,
         "ir": ir,
+        "position_rooms": position_rooms,
         "start_sit_advice": start_sit_advice[:5],
         "drop_candidates": drop_candidates,
         "news": team_news,

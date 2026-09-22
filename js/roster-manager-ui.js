@@ -162,6 +162,66 @@ if (typeof window !== 'undefined' && !window.global) {
       irRows += renderPlayerRow(p, 'IR');
     }
 
+    // Positional Rooms & Depth Hierarchy
+    let roomsHtml = '';
+    const posRooms = data.position_rooms || {};
+    const roomPositions = ['QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+    const hasAnyRooms = roomPositions.some(
+      (pos) => Array.isArray(posRooms[pos]) && posRooms[pos].length > 0,
+    );
+
+    if (hasAnyRooms) {
+      let roomCardsHtml = '';
+      for (const pos of roomPositions) {
+        const pList = posRooms[pos] || [];
+        if (pList.length === 0) continue;
+        let playersHtml = '';
+        for (const p of pList) {
+          const injuryHtml = getInjuryBadge(p.injury);
+          const score = p.score != null ? Math.round(p.score) : '—';
+          const rankStr = p.rank != null ? `#${p.rank}` : '';
+          const isStarter = Boolean(p.is_starter);
+          playersHtml += `
+            <div class="room-player-item ${isStarter ? 'room-starter' : 'room-bench'}">
+              <span class="depth-num">#${p.room_depth || 1}</span>
+              <div class="room-player-info">
+                <div class="room-player-name" onclick="global.openPlayerNewsModal('${esc(p.name)}')" style="cursor:pointer" title="${esc(p.name)}">
+                  <b>${esc(p.name)}</b> ${injuryHtml}
+                </div>
+                <div class="meta" style="font-size:11px">
+                  ${esc(p.team || 'FA')} ${p.bye != null ? `· Bye ${p.bye}` : ''} ${rankStr ? `· ${rankStr}` : ''} · Score <b>${score}</b>
+                </div>
+              </div>
+              <span class="room-role-badge ${isStarter ? 'role-starter' : 'role-bench'}">${isStarter ? 'STARTER' : 'BENCH'}</span>
+            </div>
+          `;
+        }
+        roomCardsHtml += `
+          <div class="room-card room-pos-${pos.toLowerCase()}">
+            <div class="room-card-header">
+              <span class="pos-tag pos-${pos.toLowerCase()}"><b>${pos}</b></span>
+              <span class="room-count meta">${pList.length} Players</span>
+            </div>
+            <div class="room-players-list">
+              ${playersHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      roomsHtml = `
+        <div class="team-rooms-section">
+          <div class="section-title" style="margin-bottom:10px">
+            <h3 style="margin:0">🏟️ Positional Depth Charts & Room Hierarchy</h3>
+            <span class="meta" style="font-size:12px">Ranked positional room hierarchy evaluating starters and depth coverage</span>
+          </div>
+          <div class="team-rooms-grid">
+            ${roomCardsHtml}
+          </div>
+        </div>
+      `;
+    }
+
     return `
       ${renderSubHeader()}
       <div class="team-view-container">
@@ -228,6 +288,8 @@ if (typeof window !== 'undefined' && !window.global) {
             </table>
           </div>
         </div>
+
+        ${roomsHtml}
       </div>
     `;
   }
@@ -377,7 +439,49 @@ if (typeof window !== 'undefined' && !window.global) {
   function renderWaiversView() {
     const s = global.inSeasonState;
     const waivers = s.waivers || [];
+    const wf = s.waiverFilters || {
+      leagueId: 'all',
+      format: 'dyn_sf',
+      pos: 'ALL',
+      needsOnly: false,
+      watchlistOnly: false,
+      search: '',
+    };
+    const leagues = s.leagues || [];
+    const watchlist = s.watchlist || {};
 
+    // League Options
+    let leagueOptionsHtml = `<option value="all"${wf.leagueId === 'all' ? ' selected' : ''}>🌐 All Connected Leagues</option>`;
+    for (const lg of leagues) {
+      const isSel = wf.leagueId === lg.id;
+      const platBadge = lg.platform ? `[${lg.platform.toUpperCase()}] ` : '';
+      leagueOptionsHtml += `<option value="${esc(lg.id)}"${isSel ? ' selected' : ''}>${esc(platBadge + lg.name)}</option>`;
+    }
+
+    // Format Pills
+    const formatConfigs = [
+      { key: 'dyn_sf', label: 'Dynasty SF' },
+      { key: 'dyn_1qb', label: 'Dynasty 1QB' },
+      { key: 'red_ppr', label: 'Redraft PPR' },
+      { key: 'red_half', label: 'Redraft Half' },
+    ];
+    let formatPillsHtml = '<div class="format-pills">';
+    for (const f of formatConfigs) {
+      const isAct = wf.format === f.key;
+      formatPillsHtml += `<button type="button" class="format-pill-btn ${isAct ? 'active' : ''}" onclick="global.onWaiverFormatFilter('${f.key}')">${f.label}</button>`;
+    }
+    formatPillsHtml += '</div>';
+
+    // Position Pills
+    const posList = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
+    let posPillsHtml = '<div class="pos-pills">';
+    for (const pos of posList) {
+      const isAct = (wf.pos || 'ALL').toUpperCase() === pos;
+      posPillsHtml += `<button type="button" class="pos-pill-btn ${isAct ? 'active' : ''}" onclick="global.onWaiverPosFilter('${pos}')">${pos}</button>`;
+    }
+    posPillsHtml += '</div>';
+
+    // Table rows
     let rowsHtml = '';
     for (const [idx, item] of waivers.entries()) {
       const p = item.player || {};
@@ -387,38 +491,67 @@ if (typeof window !== 'undefined' && !window.global) {
       const score = item.score != null ? Math.round(item.score) : '—';
       const rank = item.rank != null ? `#${item.rank}` : '';
       const isPriority = item.is_priority;
+      const isWatchlisted = Boolean(item.is_watchlisted);
+      const note = item.watchlist_note || '';
 
-      // Available leagues badges
+      // Available leagues badges with deep-links
       let availHtml = '';
       for (const lg of item.available_in || []) {
-        availHtml += `<span class="avail-badge" title="Free Agent in ${esc(lg.league_name)}">${esc(lg.league_name)}</span>`;
+        if (lg.claim_url) {
+          availHtml += `<a href="${esc(lg.claim_url)}" target="_blank" rel="noopener noreferrer" class="waiver-claim-chip platform-${esc(lg.platform || 'manual')}" title="Make claim in ${esc(lg.league_name)}">${esc(lg.league_name)} ↗</a>`;
+        } else {
+          availHtml += `<span class="waiver-avail-chip">${esc(lg.league_name)}</span>`;
+        }
       }
 
-      // Need matches
+      // Need match badges
       let needHtml = '';
       for (const need of item.need_matches || []) {
-        needHtml += `<span class="need-match-badge" title="${esc(need.reason)}">🔥 ${esc(need.reason)} (${esc(need.league_name)})</span>`;
+        const type = need.type || 'UPGRADE';
+        let badgeCls = 'badge-upgrade';
+        if (type === 'INJURY_SUB') badgeCls = 'badge-injury';
+        else if (type === 'BYE_FILLER') badgeCls = 'badge-bye';
+        else if (type === 'HANDCUFF') badgeCls = 'badge-handcuff';
+        else if (type === 'EMPTY_SLOT') badgeCls = 'badge-empty';
+
+        needHtml += `<span class="need-badge ${badgeCls}" title="${esc(need.tag || need.reason)}">${esc(need.icon || '🔥')} ${esc(need.tag || need.reason)} <small>(${esc(need.league_name)})</small></span>`;
+      }
+
+      // Note chip
+      let noteHtml = '';
+      if (note) {
+        noteHtml = `<div class="watchlist-note-chip" onclick="global.openWaiverNoteModal('${esc(name)}')" title="Click to edit note">📝 ${esc(note)}</div>`;
       }
 
       rowsHtml += `
         <tr class="waiver-row ${isPriority ? 'waiver-priority' : ''}">
+          <td style="text-align:center">
+            <button type="button" class="watchlist-star-btn ${isWatchlisted ? 'is-active' : ''}" onclick="global.toggleWaiverWatchlist('${esc(name)}')" title="${isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}">${isWatchlisted ? '★' : '☆'}</button>
+          </td>
           <td class="num" style="color:var(--dim)">${idx + 1}</td>
           <td>
-            <span class="player-name-link" onclick="global.openPlayerNewsModal('${esc(name)}')">${esc(name)}</span>
+            <span class="player-name-link" onclick="global.openPlayerNewsModal('${esc(name)}')"><b>${esc(name)}</b></span>
             ${getInjuryBadge(p.injury)}
-            ${needHtml ? `<div style="margin-top:3px">${needHtml}</div>` : ''}
+            ${noteHtml}
+            ${needHtml ? `<div class="need-badges-wrap" style="margin-top:4px">${needHtml}</div>` : ''}
           </td>
           <td style="text-align:center"><span class="pos-tag pos-${esc(pos.toLowerCase())}">${esc(pos)}</span></td>
-          <td style="text-align:center">${esc(team)}</td>
+          <td style="text-align:center">
+            <b>${esc(team || 'FA')}</b>
+            ${item.bye != null ? `<div class="meta" style="font-size:10.5px">W${item.bye}</div>` : ''}
+          </td>
           <td class="num">${esc(rank)}</td>
-          <td class="num"><b>${esc(score)}</b></td>
+          <td class="num"><b style="font-size:14px">${esc(score)}</b></td>
           <td class="avail-col">${availHtml || '<span class="meta">All Rostered</span>'}</td>
-          <td>
-            <button type="button" class="small" onclick="global.openPlayerNewsModal('${esc(name)}')">Details</button>
+          <td style="text-align:right">
+            <button type="button" class="small" onclick="global.openWaiverNoteModal('${esc(name)}')">📝 Note</button>
+            <button type="button" class="small" onclick="global.openPlayerNewsModal('${esc(name)}')">News</button>
           </td>
         </tr>
       `;
     }
+
+    const watchlistCount = Object.keys(watchlist).length;
 
     return `
       ${renderSubHeader()}
@@ -426,7 +559,35 @@ if (typeof window !== 'undefined' && !window.global) {
         <div class="waivers-header-bar">
           <div>
             <h2 style="margin:0">⚡ Cross-League Waiver Wire & Market Radar</h2>
-            <div class="meta" style="margin-top:4px">Top free agents across your leagues ranked by rest-of-season consensus value and team need matching.</div>
+            <div class="meta" style="margin-top:4px">Top free agents across your leagues ranked by rest-of-season format value, injury subs, and team need matching.</div>
+          </div>
+        </div>
+
+        <div class="waivers-controls-bar">
+          <div class="waivers-control-group">
+            <label style="font-size:12px; font-weight:700; color:var(--text)">League:</label>
+            <select id="waiver_league_filter" class="league-select" onchange="global.onWaiverLeagueFilter(this.value)">
+              ${leagueOptionsHtml}
+            </select>
+          </div>
+
+          <div class="waivers-control-group">
+            <label style="font-size:12px; font-weight:700; color:var(--text)">Format:</label>
+            ${formatPillsHtml}
+          </div>
+
+          <div class="waivers-control-group">
+            <label style="font-size:12px; font-weight:700; color:var(--text)">Pos:</label>
+            ${posPillsHtml}
+          </div>
+
+          <div class="waivers-control-group" style="gap:8px">
+            <button type="button" class="waiver-toggle-btn ${wf.needsOnly ? 'active' : ''}" onclick="global.onWaiverNeedsToggle()" title="Show only players matching team needs">🔥 Needs Only</button>
+            <button type="button" class="waiver-toggle-btn ${wf.watchlistOnly ? 'active' : ''}" onclick="global.onWaiverWatchlistToggle()" title="Show only watchlisted players">⭐ Watchlist (${watchlistCount})</button>
+          </div>
+
+          <div class="waivers-control-group" style="margin-left:auto">
+            <input type="text" id="waiver_search_input" class="waiver-search-input" placeholder="Search free agents..." value="${esc(wf.search || '')}" oninput="global.onWaiverSearchInput(this.value)" />
           </div>
         </div>
 
@@ -434,17 +595,18 @@ if (typeof window !== 'undefined' && !window.global) {
           <table class="waiver-table">
             <thead>
               <tr>
-                <th style="width:40px">#</th>
+                <th style="width:36px; text-align:center">⭐</th>
+                <th style="width:36px">#</th>
                 <th>Player & Team Need Match</th>
                 <th style="width:50px; text-align:center">Pos</th>
                 <th style="width:55px; text-align:center">Team</th>
-                <th class="num" style="width:60px">Cons Rank</th>
-                <th class="num" style="width:60px">Score</th>
-                <th>Available In Leagues</th>
-                <th style="width:70px"></th>
+                <th class="num" style="width:65px">Format Rank</th>
+                <th class="num" style="width:55px">Score</th>
+                <th>Available In Leagues (Claim Links)</th>
+                <th style="width:115px; text-align:right"></th>
               </tr>
             </thead>
-            <tbody>${rowsHtml || '<tr><td colspan="8">No waiver candidates currently loaded.</td></tr>'}</tbody>
+            <tbody>${rowsHtml || '<tr><td colspan="9" style="text-align:center; padding:30px; color:var(--dim)">No waiver candidates match the current filters.</td></tr>'}</tbody>
           </table>
         </div>
       </div>
@@ -939,6 +1101,92 @@ if (typeof window !== 'undefined' && !window.global) {
     if (typeof global.openLeagueSetup === 'function') {
       global.openLeagueSetup();
     }
+  };
+
+  let waiverSearchTimeout = null;
+  global.onWaiverSearchInput = (val) => {
+    global.inSeasonState.waiverFilters.search = val;
+    clearTimeout(waiverSearchTimeout);
+    waiverSearchTimeout = setTimeout(async () => {
+      await global.inSeasonManager.fetchWaivers();
+      renderManagerView();
+      const inp = document.getElementById('waiver_search_input');
+      if (inp) {
+        inp.focus();
+        inp.selectionStart = inp.selectionEnd = inp.value.length;
+      }
+    }, 250);
+  };
+
+  global.onWaiverLeagueFilter = async (leagueId) => {
+    await global.inSeasonManager.fetchWaivers({ leagueId });
+    renderManagerView();
+  };
+
+  global.onWaiverFormatFilter = async (format) => {
+    await global.inSeasonManager.fetchWaivers({ format });
+    renderManagerView();
+  };
+
+  global.onWaiverPosFilter = async (pos) => {
+    await global.inSeasonManager.fetchWaivers({ pos });
+    renderManagerView();
+  };
+
+  global.onWaiverNeedsToggle = async () => {
+    const cur = global.inSeasonState.waiverFilters.needsOnly;
+    await global.inSeasonManager.fetchWaivers({ needsOnly: !cur });
+    renderManagerView();
+  };
+
+  global.onWaiverWatchlistToggle = async () => {
+    const cur = global.inSeasonState.waiverFilters.watchlistOnly;
+    await global.inSeasonManager.fetchWaivers({ watchlistOnly: !cur });
+    renderManagerView();
+  };
+
+  global.toggleWaiverWatchlist = async (playerName) => {
+    await global.inSeasonManager.toggleWatchlist(playerName);
+    renderManagerView();
+  };
+
+  global.openWaiverNoteModal = (playerName) => {
+    const modal = document.getElementById('playerModalbox');
+    const overlay = document.getElementById('playerOverlay');
+    if (!modal || !overlay) return;
+
+    const norm = playerName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const currentNote = global.inSeasonState.watchlist?.[norm] || '';
+    const isWatchlisted = Boolean(global.inSeasonState.watchlist?.[norm] !== undefined);
+
+    modal.innerHTML = `
+      <h3>📝 Waiver Note: ${esc(playerName)}
+        <button class="close" onclick="document.getElementById('playerOverlay').style.display='none'">×</button>
+      </h3>
+      <div style="padding:14px 0">
+        <p class="meta" style="margin-top:0">Save private notes or waiver bidding targets for this player across your leagues.</p>
+        <textarea id="waiver_note_textarea" class="waiver-note-input" rows="4" style="width:100%; box-sizing:border-box; background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:10px; font-size:13px; resize:vertical" placeholder="e.g. Must-add if lead back is ruled out; bid $15 FAAB">${esc(currentNote)}</textarea>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px">
+          <button type="button" class="act" onclick="global.toggleWaiverWatchlist('${esc(playerName)}'); document.getElementById('playerOverlay').style.display='none';">⭐ ${isWatchlisted ? 'Un-Watchlist' : 'Add to Watchlist'}</button>
+          <div style="display:flex; gap:8px">
+            <button type="button" class="act" onclick="document.getElementById('playerOverlay').style.display='none'">Cancel</button>
+            <button type="button" class="act primary" onclick="global.saveWaiverNote('${esc(playerName)}')">Save Note</button>
+          </div>
+        </div>
+      </div>
+    `;
+    overlay.style.display = 'flex';
+    const ta = document.getElementById('waiver_note_textarea');
+    if (ta) ta.focus();
+  };
+
+  global.saveWaiverNote = async (playerName) => {
+    const ta = document.getElementById('waiver_note_textarea');
+    const note = ta ? ta.value.trim() : '';
+    await global.inSeasonManager.saveWatchlistNote(playerName, note);
+    const overlay = document.getElementById('playerOverlay');
+    if (overlay) overlay.style.display = 'none';
+    renderManagerView();
   };
 
   global.renderManagerView = renderManagerView;

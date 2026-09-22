@@ -713,8 +713,30 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
 
             if path == "/api/manager/waivers":
                 limit = int(params.get("limit", ["50"])[0])
-                matrix = mgr.get_waiver_matrix(limit=limit)
+                league_id = params.get("league_id", [None])[0]
+                format_key = params.get("format", ["dyn_sf"])[0] or "dyn_sf"
+                pos_filter = params.get("pos", [None])[0]
+                needs_only_str = params.get("needs_only", ["false"])[0].lower()
+                needs_only = needs_only_str in ("true", "1", "yes")
+                search = params.get("search", [None])[0]
+                watchlist_only_str = params.get("watchlist_only", ["false"])[0].lower()
+                watchlist_only = watchlist_only_str in ("true", "1", "yes")
+
+                matrix = mgr.get_waiver_matrix(
+                    limit=limit,
+                    league_id=league_id,
+                    format_key=format_key,
+                    pos_filter=pos_filter,
+                    needs_only=needs_only,
+                    search=search,
+                    watchlist_only=watchlist_only,
+                )
                 self.send_json({"ok": True, "waivers": matrix})
+                return
+
+            if path == "/api/manager/watchlist":
+                watchlist = mgr.get_watchlist()
+                self.send_json({"ok": True, "watchlist": watchlist})
                 return
 
             if path == "/api/manager/power-rankings":
@@ -891,6 +913,26 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json(
                     {"ok": False, "error": f"Unsupported platform '{platform}'"}, status=400
                 )
+                return
+
+            if path == "/api/manager/watchlist/toggle":
+                player_name = body.get("player_name", "")
+                note = body.get("note", "")
+                if not player_name:
+                    self.send_json({"ok": False, "error": "Missing player_name"}, status=400)
+                    return
+                res = mgr.toggle_watchlist_item(player_name, note=note)
+                self.send_json(res)
+                return
+
+            if path == "/api/manager/watchlist/note":
+                player_name = body.get("player_name", "")
+                note = body.get("note", "")
+                if not player_name:
+                    self.send_json({"ok": False, "error": "Missing player_name"}, status=400)
+                    return
+                res = mgr.save_watchlist_note(player_name, note=note)
+                self.send_json(res)
                 return
 
             self.send_error(404, f"Manager endpoint {path} not found")
