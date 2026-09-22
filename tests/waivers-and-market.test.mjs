@@ -254,6 +254,73 @@ assert(typeof ctx.window.onWaiverNeedsToggle === 'function', 'Exports onWaiverNe
 assert(typeof ctx.window.onWaiverWatchlistToggle === 'function', 'Exports onWaiverWatchlistToggle');
 assert(typeof ctx.window.openWaiverNoteModal === 'function', 'Exports openWaiverNoteModal');
 
+// 7. Strict Dynasty vs Redraft League Isolation
+const isolationScript = `
+import json, sys, os
+sys.path.insert(0, os.path.abspath('.'))
+from scripts import in_season_manager as mgr
+
+leagues = mgr.get_leagues(db_path='${TEST_DB.replace(/\\/g, '\\\\')}')
+dynasty_lids = {lg["id"] for lg in leagues if lg["is_dynasty"]}
+redraft_lids = {lg["id"] for lg in leagues if not lg["is_dynasty"]}
+
+dyn_waivers = mgr.get_waiver_matrix(format_key="dyn_sf", limit=50, db_path='${TEST_DB.replace(/\\/g, '\\\\')}')
+red_waivers = mgr.get_waiver_matrix(format_key="red_ppr", limit=50, db_path='${TEST_DB.replace(/\\/g, '\\\\')}')
+
+dyn_avail_lids = {a["league_id"] for w in dyn_waivers for a in w.get("available_in", [])}
+dyn_need_lids = {m["league_id"] for w in dyn_waivers for m in w.get("need_matches", [])}
+
+red_avail_lids = {a["league_id"] for w in red_waivers for a in w.get("available_in", [])}
+red_need_lids = {m["league_id"] for w in red_waivers for m in w.get("need_matches", [])}
+
+# Format scoring fallback test: dynasty rookie should NOT inherit rank in redraft
+college_stash = {"name": "College Rookie", "pos": "WR", "dynSF": 35}
+dyn_rank, dyn_score = mgr.calculate_player_rank_and_score(college_stash, "dyn_sf")
+red_rank, red_score = mgr.calculate_player_rank_and_score(college_stash, "red_ppr")
+
+print(json.dumps({
+    "dynasty_lids": list(dynasty_lids),
+    "redraft_lids": list(redraft_lids),
+    "dyn_avail_has_redraft": bool(dyn_avail_lids.intersection(redraft_lids)),
+    "dyn_need_has_redraft": bool(dyn_need_lids.intersection(redraft_lids)),
+    "red_avail_has_dynasty": bool(red_avail_lids.intersection(dynasty_lids)),
+    "red_need_has_dynasty": bool(red_need_lids.intersection(dynasty_lids)),
+    "college_stash_dyn_rank": dyn_rank,
+    "college_stash_red_rank": red_rank,
+    "college_stash_red_score": red_score,
+}))
+`;
+
+const res7 = pyRunner(isolationScript);
+assert(!res7.dyn_avail_has_redraft, 'Dynasty waiver matrix contains 0 Redraft leagues in available_in');
+assert(!res7.dyn_need_has_redraft, 'Dynasty waiver matrix contains 0 Redraft leagues in need_matches');
+assert(!res7.red_avail_has_dynasty, 'Redraft waiver matrix contains 0 Dynasty leagues in available_in');
+assert(!res7.red_need_has_dynasty, 'Redraft waiver matrix contains 0 Dynasty leagues in need_matches');
+eq(res7.college_stash_dyn_rank, 35, 'College prospect has rank 35 in Dynasty SF');
+eq(res7.college_stash_red_rank, 999.0, 'College prospect without redraft rank is unranked in Redraft PPR');
+eq(res7.college_stash_red_score, 0.0, 'College prospect without redraft rank has 0 score in Redraft PPR');
+
+// 8. Frontend Auto-Sync & Scope Isolation in Sandbox
+state.leagues = [
+  { id: 'lg_dyn_1', name: 'Dynasty League', platform: 'sleeper', is_dynasty: true },
+  { id: 'lg_red_1', name: 'Redraft League', platform: 'espn', is_dynasty: false },
+];
+
+// Selecting redraft league auto-switches format to red_ppr
+await ctx.window.onWaiverLeagueFilter('lg_red_1');
+eq(state.waiverFilters.leagueId, 'lg_red_1', 'Selected redraft league');
+eq(state.waiverFilters.format, 'red_ppr', 'Auto-switched format to red_ppr on redraft league selection');
+
+// Selecting dynasty league auto-switches format to dyn_sf
+await ctx.window.onWaiverLeagueFilter('lg_dyn_1');
+eq(state.waiverFilters.leagueId, 'lg_dyn_1', 'Selected dynasty league');
+eq(state.waiverFilters.format, 'dyn_sf', 'Auto-switched format to dyn_sf on dynasty league selection');
+
+// Switching format to red_ppr while on dynasty league auto-resets leagueId to 'all'
+await ctx.window.onWaiverFormatFilter('red_ppr');
+eq(state.waiverFilters.format, 'red_ppr', 'Switched format to red_ppr');
+eq(state.waiverFilters.leagueId, 'all', 'Auto-reset leagueId to all when switching format category');
+
 // Clean up test DB
 if (existsSync(TEST_DB)) {
   try {
@@ -265,3 +332,4 @@ const suitePassed = finishSuite('Waivers & Market Radar, Need Matching & Team Ro
 if (!suitePassed) {
   process.exit(1);
 }
+

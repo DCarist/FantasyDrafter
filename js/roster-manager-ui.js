@@ -26,15 +26,35 @@ if (typeof window !== 'undefined' && !window.global) {
     const leagues = s.leagues || [];
     const activeId = s.activeLeagueId;
 
+    const dynastyLeagues = leagues.filter((l) => l.is_dynasty);
+    const redraftLeagues = leagues.filter((l) => !l.is_dynasty);
+
     let optionsHtml = '';
-    for (const l of leagues) {
-      const isSel = l.id === activeId;
-      const platBadge = l.platform ? `[${l.platform.toUpperCase()}] ` : '';
-      optionsHtml += `<option value="${esc(l.id)}"${isSel ? ' selected' : ''}>${esc(platBadge + l.name)}</option>`;
+    if (dynastyLeagues.length > 0) {
+      optionsHtml += '<optgroup label="👑 Dynasty Leagues">';
+      for (const l of dynastyLeagues) {
+        const isSel = l.id === activeId;
+        const platBadge = l.platform ? `[${l.platform.toUpperCase()}] ` : '';
+        optionsHtml += `<option value="${esc(l.id)}"${isSel ? ' selected' : ''}>${esc(platBadge + l.name)}</option>`;
+      }
+      optionsHtml += '</optgroup>';
+    }
+    if (redraftLeagues.length > 0) {
+      optionsHtml += '<optgroup label="🔄 Redraft Leagues">';
+      for (const l of redraftLeagues) {
+        const isSel = l.id === activeId;
+        const platBadge = l.platform ? `[${l.platform.toUpperCase()}] ` : '';
+        optionsHtml += `<option value="${esc(l.id)}"${isSel ? ' selected' : ''}>${esc(platBadge + l.name)}</option>`;
+      }
+      optionsHtml += '</optgroup>';
+    }
+    if (leagues.length === 0) {
+      optionsHtml = '<option value="">(No Leagues Synced)</option>';
     }
 
     const curLeague = leagues.find((l) => l.id === activeId);
     const platName = curLeague?.platform ? curLeague.platform.toUpperCase() : 'FANTASY';
+    const typeBadge = curLeague?.is_dynasty ? 'DYNASTY' : 'REDRAFT';
 
     return `
       <div class="manager-sub-header">
@@ -42,10 +62,11 @@ if (typeof window !== 'undefined' && !window.global) {
           <label class="set">
             <span style="font-weight:700; color:var(--text)">🏆 Active League:</span>
             <select id="mgr_league_select" class="league-select" onchange="global.inSeasonManager.selectLeague(this.value)">
-              ${optionsHtml || '<option value="">(No Leagues Synced)</option>'}
+              ${optionsHtml}
             </select>
           </label>
           <span class="platform-badge ${platName.toLowerCase()}">${esc(platName)}</span>
+          <span class="platform-badge ${typeBadge.toLowerCase()}">${typeBadge}</span>
           <button type="button" class="act small league-setup-subhdr-btn" onclick="global.openLeagueSetupForManager(global.inSeasonState.activeLeagueId)" title="Open League Setup & Draft Rules for Active League">⚙️ League Setup</button>
           ${
             curLeague?.last_refreshed
@@ -306,6 +327,7 @@ if (typeof window !== 'undefined' && !window.global) {
         <div class="league-card ${isSel ? 'active-league-card' : ''}">
           <div class="league-card-header">
             <span class="platform-badge ${plat.toLowerCase()}">${esc(plat)}</span>
+            <span class="platform-badge ${lg.is_dynasty ? 'dynasty' : 'redraft'}">${lg.is_dynasty ? '👑 DYNASTY' : '🔄 REDRAFT'}</span>
             <span class="league-season-badge">${esc(lg.season || '2026')}</span>
           </div>
           <h3 class="league-card-name">${esc(lg.name)}</h3>
@@ -450,27 +472,53 @@ if (typeof window !== 'undefined' && !window.global) {
     const leagues = s.leagues || [];
     const watchlist = s.watchlist || {};
 
+    const isDynastyFormat = (wf.format || 'dyn_sf').startsWith('dyn');
+    const relevantLeagues = leagues.filter((lg) =>
+      isDynastyFormat ? Boolean(lg.is_dynasty) : !lg.is_dynasty
+    );
+    const allLabel = isDynastyFormat
+      ? '👑 All Connected Dynasty Leagues'
+      : '🔄 All Connected Redraft Leagues';
+
+    // Ensure selected league matches format
+    if (wf.leagueId !== 'all' && !relevantLeagues.some((l) => l.id === wf.leagueId)) {
+      wf.leagueId = 'all';
+    }
+
     // League Options
-    let leagueOptionsHtml = `<option value="all"${wf.leagueId === 'all' ? ' selected' : ''}>🌐 All Connected Leagues</option>`;
-    for (const lg of leagues) {
+    let leagueOptionsHtml = `<option value="all"${wf.leagueId === 'all' ? ' selected' : ''}>${allLabel}</option>`;
+    for (const lg of relevantLeagues) {
       const isSel = wf.leagueId === lg.id;
       const platBadge = lg.platform ? `[${lg.platform.toUpperCase()}] ` : '';
       leagueOptionsHtml += `<option value="${esc(lg.id)}"${isSel ? ' selected' : ''}>${esc(platBadge + lg.name)}</option>`;
     }
 
-    // Format Pills
-    const formatConfigs = [
+    // Format Pills grouped by Dynasty vs Redraft
+    const dynastyFormats = [
       { key: 'dyn_sf', label: 'Dynasty SF' },
       { key: 'dyn_1qb', label: 'Dynasty 1QB' },
+    ];
+    const redraftFormats = [
       { key: 'red_ppr', label: 'Redraft PPR' },
       { key: 'red_half', label: 'Redraft Half' },
     ];
-    let formatPillsHtml = '<div class="format-pills">';
-    for (const f of formatConfigs) {
+
+    let formatPillsHtml = '<div class="format-pill-groups" style="display:flex; gap:8px; align-items:center">';
+    formatPillsHtml += '<div class="format-pill-group" style="display:flex; background:rgba(255,215,0,0.06); padding:2px 4px; border-radius:6px; border:1px solid rgba(255,215,0,0.2); gap:4px; align-items:center">';
+    formatPillsHtml += '<span style="font-size:10px; font-weight:700; color:#ffd700; margin:0 2px">👑 DYNASTY:</span>';
+    for (const f of dynastyFormats) {
       const isAct = wf.format === f.key;
       formatPillsHtml += `<button type="button" class="format-pill-btn ${isAct ? 'active' : ''}" onclick="global.onWaiverFormatFilter('${f.key}')">${f.label}</button>`;
     }
     formatPillsHtml += '</div>';
+
+    formatPillsHtml += '<div class="format-pill-group" style="display:flex; background:rgba(56,189,248,0.06); padding:2px 4px; border-radius:6px; border:1px solid rgba(56,189,248,0.2); gap:4px; align-items:center">';
+    formatPillsHtml += '<span style="font-size:10px; font-weight:700; color:#38bdf8; margin:0 2px">🔄 REDRAFT:</span>';
+    for (const f of redraftFormats) {
+      const isAct = wf.format === f.key;
+      formatPillsHtml += `<button type="button" class="format-pill-btn ${isAct ? 'active' : ''}" onclick="global.onWaiverFormatFilter('${f.key}')">${f.label}</button>`;
+    }
+    formatPillsHtml += '</div></div>';
 
     // Position Pills
     const posList = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'];
@@ -559,7 +607,11 @@ if (typeof window !== 'undefined' && !window.global) {
         <div class="waivers-header-bar">
           <div>
             <h2 style="margin:0">⚡ Cross-League Waiver Wire & Market Radar</h2>
-            <div class="meta" style="margin-top:4px">Top free agents across your leagues ranked by rest-of-season format value, injury subs, and team need matching.</div>
+            <div class="meta" style="margin-top:4px">${
+              isDynastyFormat
+                ? '👑 Showing free agents across connected Dynasty leagues (Redraft leagues excluded)'
+                : '🔄 Showing free agents across connected Redraft leagues (Dynasty leagues excluded)'
+            }</div>
           </div>
         </div>
 
@@ -1119,12 +1171,36 @@ if (typeof window !== 'undefined' && !window.global) {
   };
 
   global.onWaiverLeagueFilter = async (leagueId) => {
+    const s = global.inSeasonState;
+    if (leagueId && leagueId !== 'all') {
+      const targetLg = (s.leagues || []).find((l) => l.id === leagueId);
+      if (targetLg) {
+        const isDyn = Boolean(targetLg.is_dynasty);
+        const curFormatIsDyn = (s.waiverFilters.format || 'dyn_sf').startsWith('dyn');
+        if (isDyn && !curFormatIsDyn) {
+          s.waiverFilters.format = 'dyn_sf';
+        } else if (!isDyn && curFormatIsDyn) {
+          s.waiverFilters.format = 'red_ppr';
+        }
+      }
+    }
     await global.inSeasonManager.fetchWaivers({ leagueId });
     renderManagerView();
   };
 
   global.onWaiverFormatFilter = async (format) => {
-    await global.inSeasonManager.fetchWaivers({ format });
+    const s = global.inSeasonState;
+    const newFormatIsDyn = format.startsWith('dyn');
+    if (s.waiverFilters.leagueId && s.waiverFilters.leagueId !== 'all') {
+      const targetLg = (s.leagues || []).find((l) => l.id === s.waiverFilters.leagueId);
+      if (targetLg) {
+        const lgIsDyn = Boolean(targetLg.is_dynasty);
+        if (lgIsDyn !== newFormatIsDyn) {
+          s.waiverFilters.leagueId = 'all';
+        }
+      }
+    }
+    await global.inSeasonManager.fetchWaivers({ format, leagueId: s.waiverFilters.leagueId });
     renderManagerView();
   };
 

@@ -206,6 +206,23 @@ def save_league(
     }
 
 
+def is_dynasty_league(league: dict[str, Any]) -> bool:
+    """Returns True if the league is a dynasty format, False if redraft."""
+    settings = league.get("settings") or {}
+    lt = str(settings.get("leagueType") or "").lower()
+    if lt == "dynasty":
+        return True
+    if lt == "redraft":
+        return False
+    if settings.get("type") == 2 or settings.get("sleeper_type") == 2:
+        return True
+    name = str(league.get("name") or "").lower()
+    if "dynasty" in name:
+        return True
+    roster_positions = settings.get("roster_positions") or []
+    return any(str(p).upper() == "TAXI" for p in roster_positions)
+
+
 def get_leagues(db_path: str = DB_PATH) -> list[dict[str, Any]]:
     """Retrieves all registered leagues with team count and latest refresh info."""
     init_db(db_path)
@@ -217,6 +234,8 @@ def get_leagues(db_path: str = DB_PATH) -> list[dict[str, Any]]:
         for r in rows:
             league = dict(r)
             league["settings"] = json.loads(league.get("settings_json") or "{}")
+            league["is_dynasty"] = is_dynasty_league(league)
+            league["league_type"] = "dynasty" if league["is_dynasty"] else "redraft"
 
             # Check latest snapshot for this league
             snap_cur = conn.execute(
@@ -625,39 +644,58 @@ def calculate_player_rank_and_score(
         rank_cand = player.get("dyn1QB") or player.get("dyn_1qb")
         if rank_cand is None and str(player.get("pos", "")).upper() != "QB":
             rank_cand = player.get("dynSF") or player.get("dyn_sf")
-    elif fmt in ("red_ppr", "redraft_ppr", "ppr"):
+    elif fmt in ("red_sf", "red_sf_ppr", "redraft_sf"):
         rank_cand = (
             player.get("red_sf_ppr")
-            or player.get("red_1qb_ppr")
+            or player.get("red_sf_half")
+            or player.get("red_sf_std")
+            or player.get("redraft")
+        )
+    elif fmt in ("red_ppr", "redraft_ppr", "ppr"):
+        rank_cand = (
+            player.get("red_1qb_ppr")
             or player.get("espn_ppr")
             or player.get("boris_ppr")
             or player.get("redraft")
+            or player.get("red_sf_ppr")
         )
     elif fmt in ("red_half", "redraft_half", "half"):
         rank_cand = (
-            player.get("red_sf_half")
-            or player.get("red_1qb_half")
+            player.get("red_1qb_half")
             or player.get("boris_half")
             or player.get("redraft")
+            or player.get("red_sf_half")
         )
     elif fmt in ("red_std", "redraft_std", "std", "standard"):
         rank_cand = (
-            player.get("red_sf_std")
-            or player.get("red_1qb_std")
+            player.get("red_1qb_std")
             or player.get("espn_std")
             or player.get("boris_std")
             or player.get("redraft")
+            or player.get("red_sf_std")
         )
 
     # Fallbacks across rank columns
     if rank_cand is None:
-        rank_cand = (
-            player.get("dynSF")
-            or player.get("redraft")
-            or player.get("dyn1QB")
-            or player.get("red_1qb_half")
-            or player.get("adp")
-        )
+        if fmt.startswith("dyn"):
+            rank_cand = (
+                player.get("dynSF")
+                or player.get("dyn1QB")
+                or player.get("dyn_sf")
+                or player.get("dyn_1qb")
+                or player.get("redraft")
+                or player.get("adp")
+            )
+        else:
+            rank_cand = (
+                player.get("redraft")
+                or player.get("red_1qb_ppr")
+                or player.get("red_1qb_half")
+                or player.get("red_1qb_std")
+                or player.get("espn_ppr")
+                or player.get("boris_ppr")
+                or player.get("adp")
+            )
 
     if rank_cand is not None:
         try:
@@ -691,11 +729,25 @@ def get_waiver_matrix(
     if not all_leagues:
         return []
 
+    is_dynasty_format = format_key.startswith("dyn")
+
     # Scope filtering: single league or all connected leagues
     if league_id:
         target_leagues = [lg for lg in all_leagues if str(lg.get("id")) == str(league_id)]
+        if target_leagues:
+            lg_is_dyn = is_dynasty_league(target_leagues[0])
+            if lg_is_dyn and not is_dynasty_format:
+                format_key = "dyn_sf"
+                is_dynasty_format = True
+            elif not lg_is_dyn and is_dynasty_format:
+                format_key = "red_ppr"
+                is_dynasty_format = False
     else:
-        target_leagues = all_leagues
+        # Rule: redraft leagues don't show in dynasty, and vice-versa
+        if is_dynasty_format:
+            target_leagues = [lg for lg in all_leagues if is_dynasty_league(lg)]
+        else:
+            target_leagues = [lg for lg in all_leagues if not is_dynasty_league(lg)]
 
     if not target_leagues:
         return []
@@ -804,11 +856,19 @@ def get_waiver_matrix(
             for b in my_bench:
                 if isinstance(b, dict):
                     bpos = str(b.get("pos", "")).upper()
-                    brank = float(b.get("rank") or 999.0)
-                    if bpos not in bench_lowest_by_pos or brank > float(
-                        bench_lowest_by_pos[bpos].get("rank") or 999.0
+                    bname = b.get("name", "")
+                    b_matched = get_player_by_name(bname) or b
+                    brank, bscore = calculate_player_rank_and_score(
+                        b_matched, format_key=format_key
+                    )
+                    b_enriched = dict(b)
+                    b_enriched["rank"] = brank
+                    b_enriched["score"] = bscore
+                    if brank < 600 and (
+                        bpos not in bench_lowest_by_pos
+                        or brank > float(bench_lowest_by_pos[bpos].get("rank") or 0.0)
                     ):
-                        bench_lowest_by_pos[bpos] = b
+                        bench_lowest_by_pos[bpos] = b_enriched
 
             league_contexts.append(
                 {
@@ -816,6 +876,7 @@ def get_waiver_matrix(
                     "name": lg.get("name", "League"),
                     "platform": platform,
                     "claim_url": claim_url,
+                    "is_dynasty": is_dynasty_league(lg),
                     "owned_names": owned_names,
                     "explicit_fa": explicit_fa,
                     "my_starters": my_starters,
@@ -918,10 +979,17 @@ def get_waiver_matrix(
                     )
 
             # Tier C: Upgrade Opportunity
-            if p_pos in ctx["bench_lowest_by_pos"] and rank < 200:
+            if p_pos in ctx["bench_lowest_by_pos"] and rank < 300:
                 bench_target = ctx["bench_lowest_by_pos"][p_pos]
                 bench_rank = float(bench_target.get("rank") or 999.0)
-                if bench_rank - rank >= 15:
+                p_inj_status = (
+                    p.get("injury", {}).get("status") if isinstance(p.get("injury"), dict) else None
+                )
+                if (
+                    p_inj_status not in ("OUT", "IR")
+                    and bench_rank < 600
+                    and (bench_rank - rank) >= 15
+                ):
                     diff = round(bench_rank - rank)
                     need_matches.append(
                         {
@@ -1042,6 +1110,17 @@ def get_team_view_data(
     if not my_roster:
         my_roster = rosters[0]
 
+    cur_settings = cur_league.get("settings", {}) if cur_league else {}
+    roster_slots = cur_settings.get("rosterSlots") or cur_settings.get("roster_positions") or []
+    has_superflex = any(
+        str(s).upper() in ("SUPERFLEX", "SUPER_FLEX", "REC_FLEX", "OP") for s in roster_slots
+    )
+    lg_is_dyn = is_dynasty_league(cur_league) if cur_league else False
+    if lg_is_dyn:
+        team_format_key = "dyn_sf" if has_superflex else "dyn_1qb"
+    else:
+        team_format_key = "red_sf" if has_superflex else "red_ppr"
+
     # Enrich players with master ranking, depth chart, injury, and schedule data
     def enrich_player(p_raw: Any) -> dict[str, Any]:
         if isinstance(p_raw, dict):
@@ -1049,17 +1128,21 @@ def get_team_view_data(
             base = get_player_by_name(name) or {}
             merged = dict(base)
             merged.update(p_raw)
-            return merged
-        name = str(p_raw)
-        base = get_player_by_name(name) or {"name": name, "pos": "FLEX", "team": "FA"}
-        return dict(base)
+        else:
+            name = str(p_raw)
+            base = get_player_by_name(name) or {"name": name, "pos": "FLEX", "team": "FA"}
+            merged = dict(base)
+
+        prank, pscore = calculate_player_rank_and_score(merged, format_key=team_format_key)
+        merged["rank"] = prank
+        merged["score"] = pscore
+        return merged
 
     starters = [enrich_player(p) for p in my_roster.get("starters", [])]
-    cur_settings = cur_league.get("settings", {}) if cur_league else {}
-    roster_slots = cur_settings.get("rosterSlots")
-    roster_positions = cur_settings.get("roster_positions")
+    roster_slots_align = cur_settings.get("rosterSlots")
+    roster_positions_align = cur_settings.get("roster_positions")
     starters = align_starters_to_slots(
-        starters, roster_slots=roster_slots, roster_positions=roster_positions
+        starters, roster_slots=roster_slots_align, roster_positions=roster_positions_align
     )
     bench = [enrich_player(p) for p in my_roster.get("bench", [])]
     taxi = [enrich_player(p) for p in my_roster.get("taxi", [])]
@@ -1219,6 +1302,17 @@ def get_league_power_rankings(
         "TE": [],
     }
 
+    cur_settings = cur_league.get("settings", {}) if cur_league else {}
+    roster_slots = cur_settings.get("rosterSlots") or cur_settings.get("roster_positions") or []
+    has_superflex = any(
+        str(s).upper() in ("SUPERFLEX", "SUPER_FLEX", "REC_FLEX", "OP") for s in roster_slots
+    )
+    lg_is_dyn = is_dynasty_league(cur_league) if cur_league else False
+    if lg_is_dyn:
+        team_format_key = "dyn_sf" if has_superflex else "dyn_1qb"
+    else:
+        team_format_key = "red_sf" if has_superflex else "red_ppr"
+
     for r in rosters:
         starters = r.get("starters", [])
         bench = r.get("bench", [])
@@ -1231,8 +1325,10 @@ def get_league_power_rankings(
         for p in starters:
             name = p.get("name") if isinstance(p, dict) else str(p)
             info = get_player_by_name(name) or {}
-            sc = float(info.get("score") or (1000 - int(info.get("rank", 999))))
-            pos = str(info.get("pos") or p.get("pos", "")).upper()
+            _, sc = calculate_player_rank_and_score(info, format_key=team_format_key)
+            if sc <= 0.0:
+                sc = float(info.get("score") or (1000 - int(info.get("rank", 999))))
+            pos = str(info.get("pos") or (p.get("pos") if isinstance(p, dict) else "")).upper()
             starter_scores.append(sc)
             if pos in pos_totals:
                 pos_totals[pos] += sc
@@ -1241,8 +1337,10 @@ def get_league_power_rankings(
         for p in bench:
             name = p.get("name") if isinstance(p, dict) else str(p)
             info = get_player_by_name(name) or {}
-            sc = float(info.get("score") or (1000 - int(info.get("rank", 999))))
-            pos = str(info.get("pos") or p.get("pos", "")).upper()
+            _, sc = calculate_player_rank_and_score(info, format_key=team_format_key)
+            if sc <= 0.0:
+                sc = float(info.get("score") or (1000 - int(info.get("rank", 999))))
+            pos = str(info.get("pos") or (p.get("pos") if isinstance(p, dict) else "")).upper()
             bench_scores.append(sc)
             if pos in pos_totals:
                 pos_totals[pos] += sc * 0.5  # Weight bench assets at 50%

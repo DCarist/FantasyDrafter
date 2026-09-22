@@ -3131,6 +3131,18 @@ div.setup-field select {
   border: 1px solid rgba(224, 90, 109, 0.4);
 }
 
+.platform-badge.dynasty {
+  background: rgba(255, 215, 0, 0.15);
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.4);
+}
+
+.platform-badge.redraft {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
 /* Manager Content Container */
 .manager-container {
   padding: 16px 20px;
