@@ -501,6 +501,7 @@ if (typeof window !== 'undefined' && !window.global) {
     const redraftFormats = [
       { key: 'red_ppr', label: 'Redraft PPR' },
       { key: 'red_half', label: 'Redraft Half' },
+      { key: 'red_std', label: 'Redraft Standard' },
     ];
 
     let formatPillsHtml = '<div class="format-pill-groups" style="display:flex; gap:8px; align-items:center">';
@@ -529,18 +530,55 @@ if (typeof window !== 'undefined' && !window.global) {
     }
     posPillsHtml += '</div>';
 
+    function normalizePlayerName(name) {
+      let str = String(name || '').toLowerCase().trim();
+      for (const ch of ['.', "'", '’', '-', ',', '/', '`']) {
+        str = str.replaceAll(ch, '');
+      }
+      for (const suffix of [' jr', ' sr', ' ii', ' iii', ' iv', ' v']) {
+        if (str.endsWith(suffix)) {
+          str = str.slice(0, -suffix.length).trim();
+        }
+      }
+      return str.split(/\s+/).join(' ');
+    }
+
+    // Filter displayed waivers if needsOnly or watchlistOnly is active
+    let displayedWaivers = waivers;
+    if (wf.needsOnly) {
+      displayedWaivers = displayedWaivers.filter(
+        (item) => item.need_matches && item.need_matches.length > 0
+      );
+    }
+    if (wf.watchlistOnly) {
+      displayedWaivers = displayedWaivers.filter((item) => {
+        const pNorm = normalizePlayerName(item.name || item.player?.name);
+        return (
+          Boolean(item.is_watchlisted) ||
+          watchlist[pNorm] !== undefined ||
+          watchlist[pNorm.replace(/\s+/g, '')] !== undefined
+        );
+      });
+    }
+
     // Table rows
     let rowsHtml = '';
-    for (const [idx, item] of waivers.entries()) {
+    for (const [idx, item] of displayedWaivers.entries()) {
       const p = item.player || {};
       const name = item.name || p.name || '';
       const pos = item.pos || p.pos || '';
       const team = item.team || p.team || '';
       const score = item.score != null ? Math.round(item.score) : '—';
       const rank = item.rank != null ? `#${item.rank}` : '';
+      const normName = normalizePlayerName(name);
       const isPriority = item.is_priority;
-      const isWatchlisted = Boolean(item.is_watchlisted);
-      const note = item.watchlist_note || '';
+      const isWatchlisted = Boolean(
+        item.is_watchlisted ||
+          (watchlist &&
+            (watchlist[normName] !== undefined ||
+              watchlist[normName.replace(/\s+/g, '')] !== undefined))
+      );
+      const note = item.watchlist_note || watchlist[normName] || '';
 
       // Available leagues badges with deep-links
       let availHtml = '';
@@ -1175,12 +1213,16 @@ if (typeof window !== 'undefined' && !window.global) {
     if (leagueId && leagueId !== 'all') {
       const targetLg = (s.leagues || []).find((l) => l.id === leagueId);
       if (targetLg) {
-        const isDyn = Boolean(targetLg.is_dynasty);
-        const curFormatIsDyn = (s.waiverFilters.format || 'dyn_sf').startsWith('dyn');
-        if (isDyn && !curFormatIsDyn) {
-          s.waiverFilters.format = 'dyn_sf';
-        } else if (!isDyn && curFormatIsDyn) {
-          s.waiverFilters.format = 'red_ppr';
+        if (targetLg.format_key) {
+          s.waiverFilters.format = targetLg.format_key;
+        } else {
+          const isDyn = Boolean(targetLg.is_dynasty);
+          const curFormatIsDyn = (s.waiverFilters.format || 'dyn_sf').startsWith('dyn');
+          if (isDyn && !curFormatIsDyn) {
+            s.waiverFilters.format = 'dyn_sf';
+          } else if (!isDyn && curFormatIsDyn) {
+            s.waiverFilters.format = 'red_ppr';
+          }
         }
       }
     }
@@ -1211,12 +1253,16 @@ if (typeof window !== 'undefined' && !window.global) {
 
   global.onWaiverNeedsToggle = async () => {
     const cur = global.inSeasonState.waiverFilters.needsOnly;
+    global.inSeasonState.waiverFilters.needsOnly = !cur;
+    renderManagerView();
     await global.inSeasonManager.fetchWaivers({ needsOnly: !cur });
     renderManagerView();
   };
 
   global.onWaiverWatchlistToggle = async () => {
     const cur = global.inSeasonState.waiverFilters.watchlistOnly;
+    global.inSeasonState.waiverFilters.watchlistOnly = !cur;
+    renderManagerView();
     await global.inSeasonManager.fetchWaivers({ watchlistOnly: !cur });
     renderManagerView();
   };

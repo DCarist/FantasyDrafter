@@ -223,44 +223,112 @@ if (typeof window !== 'undefined' && !window.global) {
     return inSeasonState.watchlist;
   }
 
+  function normalizePlayerName(name) {
+    let s = String(name || '').toLowerCase().trim();
+    for (const ch of ['.', "'", '’', '-', ',', '/', '`']) {
+      s = s.replaceAll(ch, '');
+    }
+    for (const suffix of [' jr', ' sr', ' ii', ' iii', ' iv', ' v']) {
+      if (s.endsWith(suffix)) {
+        s = s.slice(0, -suffix.length).trim();
+      }
+    }
+    return s.split(/\s+/).join(' ');
+  }
+
   async function toggleWatchlist(playerName, note = '') {
     if (!playerName) return { ok: false };
+    const normKey = normalizePlayerName(playerName);
+    const wasWatchlisted = inSeasonState.watchlist?.[normKey] !== undefined;
+    const willBeWatchlisted = !wasWatchlisted;
+
+    // 1. Optimistic instant UI update
+    if (!inSeasonState.watchlist) {
+      inSeasonState.watchlist = {};
+    }
+    if (willBeWatchlisted) {
+      inSeasonState.watchlist[normKey] = note || '';
+    } else {
+      delete inSeasonState.watchlist[normKey];
+    }
+    for (const w of inSeasonState.waivers) {
+      const pNorm = normalizePlayerName(w.name || w.player?.name);
+      if (pNorm === normKey || (w.name && w.name.toLowerCase() === playerName.toLowerCase())) {
+        w.is_watchlisted = willBeWatchlisted;
+        w.watchlist_note = willBeWatchlisted ? w.watchlist_note || note || '' : '';
+      }
+    }
+    saveLocalCache();
+    if (typeof global.renderManagerView === 'function') {
+      global.renderManagerView();
+    }
+
+    // 2. Persist to server
     const res = await apiRequest('/api/manager/watchlist/toggle', 'POST', {
       player_name: playerName,
       note,
     });
     if (res?.ok) {
-      const normKey = res.player_name || playerName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (res.is_watchlisted) {
-        inSeasonState.watchlist[normKey] = res.note || '';
+      const serverNorm = normalizePlayerName(res.player_name || playerName);
+      const finalWatchlisted =
+        res.is_watchlisted !== undefined ? Boolean(res.is_watchlisted) : willBeWatchlisted;
+      if (finalWatchlisted) {
+        inSeasonState.watchlist[serverNorm] = res.note || note || '';
       } else {
-        delete inSeasonState.watchlist[normKey];
+        delete inSeasonState.watchlist[serverNorm];
       }
       for (const w of inSeasonState.waivers) {
-        const pNorm = (w.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (pNorm === normKey) {
-          w.is_watchlisted = res.is_watchlisted;
-          w.watchlist_note = res.is_watchlisted ? res.note || '' : '';
+        const pNorm = normalizePlayerName(w.name || w.player?.name);
+        if (
+          pNorm === serverNorm ||
+          pNorm === normKey ||
+          (w.name && w.name.toLowerCase() === playerName.toLowerCase())
+        ) {
+          w.is_watchlisted = finalWatchlisted;
+          w.watchlist_note = finalWatchlisted ? res.note || note || '' : '';
         }
       }
       saveLocalCache();
+      if (typeof global.renderManagerView === 'function') {
+        global.renderManagerView();
+      }
     }
     return res;
   }
 
   async function saveWatchlistNote(playerName, note = '') {
     if (!playerName) return { ok: false };
+    const normKey = normalizePlayerName(playerName);
+    if (!inSeasonState.watchlist) {
+      inSeasonState.watchlist = {};
+    }
+    inSeasonState.watchlist[normKey] = note || '';
+    for (const w of inSeasonState.waivers) {
+      const pNorm = normalizePlayerName(w.name || w.player?.name);
+      if (pNorm === normKey || (w.name && w.name.toLowerCase() === playerName.toLowerCase())) {
+        w.watchlist_note = note || '';
+      }
+    }
+    saveLocalCache();
+    if (typeof global.renderManagerView === 'function') {
+      global.renderManagerView();
+    }
+
     const res = await apiRequest('/api/manager/watchlist/note', 'POST', {
       player_name: playerName,
       note,
     });
     if (res?.ok) {
-      const normKey = res.player_name || playerName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      inSeasonState.watchlist[normKey] = res.note || '';
+      const serverNorm = normalizePlayerName(res.player_name || playerName);
+      inSeasonState.watchlist[serverNorm] = res.note || note || '';
       for (const w of inSeasonState.waivers) {
-        const pNorm = (w.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (pNorm === normKey) {
-          w.watchlist_note = res.note || '';
+        const pNorm = normalizePlayerName(w.name || w.player?.name);
+        if (
+          pNorm === serverNorm ||
+          pNorm === normKey ||
+          (w.name && w.name.toLowerCase() === playerName.toLowerCase())
+        ) {
+          w.watchlist_note = res.note || note || '';
         }
       }
       saveLocalCache();

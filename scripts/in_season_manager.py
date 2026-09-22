@@ -223,6 +223,76 @@ def is_dynasty_league(league: dict[str, Any]) -> bool:
     return any(str(p).upper() == "TAXI" for p in roster_positions)
 
 
+def get_league_format_key(league: dict[str, Any] | None) -> str:
+    """Resolves the precise format key for a league based on its roster and scoring settings.
+
+    Returns: 'dyn_sf', 'dyn_1qb', 'red_sf', 'red_std', 'red_half', or 'red_ppr'.
+    """
+    if not league:
+        return "dyn_sf"
+
+    cur_settings = league.get("settings", {}) or {}
+    roster_slots = cur_settings.get("rosterSlots") or cur_settings.get("roster_positions") or []
+    has_superflex = any(
+        str(s).upper() in ("SUPERFLEX", "SUPER_FLEX", "REC_FLEX", "OP") for s in roster_slots
+    )
+    is_dyn = is_dynasty_league(league)
+
+    if is_dyn:
+        return "dyn_sf" if has_superflex else "dyn_1qb"
+
+    # Redraft scoring detection
+    if has_superflex:
+        return "red_sf"
+
+    # Explicit scoring string
+    scoring_str = str(cur_settings.get("scoring") or "").lower().strip()
+    if scoring_str in ("std", "standard", "non_ppr", "zero_ppr"):
+        return "red_std"
+    if scoring_str in ("half", "half_ppr", "0.5"):
+        return "red_half"
+    if scoring_str in ("ppr", "full_ppr", "1.0"):
+        return "red_ppr"
+
+    # Sleeper points per reception
+    sleeper_rec = (cur_settings.get("scoring_settings") or {}).get("rec")
+    if sleeper_rec is not None:
+        try:
+            val = float(sleeper_rec)
+            if val == 0.0:
+                return "red_std"
+            if 0.4 <= val <= 0.6:
+                return "red_half"
+            if val >= 0.9:
+                return "red_ppr"
+        except (ValueError, TypeError):
+            pass
+
+    # ESPN statId 53 (receptions)
+    sc_items = (cur_settings.get("scoring_settings") or {}).get("scoringItems") or []
+    for item in sc_items:
+        if item.get("statId") == 53:
+            try:
+                val = float(item.get("points", 0.0))
+                if val == 0.0:
+                    return "red_std"
+                if 0.4 <= val <= 0.6:
+                    return "red_half"
+                if val >= 0.9:
+                    return "red_ppr"
+            except (ValueError, TypeError):
+                pass
+
+    # ESPN playerRankType
+    pr_type = str((cur_settings.get("scoring_settings") or {}).get("playerRankType") or "").upper()
+    if "STANDARD" in pr_type:
+        return "red_std"
+    if "PPR" in pr_type:
+        return "red_ppr"
+
+    return "red_ppr"
+
+
 def get_leagues(db_path: str = DB_PATH) -> list[dict[str, Any]]:
     """Retrieves all registered leagues with team count and latest refresh info."""
     init_db(db_path)
@@ -236,6 +306,7 @@ def get_leagues(db_path: str = DB_PATH) -> list[dict[str, Any]]:
             league["settings"] = json.loads(league.get("settings_json") or "{}")
             league["is_dynasty"] = is_dynasty_league(league)
             league["league_type"] = "dynasty" if league["is_dynasty"] else "redraft"
+            league["format_key"] = get_league_format_key(league)
 
             # Check latest snapshot for this league
             snap_cur = conn.execute(
@@ -686,6 +757,14 @@ def calculate_player_rank_and_score(
                 or player.get("redraft")
                 or player.get("adp")
             )
+        elif fmt.startswith("red_std") or fmt in ("std", "standard", "non_ppr"):
+            rank_cand = (
+                player.get("red_1qb_std")
+                or player.get("espn_std")
+                or player.get("boris_std")
+                or player.get("redraft")
+                or player.get("adp")
+            )
         else:
             rank_cand = (
                 player.get("redraft")
@@ -735,13 +814,8 @@ def get_waiver_matrix(
     if league_id:
         target_leagues = [lg for lg in all_leagues if str(lg.get("id")) == str(league_id)]
         if target_leagues:
-            lg_is_dyn = is_dynasty_league(target_leagues[0])
-            if lg_is_dyn and not is_dynasty_format:
-                format_key = "dyn_sf"
-                is_dynasty_format = True
-            elif not lg_is_dyn and is_dynasty_format:
-                format_key = "red_ppr"
-                is_dynasty_format = False
+            format_key = get_league_format_key(target_leagues[0])
+            is_dynasty_format = is_dynasty_league(target_leagues[0])
     else:
         # Rule: redraft leagues don't show in dynasty, and vice-versa
         if is_dynasty_format:
@@ -844,12 +918,36 @@ def get_waiver_matrix(
                     if tm and tm != "FA":
                         owned_rbs_by_team.setdefault(tm, []).append(p.get("name", "RB"))
 
-            # C. Starters count by position
+            # Starters count by position
             starter_pos_counts: dict[str, int] = {}
             for s in my_starters:
                 if isinstance(s, dict):
                     spos = str(s.get("pos", "")).upper()
                     starter_pos_counts[spos] = starter_pos_counts.get(spos, 0) + 1
+
+            # Required starting positions for this league
+            required_pos_counts: dict[str, int] = {}
+            r_positions = settings.get("roster_positions")
+            if isinstance(r_positions, list):
+                for slot in r_positions:
+                    s_u = str(slot).upper().strip()
+                    if s_u in ("QB", "RB", "WR", "TE", "K", "DST", "DEF"):
+                        s_u = "DST" if s_u == "DEF" else s_u
+                        required_pos_counts[s_u] = required_pos_counts.get(s_u, 0) + 1
+            r_slots = settings.get("rosterSlots")
+            if isinstance(r_slots, dict):
+                for slot_name, count in r_slots.items():
+                    s_u = str(slot_name).upper().strip()
+                    if s_u in ("QB", "RB", "WR", "TE", "K", "DST", "DEF"):
+                        s_u = "DST" if s_u == "DEF" else s_u
+                        try:
+                            c_val = int(count)
+                            if c_val > 0:
+                                required_pos_counts[s_u] = max(
+                                    required_pos_counts.get(s_u, 0), c_val
+                                )
+                        except (ValueError, TypeError):
+                            pass
 
             # D. Lowest rank bench player by position (for upgrade matching)
             bench_lowest_by_pos: dict[str, dict[str, Any]] = {}
@@ -884,6 +982,7 @@ def get_waiver_matrix(
                     "injured_starters_by_pos": injured_starters_by_pos,
                     "owned_rbs_by_team": owned_rbs_by_team,
                     "starter_pos_counts": starter_pos_counts,
+                    "required_pos_counts": required_pos_counts,
                     "bench_lowest_by_pos": bench_lowest_by_pos,
                 }
             )
@@ -1032,8 +1131,14 @@ def get_waiver_matrix(
                                 )
                                 break
 
-            # Tier E: Empty Slot
-            if ctx["starter_pos_counts"].get(p_pos, 0) == 0 and p_pos in ("QB", "TE", "K", "DST"):
+            # Tier E: Empty Starting Slot (only if league requires this starting position)
+            req_count = ctx["required_pos_counts"].get(p_pos, 0)
+            actual_count = ctx["starter_pos_counts"].get(p_pos, 0)
+            if (
+                req_count > 0
+                and actual_count < req_count
+                and p_pos in ("QB", "RB", "WR", "TE", "K", "DST")
+            ):
                 need_matches.append(
                     {
                         "league_id": ctx["id"],
@@ -1071,13 +1176,15 @@ def get_waiver_matrix(
             }
         )
 
-    def _waiver_sort_key(item: dict[str, Any]) -> tuple[bool, float, float, int]:
-        matches = item.get("need_matches") or []
-        has_needs = len(matches) > 0
+    def _waiver_sort_key(item: dict[str, Any]) -> tuple[Any, ...]:
         avail = int(item.get("available_count", 0))
         score_val = float(item.get("score") or 0.0)
         rank_val = float(item.get("rank") or 999.0)
-        return (has_needs, -rank_val, score_val, avail)
+        matches = item.get("need_matches") or []
+        has_needs = len(matches) > 0
+        if needs_only:
+            return (has_needs, -rank_val, score_val, avail)
+        return (-rank_val, score_val, has_needs, avail)
 
     recommendations.sort(key=_waiver_sort_key, reverse=True)
     return recommendations[:limit]
@@ -1111,15 +1218,7 @@ def get_team_view_data(
         my_roster = rosters[0]
 
     cur_settings = cur_league.get("settings", {}) if cur_league else {}
-    roster_slots = cur_settings.get("rosterSlots") or cur_settings.get("roster_positions") or []
-    has_superflex = any(
-        str(s).upper() in ("SUPERFLEX", "SUPER_FLEX", "REC_FLEX", "OP") for s in roster_slots
-    )
-    lg_is_dyn = is_dynasty_league(cur_league) if cur_league else False
-    if lg_is_dyn:
-        team_format_key = "dyn_sf" if has_superflex else "dyn_1qb"
-    else:
-        team_format_key = "red_sf" if has_superflex else "red_ppr"
+    team_format_key = get_league_format_key(cur_league)
 
     # Enrich players with master ranking, depth chart, injury, and schedule data
     def enrich_player(p_raw: Any) -> dict[str, Any]:
@@ -1302,16 +1401,7 @@ def get_league_power_rankings(
         "TE": [],
     }
 
-    cur_settings = cur_league.get("settings", {}) if cur_league else {}
-    roster_slots = cur_settings.get("rosterSlots") or cur_settings.get("roster_positions") or []
-    has_superflex = any(
-        str(s).upper() in ("SUPERFLEX", "SUPER_FLEX", "REC_FLEX", "OP") for s in roster_slots
-    )
-    lg_is_dyn = is_dynasty_league(cur_league) if cur_league else False
-    if lg_is_dyn:
-        team_format_key = "dyn_sf" if has_superflex else "dyn_1qb"
-    else:
-        team_format_key = "red_sf" if has_superflex else "red_ppr"
+    team_format_key = get_league_format_key(cur_league)
 
     for r in rosters:
         starters = r.get("starters", [])

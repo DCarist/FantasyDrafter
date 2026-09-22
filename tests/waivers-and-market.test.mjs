@@ -321,6 +321,70 @@ await ctx.window.onWaiverFormatFilter('red_ppr');
 eq(state.waiverFilters.format, 'red_ppr', 'Switched format to red_ppr');
 eq(state.waiverFilters.leagueId, 'all', 'Auto-reset leagueId to all when switching format category');
 
+// 9. Standard Scoring Resolution, Needs-Only Differentiation & Instant Star Toggle
+const stdAndNeedsScript = `
+import json, sys, os
+sys.path.insert(0, os.path.abspath('.'))
+from scripts import in_season_manager as mgr
+
+# 1. Standard scoring league resolution
+std_league = {
+    "id": "lg_test_std",
+    "name": "Test Standard League",
+    "settings": {"scoring": "std", "qbFormat": "1qb", "rosterSlots": {"qb": 1, "rb": 2, "wr": 2, "te": 1, "k": 1, "dst": 1}}
+}
+std_format = mgr.get_league_format_key(std_league)
+
+# Standard scoring player ranking
+rb_test = {"name": "Test Standard RB", "pos": "RB", "red_1qb_std": 12, "red_1qb_ppr": 25}
+rb_std_rank, rb_std_score = mgr.calculate_player_rank_and_score(rb_test, "red_std")
+rb_ppr_rank, rb_ppr_score = mgr.calculate_player_rank_and_score(rb_test, "red_ppr")
+
+# 2. Needs-only differentiation
+all_w = mgr.get_waiver_matrix(needs_only=False, format_key="dyn_sf", limit=100, db_path='${TEST_DB.replace(/\\/g, '\\\\')}')
+needs_w = mgr.get_waiver_matrix(needs_only=True, format_key="dyn_sf", limit=100, db_path='${TEST_DB.replace(/\\/g, '\\\\')}')
+all_needs_have_matches = all(len(w.get("need_matches", [])) > 0 for w in needs_w)
+
+print(json.dumps({
+    "std_format": std_format,
+    "rb_std_rank": rb_std_rank,
+    "rb_ppr_rank": rb_ppr_rank,
+    "all_needs_have_matches": all_needs_have_matches,
+    "needs_count": len(needs_w),
+    "all_count": len(all_w)
+}))
+`;
+
+const res9 = pyRunner(stdAndNeedsScript);
+eq(res9.std_format, 'red_std', 'get_league_format_key correctly resolves red_std for standard scoring league');
+eq(res9.rb_std_rank, 12, 'Standard format resolves red_1qb_std rank (12)');
+eq(res9.rb_ppr_rank, 25, 'PPR format resolves red_1qb_ppr rank (25)');
+assert(res9.all_needs_have_matches, '100% of candidates in needs_only query match team needs');
+
+// Instant watchlist star update in sandbox
+state.waivers = [
+  { name: 'Kyren Williams', is_watchlisted: false, need_matches: [] },
+  { name: 'Greg Dulcich', is_watchlisted: false, need_matches: [] },
+];
+
+await ctx.window.toggleWaiverWatchlist('Kyren Williams');
+eq(state.waivers[0].is_watchlisted, true, 'Kyren Williams is_watchlisted is immediately true after toggle');
+assert(state.watchlist['kyren williams'] !== undefined, 'Kyren Williams in state.watchlist');
+
+await ctx.window.toggleWaiverWatchlist('Kyren Williams');
+eq(state.waivers[0].is_watchlisted, false, 'Kyren Williams is_watchlisted is immediately false after toggle off');
+assert(state.watchlist['kyren williams'] === undefined, 'Kyren Williams removed from state.watchlist');
+
+// League selection with format_key auto-selects red_std
+state.leagues.push({
+  id: 'lg_std_1',
+  name: 'Standard League',
+  is_dynasty: false,
+  format_key: 'red_std',
+});
+await ctx.window.onWaiverLeagueFilter('lg_std_1');
+eq(state.waiverFilters.format, 'red_std', 'Selecting standard league auto-switches format to red_std');
+
 // Clean up test DB
 if (existsSync(TEST_DB)) {
   try {
