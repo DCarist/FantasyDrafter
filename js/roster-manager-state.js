@@ -24,6 +24,9 @@ if (typeof window !== 'undefined' && !window.global) {
     },
     watchlist: {},
     powerRankings: null,
+    playerDetailsCache: {},
+    activePlayerDetails: null,
+    activePlayerModalTab: 'overview',
     isServerOnline: true,
     lastSyncTimestamp: null,
     loading: false,
@@ -446,8 +449,32 @@ if (typeof window !== 'undefined' && !window.global) {
     }
   }
 
+  async function fetchPlayerDetails(playerName, leagueId = null) {
+    if (!playerName) return null;
+    const normKey = normalizePlayerName(playerName);
+    if (inSeasonState.playerDetailsCache[normKey]) {
+      inSeasonState.activePlayerDetails = inSeasonState.playerDetailsCache[normKey];
+      return inSeasonState.activePlayerDetails;
+    }
+    try {
+      const res = await apiRequest('/api/manager/player/details', 'POST', {
+        name: playerName,
+        league_id: leagueId || inSeasonState.activeLeagueId || null,
+      });
+      if (res?.ok && res.details) {
+        inSeasonState.playerDetailsCache[normKey] = res.details;
+        inSeasonState.activePlayerDetails = res.details;
+        return res.details;
+      }
+    } catch (err) {
+      console.error('Failed to fetch player details for', playerName, err);
+    }
+    return null;
+  }
+
   // Export to global scope
   global.inSeasonState = inSeasonState;
+  global.normalizePlayerName = normalizePlayerName;
   global.inSeasonManager = {
     setView,
     selectLeague,
@@ -460,6 +487,8 @@ if (typeof window !== 'undefined' && !window.global) {
     toggleWatchlist,
     saveWatchlistNote,
     fetchPowerRankings,
+    fetchPlayerDetails,
+    normalizePlayerName,
     seedDemoData,
     saveLocalCache,
   };

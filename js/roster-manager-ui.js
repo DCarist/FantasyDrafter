@@ -146,7 +146,7 @@ if (typeof window !== 'undefined' && !window.global) {
         <tr class="roster-player-row player-row-${esc(pos.toLowerCase())}">
           <td class="slot-col"><span class="slot-badge slot-${esc(slotClass)}"><b>${esc(finalSlot)}</b></span></td>
           <td class="name-col">
-            <span class="player-name-link" onclick="global.openPlayerNewsModal('${esc(name)}')">${esc(name)}</span>
+            <span class="player-name-link" onclick="global.openPlayerModal('${esc(name)}')">${esc(name)}</span>
             ${injuryHtml}
           </td>
           <td class="pos-col"><span class="pos-tag pos-${esc(pos.toLowerCase())}">${esc(pos)}</span></td>
@@ -155,7 +155,7 @@ if (typeof window !== 'undefined' && !window.global) {
           <td class="rank-col num">${esc(rank)}</td>
           <td class="score-col num"><b>${esc(score)}</b></td>
           <td class="action-col">
-            <button type="button" class="small" onclick="global.openPlayerNewsModal('${esc(name)}')">📰 News</button>
+            <button type="button" class="small" onclick="global.openPlayerModal('${esc(name)}')">📋 Dossier</button>
           </td>
         </tr>
       `;
@@ -206,7 +206,7 @@ if (typeof window !== 'undefined' && !window.global) {
             <div class="room-player-item ${isStarter ? 'room-starter' : 'room-bench'}">
               <span class="depth-num">#${p.room_depth || 1}</span>
               <div class="room-player-info">
-                <div class="room-player-name" onclick="global.openPlayerNewsModal('${esc(p.name)}')" style="cursor:pointer" title="${esc(p.name)}">
+                <div class="room-player-name" onclick="global.openPlayerModal('${esc(p.name)}')" style="cursor:pointer" title="${esc(p.name)}">
                   <b>${esc(p.name)}</b> ${injuryHtml}
                 </div>
                 <div class="meta" style="font-size:11px">
@@ -433,7 +433,7 @@ if (typeof window !== 'undefined' && !window.global) {
       newsCardsHtml += `
         <div class="news-card">
           <div class="news-card-header">
-            <span class="news-player-tag" onclick="global.openPlayerNewsModal('${esc(item.player_name)}')">🏈 ${esc(item.player_name)}</span>
+            <span class="news-player-tag" onclick="global.openPlayerModal('${esc(item.player_name)}')">🏈 ${esc(item.player_name)}</span>
             <span class="impact-badge ${badgeCls}">${esc(impact.toUpperCase())}</span>
             <span class="news-time">${esc(new Date(item.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>
           </div>
@@ -616,7 +616,7 @@ if (typeof window !== 'undefined' && !window.global) {
           </td>
           <td class="num" style="color:var(--dim)">${idx + 1}</td>
           <td>
-            <span class="player-name-link" onclick="global.openPlayerNewsModal('${esc(name)}')"><b>${esc(name)}</b></span>
+            <span class="player-name-link" onclick="global.openPlayerModal('${esc(name)}')"><b>${esc(name)}</b></span>
             ${getInjuryBadge(p.injury)}
             ${noteHtml}
             ${needHtml ? `<div class="need-badges-wrap" style="margin-top:4px">${needHtml}</div>` : ''}
@@ -631,7 +631,7 @@ if (typeof window !== 'undefined' && !window.global) {
           <td class="avail-col">${availHtml || '<span class="meta">All Rostered</span>'}</td>
           <td style="text-align:right">
             <button type="button" class="small" onclick="global.openWaiverNoteModal('${esc(name)}')">📝 Note</button>
-            <button type="button" class="small" onclick="global.openPlayerNewsModal('${esc(name)}')">News</button>
+            <button type="button" class="small" onclick="global.openPlayerModal('${esc(name)}')">📋 Dossier</button>
           </td>
         </tr>
       `;
@@ -902,38 +902,749 @@ if (typeof window !== 'undefined' && !window.global) {
     renderManagerView();
   };
 
-  global.openPlayerNewsModal = async (playerName) => {
-    const modal = document.getElementById('playerModalbox');
-    const overlay = document.getElementById('playerOverlay');
-    if (!modal || !overlay) return;
+  // ============================================================================
+  // UNIFIED PLAYER DETAILS DOSSIER MODAL
+  // ============================================================================
 
-    const news = await global.inSeasonManager.fetchNews(null, 50);
-    const playerNews = (news || []).filter(
-      (n) =>
-        n.player_name.toLowerCase().includes(playerName.toLowerCase()) ||
-        playerName.toLowerCase().includes(n.player_name.toLowerCase()),
-    );
+  function renderDossierOverviewTab(d) {
+    const p = d.player;
+    const m = d.next_matchup;
+    const s = d.season_summary || {};
 
-    let itemsHtml = '';
-    for (const n of playerNews) {
-      itemsHtml += `
-        <div class="player-news-item">
-          <div class="news-item-time">${esc(new Date(n.timestamp).toLocaleDateString())} · <b>${esc(n.source)}</b></div>
-          <div class="news-item-headline"><b>${esc(n.headline)}</b></div>
-          <div class="news-item-body">${esc(n.body)}</div>
+    let matchupHtml = '';
+    if (m) {
+      const oppStr = `${m.home_away === 'home' ? 'vs' : '@'} ${m.opponent}`;
+      const defTierCls = `diff-${m.defensive_rank?.tier || 'neutral'}`;
+      const oddsStr = [
+        m.spread ? `Spread: <b>${esc(m.spread)}</b>` : null,
+        m.over_under ? `O/U: <b>${esc(m.over_under)}</b>` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
+      matchupHtml = `
+        <div class="dossier-card matchup-card">
+          <div class="card-header">
+            <span class="card-title">🏈 Next Matchup: Week ${m.week} ${oppStr}</span>
+            <span class="difficulty-tag ${defTierCls}">${esc(m.defensive_rank?.label || 'Matchup')}</span>
+          </div>
+          <div class="matchup-body-grid">
+            <div class="matchup-stat">
+              <span class="lbl">Date & Time</span>
+              <b>${esc(m.game_date ? new Date(m.game_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : m.status || 'Upcoming')} · ${esc(m.status || '')}</b>
+            </div>
+            <div class="matchup-stat">
+              <span class="lbl">Venue & Surface</span>
+              <b>${esc(m.venue || 'NFL Stadium')} (${esc(m.surface || 'Grass')})</b>
+            </div>
+            <div class="matchup-stat">
+              <span class="lbl">Broadcast</span>
+              <b>${esc(m.network || 'National / Local')}</b>
+            </div>
+            <div class="matchup-stat">
+              <span class="lbl">Defensive Points Allowed</span>
+              <b>${m.defensive_rank?.points_allowed_avg || 0.0} PPG to ${esc(p.pos)}</b>
+            </div>
+          </div>
+          ${oddsStr ? `<div class="matchup-odds-bar">🎲 ${oddsStr}</div>` : ''}
+        </div>
+      `;
+    } else {
+      matchupHtml = `
+        <div class="dossier-card" style="padding:16px; text-align:center">
+          <span class="meta">No upcoming matchup scheduled or team on bye.</span>
         </div>
       `;
     }
 
+    let keyStatsHtml = '';
+    const posUpper = (p.pos || '').toUpperCase();
+    if (posUpper === 'QB') {
+      const compPct =
+        s.pass_att_total > 0 ? Math.round((s.pass_cmp_total / s.pass_att_total) * 100) : 0;
+      keyStatsHtml = `
+        <div class="kpi-card"><span class="kpi-lbl">Passing Yards</span><span class="kpi-val">${s.pass_yd_total || 0}</span><span class="kpi-sub">${s.pass_td_total || 0} TDs · ${Math.round((s.pass_yd_total || 0) / Math.max(1, s.games_played || 1))} YPG</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Completions</span><span class="kpi-val">${s.pass_cmp_total || 0}/${s.pass_att_total || 0}</span><span class="kpi-sub">${compPct}% Comp Pct</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Rushing</span><span class="kpi-val">${s.rush_yd_total || 0} yds</span><span class="kpi-sub">${s.rush_att_total || 0} att · ${s.rush_td_total || 0} TDs</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Fantasy Output</span><span class="kpi-val">${s.pts_ppr_avg || 0.0}</span><span class="kpi-sub">PPR PPG (${s.pts_ppr_total || 0.0} total)</span></div>
+      `;
+    } else if (posUpper === 'RB') {
+      keyStatsHtml = `
+        <div class="kpi-card"><span class="kpi-lbl">Rushing Yards</span><span class="kpi-val">${s.rush_yd_total || 0}</span><span class="kpi-sub">${s.rush_att_total || 0} carries · ${s.rush_td_total || 0} TDs</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Receiving</span><span class="kpi-val">${s.rec_total || 0} rec</span><span class="kpi-sub">${s.rec_tgt_total || 0} tgts · ${s.rec_yd_total || 0} yds</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Snap Share</span><span class="kpi-val">${s.avg_snap_pct || 0.0}%</span><span class="kpi-sub">${s.total_snaps || 0} total snaps</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Fantasy Output</span><span class="kpi-val">${s.pts_ppr_avg || 0.0}</span><span class="kpi-sub">PPR PPG (${s.pts_ppr_total || 0.0} total)</span></div>
+      `;
+    } else {
+      const catchPct =
+        s.rec_tgt_total > 0 ? Math.round((s.rec_total / s.rec_tgt_total) * 100) : 0;
+      keyStatsHtml = `
+        <div class="kpi-card"><span class="kpi-lbl">Targets & Rec</span><span class="kpi-val">${s.rec_total || 0}/${s.rec_tgt_total || 0}</span><span class="kpi-sub">${catchPct}% Catch Rate</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Receiving Yards</span><span class="kpi-val">${s.rec_yd_total || 0}</span><span class="kpi-sub">${s.rec_td_total || 0} TDs · ${Math.round((s.rec_yd_total || 0) / Math.max(1, s.games_played || 1))} YPG</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Air Yards & YAC</span><span class="kpi-val">${s.rec_air_yd_total || 0}</span><span class="kpi-sub">${s.rec_yac_total || 0} YAC</span></div>
+        <div class="kpi-card"><span class="kpi-lbl">Fantasy Output</span><span class="kpi-val">${s.pts_ppr_avg || 0.0}</span><span class="kpi-sub">PPR PPG (${s.pts_ppr_total || 0.0} total)</span></div>
+      `;
+    }
+
+    const rostered = d.portfolio?.rostered || [];
+    const waivers = d.portfolio?.waivers || [];
+    const portfolioSummary = `
+      <div class="dossier-card">
+        <div class="card-header"><span class="card-title">🌐 Portfolio Quick Status</span></div>
+        <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:13px">
+          <div>🏆 Rostered in: <b>${rostered.length} league${rostered.length === 1 ? '' : 's'}</b> ${rostered.map((r) => `<span class="portfolio-pill owned">${esc(r.league_name)} (${esc(r.slot)})</span>`).join(' ')}</div>
+          <div>⚡ Available on Waivers: <b>${waivers.length} league${waivers.length === 1 ? '' : 's'}</b> ${waivers.slice(0, 3).map((w) => `<span class="portfolio-pill avail">${esc(w.league_name)}</span>`).join(' ')}${waivers.length > 3 ? `<span class="meta">+${waivers.length - 3} more</span>` : ''}</div>
+        </div>
+      </div>
+    `;
+
+    return `
+      ${matchupHtml}
+      <div class="dossier-kpi-grid">
+        ${keyStatsHtml}
+      </div>
+      ${
+        d.depth_chart?.handcuff_note
+          ? `
+        <div class="dossier-card handcuff-box">
+          <b>💡 Role & Depth Chart Analysis:</b> ${esc(d.depth_chart.handcuff_note)}
+        </div>
+      `
+          : ''
+      }
+      ${portfolioSummary}
+    `;
+  }
+
+  function renderDossierLogsTab(d) {
+    const p = d.player;
+    const logs = d.game_logs || [];
+    const s = d.season_summary || {};
+    const posUpper = (p.pos || '').toUpperCase();
+
+    if (logs.length === 0) {
+      return '<p class="meta" style="padding:20px; text-align:center">No 2026 game logs recorded yet for this player.</p>';
+    }
+
+    let tableHeader = '';
+    if (posUpper === 'QB') {
+      tableHeader = `
+        <tr>
+          <th>Wk</th>
+          <th>Opp</th>
+          <th>Result</th>
+          <th class="num">Snaps</th>
+          <th class="num">Snap %</th>
+          <th class="num">Cmp/Att</th>
+          <th class="num">Pass Yds</th>
+          <th class="num">Pass TD</th>
+          <th class="num">INT</th>
+          <th class="num">Rating</th>
+          <th class="num">Rush Yds</th>
+          <th class="num">Rush TD</th>
+          <th class="num">PPR Pts</th>
+          <th class="num">Rank</th>
+        </tr>
+      `;
+    } else if (posUpper === 'RB') {
+      tableHeader = `
+        <tr>
+          <th>Wk</th>
+          <th>Opp</th>
+          <th>Result</th>
+          <th class="num">Snaps</th>
+          <th class="num">Snap %</th>
+          <th class="num">Carries</th>
+          <th class="num">Rush Yds</th>
+          <th class="num">Rush TD</th>
+          <th class="num">Targets</th>
+          <th class="num">Rec</th>
+          <th class="num">Rec Yds</th>
+          <th class="num">Rec TD</th>
+          <th class="num">PPR Pts</th>
+          <th class="num">Rank</th>
+        </tr>
+      `;
+    } else {
+      tableHeader = `
+        <tr>
+          <th>Wk</th>
+          <th>Opp</th>
+          <th>Result</th>
+          <th class="num">Snaps</th>
+          <th class="num">Snap %</th>
+          <th class="num">Tgts</th>
+          <th class="num">Rec</th>
+          <th class="num">Rec Yds</th>
+          <th class="num">TD</th>
+          <th class="num">Air Yds</th>
+          <th class="num">YAC</th>
+          <th class="num">PPR Pts</th>
+          <th class="num">Rank</th>
+        </tr>
+      `;
+    }
+
+    let rowsHtml = '';
+    for (const g of logs) {
+      const oppStr = `${g.home_away === 'home' ? 'vs' : '@'} ${g.opp || '—'}`;
+      const stats = g.stats || {};
+      const pRankStr = g.pos_rank != null ? `#${g.pos_rank}` : '—';
+
+      if (posUpper === 'QB') {
+        rowsHtml += `
+          <tr>
+            <td><b>W${g.week}</b></td>
+            <td>${esc(oppStr)}</td>
+            <td><span class="game-res-${(g.game_result || '')[0] || 't'}">${esc(g.game_result || '—')}</span></td>
+            <td class="num">${g.snaps}</td>
+            <td class="num"><b>${g.snap_pct}%</b></td>
+            <td class="num">${stats.pass_cmp || 0}/${stats.pass_att || 0}</td>
+            <td class="num"><b>${stats.pass_yd || 0}</b></td>
+            <td class="num">${stats.pass_td || 0}</td>
+            <td class="num">${stats.pass_int || 0}</td>
+            <td class="num">${stats.pass_rtg != null ? Math.round(stats.pass_rtg) : '—'}</td>
+            <td class="num">${stats.rush_yd || 0}</td>
+            <td class="num">${stats.rush_td || 0}</td>
+            <td class="num"><b style="color:var(--good)">${g.fantasy_pts_ppr}</b></td>
+            <td class="num">${esc(pRankStr)}</td>
+          </tr>
+        `;
+      } else if (posUpper === 'RB') {
+        rowsHtml += `
+          <tr>
+            <td><b>W${g.week}</b></td>
+            <td>${esc(oppStr)}</td>
+            <td><span class="game-res-${(g.game_result || '')[0] || 't'}">${esc(g.game_result || '—')}</span></td>
+            <td class="num">${g.snaps}</td>
+            <td class="num"><b>${g.snap_pct}%</b></td>
+            <td class="num"><b>${stats.rush_att || 0}</b></td>
+            <td class="num">${stats.rush_yd || 0}</td>
+            <td class="num">${stats.rush_td || 0}</td>
+            <td class="num">${stats.rec_tgt || 0}</td>
+            <td class="num">${stats.rec || 0}</td>
+            <td class="num">${stats.rec_yd || 0}</td>
+            <td class="num">${stats.rec_td || 0}</td>
+            <td class="num"><b style="color:var(--good)">${g.fantasy_pts_ppr}</b></td>
+            <td class="num">${esc(pRankStr)}</td>
+          </tr>
+        `;
+      } else {
+        rowsHtml += `
+          <tr>
+            <td><b>W${g.week}</b></td>
+            <td>${esc(oppStr)}</td>
+            <td><span class="game-res-${(g.game_result || '')[0] || 't'}">${esc(g.game_result || '—')}</span></td>
+            <td class="num">${g.snaps}</td>
+            <td class="num"><b>${g.snap_pct}%</b></td>
+            <td class="num"><b>${stats.rec_tgt || 0}</b></td>
+            <td class="num">${stats.rec || 0}</td>
+            <td class="num"><b>${stats.rec_yd || 0}</b></td>
+            <td class="num">${stats.rec_td || 0}</td>
+            <td class="num">${stats.rec_air_yd || 0}</td>
+            <td class="num">${stats.rec_yar || 0}</td>
+            <td class="num"><b style="color:var(--good)">${g.fantasy_pts_ppr}</b></td>
+            <td class="num">${esc(pRankStr)}</td>
+          </tr>
+        `;
+      }
+    }
+
+    let footerHtml = '';
+    if (posUpper === 'QB') {
+      footerHtml = `
+        <tr class="table-totals-row">
+          <td colspan="3"><b>Season Totals (${s.games_played || logs.length} Gms)</b></td>
+          <td class="num"><b>${s.total_snaps || 0}</b></td>
+          <td class="num"><b>${s.avg_snap_pct || 0}% avg</b></td>
+          <td class="num"><b>${s.pass_cmp_total || 0}/${s.pass_att_total || 0}</b></td>
+          <td class="num"><b>${s.pass_yd_total || 0}</b></td>
+          <td class="num"><b>${s.pass_td_total || 0}</b></td>
+          <td class="num">—</td>
+          <td class="num">—</td>
+          <td class="num"><b>${s.rush_yd_total || 0}</b></td>
+          <td class="num"><b>${s.rush_td_total || 0}</b></td>
+          <td class="num"><b style="color:var(--good)">${s.pts_ppr_total || 0}</b></td>
+          <td class="num">—</td>
+        </tr>
+      `;
+    } else if (posUpper === 'RB') {
+      footerHtml = `
+        <tr class="table-totals-row">
+          <td colspan="3"><b>Season Totals (${s.games_played || logs.length} Gms)</b></td>
+          <td class="num"><b>${s.total_snaps || 0}</b></td>
+          <td class="num"><b>${s.avg_snap_pct || 0}% avg</b></td>
+          <td class="num"><b>${s.rush_att_total || 0}</b></td>
+          <td class="num"><b>${s.rush_yd_total || 0}</b></td>
+          <td class="num"><b>${s.rush_td_total || 0}</b></td>
+          <td class="num"><b>${s.rec_tgt_total || 0}</b></td>
+          <td class="num"><b>${s.rec_total || 0}</b></td>
+          <td class="num"><b>${s.rec_yd_total || 0}</b></td>
+          <td class="num"><b>${s.rec_td_total || 0}</b></td>
+          <td class="num"><b style="color:var(--good)">${s.pts_ppr_total || 0}</b></td>
+          <td class="num">—</td>
+        </tr>
+      `;
+    } else {
+      footerHtml = `
+        <tr class="table-totals-row">
+          <td colspan="3"><b>Season Totals (${s.games_played || logs.length} Gms)</b></td>
+          <td class="num"><b>${s.total_snaps || 0}</b></td>
+          <td class="num"><b>${s.avg_snap_pct || 0}% avg</b></td>
+          <td class="num"><b>${s.rec_tgt_total || 0}</b></td>
+          <td class="num"><b>${s.rec_total || 0}</b></td>
+          <td class="num"><b>${s.rec_yd_total || 0}</b></td>
+          <td class="num"><b>${s.rec_td_total || 0}</b></td>
+          <td class="num"><b>${s.rec_air_yd_total || 0}</b></td>
+          <td class="num"><b>${s.rec_yac_total || 0}</b></td>
+          <td class="num"><b style="color:var(--good)">${s.pts_ppr_total || 0}</b></td>
+          <td class="num">—</td>
+        </tr>
+      `;
+    }
+
+    return `
+      <div class="dossier-table-wrap">
+        <table class="dossier-table">
+          <thead>${tableHeader}</thead>
+          <tbody>${rowsHtml}</tbody>
+          <tfoot>${footerHtml}</tfoot>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderDossierDepthTab(d) {
+    const depth = d.depth_chart || {};
+    const players = depth.players || [];
+    const team = depth.team || 'FA';
+    const pos = depth.pos || 'FLEX';
+
+    let listHtml = '';
+    for (const pl of players) {
+      const isMe = pl.rank === depth.my_rank && pl.name === d.player.name;
+      const injHtml = pl.injury ? getInjuryBadge({ status: pl.injury }) : '';
+      listHtml += `
+        <div class="depth-player-card ${isMe ? 'is-target-player' : ''}">
+          <span class="depth-badge ${pl.rank === 1 ? 'rank-1' : ''}">#${pl.rank}</span>
+          <div class="depth-info">
+            <div class="depth-name-row">
+              <span class="player-name-link" onclick="global.openPlayerModal('${esc(pl.name)}')"><b>${esc(pl.name)}</b></span>
+              ${injHtml}
+              ${isMe ? '<span class="target-tag">Current Player</span>' : ''}
+            </div>
+            <div class="depth-meta">
+              ${esc(pl.role || 'Depth')} · ${pl.snaps || 0} snaps (${pl.snap_pct || 0}% share)
+            </div>
+          </div>
+          <button type="button" class="small" onclick="global.openPlayerModal('${esc(pl.name)}')">View</button>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="dossier-card">
+        <div class="card-header">
+          <span class="card-title">🏈 ${esc(team)} Official ${esc(pos)} Depth Chart</span>
+        </div>
+        <div class="depth-players-list">
+          ${listHtml || '<p class="meta">No depth chart information available for this team room.</p>'}
+        </div>
+      </div>
+      ${
+        depth.handcuff_note
+          ? `
+        <div class="dossier-card handcuff-box" style="margin-top:14px">
+          <b>💡 Handcuff & Contingency Note:</b> ${esc(depth.handcuff_note)}
+        </div>
+      `
+          : ''
+      }
+    `;
+  }
+
+  function renderDossierScheduleTab(d) {
+    const sched = d.schedule || [];
+    if (sched.length === 0) {
+      return '<p class="meta" style="padding:20px; text-align:center">No 18-week schedule data loaded.</p>';
+    }
+
+    let cardsHtml = '';
+    for (const g of sched) {
+      const isBye = g.opponent === 'BYE';
+      const isFinal = Boolean(g.is_final);
+      const oppStr = isBye ? 'BYE WEEK' : `${g.home_away === 'home' ? 'vs' : '@'} ${g.opponent}`;
+
+      let statusLine = '';
+      if (isBye) {
+        statusLine = '<span class="status-bye">Open Week</span>';
+      } else if (isFinal) {
+        const resChar = (g.result || '')[0];
+        statusLine = `<span class="game-res-${resChar || 't'}"><b>${esc(g.result || 'Final')}</b></span>`;
+      } else {
+        statusLine = `<span class="status-upcoming">${esc(g.status || 'Upcoming')}</span>`;
+      }
+
+      cardsHtml += `
+        <div class="schedule-grid-item ${isBye ? 'sched-bye' : ''} ${isFinal ? 'sched-final' : ''}">
+          <div class="sched-wk">W${g.week}</div>
+          <div class="sched-opp">${esc(oppStr)}</div>
+          <div class="sched-status">${statusLine}</div>
+          ${g.spread ? `<div class="sched-odds">${esc(g.spread)}</div>` : ''}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="dossier-card">
+        <div class="card-header"><span class="card-title">🗓️ 2026 Regular Season Schedule (18 Weeks)</span></div>
+        <div class="schedule-grid">
+          ${cardsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDossierPortfolioTab(d) {
+    const port = d.portfolio || {};
+    const rostered = port.rostered || [];
+    const waivers = port.waivers || [];
+    const opponents = port.opponent_owned || [];
+
+    let rosteredHtml = '';
+    if (rostered.length > 0) {
+      rosteredHtml = `
+        <table class="dossier-table" style="margin-top:8px">
+          <thead><tr><th>League</th><th>Platform</th><th>Format</th><th>Slot</th><th>Record</th></tr></thead>
+          <tbody>
+            ${rostered
+              .map(
+                (r) => `
+              <tr>
+                <td><b>${esc(r.league_name)}</b></td>
+                <td><span class="platform-badge ${esc(r.platform)}">${esc(r.platform.toUpperCase())}</span></td>
+                <td><span class="format-badge">${esc(r.format)}</span></td>
+                <td><span class="slot-badge">${esc(r.slot)}</span></td>
+                <td class="num">${esc(r.record)}</td>
+              </tr>
+            `,
+              )
+              .join('')}
+          </tbody>
+        </table>
+      `;
+    } else {
+      rosteredHtml =
+        '<p class="meta" style="padding:10px 0">Not currently rostered on any of your fantasy squads.</p>';
+    }
+
+    let waiversHtml = '';
+    if (waivers.length > 0) {
+      waiversHtml = `
+        <table class="dossier-table" style="margin-top:8px">
+          <thead><tr><th>League</th><th>Platform</th><th>Format</th><th>Status</th></tr></thead>
+          <tbody>
+            ${waivers
+              .map(
+                (w) => `
+              <tr>
+                <td><b>${esc(w.league_name)}</b></td>
+                <td><span class="platform-badge ${esc(w.platform)}">${esc(w.platform.toUpperCase())}</span></td>
+                <td><span class="format-badge">${esc(w.format)}</span></td>
+                <td><span class="portfolio-pill avail">⚡ Free Agent</span></td>
+              </tr>
+            `,
+              )
+              .join('')}
+          </tbody>
+        </table>
+      `;
+    } else {
+      waiversHtml =
+        '<p class="meta" style="padding:10px 0">Not available on waivers in any leagues (all rostered).</p>';
+    }
+
+    let opponentHtml = '';
+    if (opponents.length > 0) {
+      opponentHtml = `
+        <table class="dossier-table" style="margin-top:8px">
+          <thead><tr><th>League</th><th>Platform</th><th>Format</th><th>Manager / Owner</th><th>Team</th></tr></thead>
+          <tbody>
+            ${opponents
+              .map(
+                (o) => `
+              <tr>
+                <td><b>${esc(o.league_name)}</b></td>
+                <td><span class="platform-badge ${esc(o.platform)}">${esc(o.platform.toUpperCase())}</span></td>
+                <td><span class="format-badge">${esc(o.format)}</span></td>
+                <td><b>${esc(o.owner || 'Opponent')}</b></td>
+                <td>${esc(o.team_name || '—')}</td>
+              </tr>
+            `,
+              )
+              .join('')}
+          </tbody>
+        </table>
+      `;
+    } else {
+      opponentHtml =
+        '<p class="meta" style="padding:10px 0">No opponents roster this player across your synced leagues.</p>';
+    }
+
+    return `
+      <div class="dossier-card">
+        <div class="card-header"><span class="card-title">🏆 Rostered on My Teams (${rostered.length})</span></div>
+        ${rosteredHtml}
+      </div>
+
+      <div class="dossier-card" style="margin-top:14px">
+        <div class="card-header"><span class="card-title">⚡ Available on Free Agency & Waivers (${waivers.length})</span></div>
+        ${waiversHtml}
+      </div>
+
+      <div class="dossier-card" style="margin-top:14px">
+        <div class="card-header"><span class="card-title">🛡️ Opponent Rostered (${opponents.length})</span></div>
+        ${opponentHtml}
+      </div>
+    `;
+  }
+
+  function renderDossierNewsTab(d) {
+    const news = d.news || [];
+    const links = d.links || {};
+
+    let newsHtml = '';
+    if (news.length > 0) {
+      for (const n of news) {
+        newsHtml += `
+          <div class="player-news-item">
+            <div class="news-item-time">${esc(new Date(n.timestamp).toLocaleDateString())} · <b>${esc(n.source)}</b></div>
+            <div class="news-item-headline"><b>${esc(n.headline)}</b></div>
+            <div class="news-item-body">${esc(n.body)}</div>
+          </div>
+        `;
+      }
+    } else {
+      newsHtml =
+        '<p class="meta" style="padding:12px 0">No recent news reports filed for this player in the local database.</p>';
+    }
+
+    return `
+      <div class="dossier-card">
+        <div class="card-header"><span class="card-title">🔗 External Profiles & Research Links</span></div>
+        <div class="links" style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap">
+          <a target="_blank" href="${esc(links.espn)}">🏈 ESPN Player Profile</a>
+          <a target="_blank" href="${esc(links.sleeper)}">⚡ Sleeper Profile</a>
+          <a target="_blank" href="${esc(links.fantasypros)}">📊 FantasyPros Profile</a>
+          <a target="_blank" href="${esc(links.pfr)}">📖 Pro-Football-Reference</a>
+          <a target="_blank" href="${esc(links.news)}">🔎 Google News Search</a>
+        </div>
+      </div>
+
+      <div class="dossier-card" style="margin-top:14px">
+        <div class="card-header"><span class="card-title">📰 Verified News Reports (${news.length})</span></div>
+        <div style="max-height:50vh; overflow-y:auto; padding:10px 0">
+          ${newsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderPlayerDossierModal() {
+    const modal = document.getElementById('playerModalbox');
+    const overlay = document.getElementById('playerOverlay');
+    if (!modal || !overlay) return;
+
+    const d = global.inSeasonState.activePlayerDetails;
+    if (!d || !d.player) return;
+
+    const p = d.player;
+    const activeTab = global.inSeasonState.activePlayerModalTab || 'overview';
+
+    const normName = normalizePlayerName(p.name);
+    const isWatchlisted = Boolean(
+      p.is_watchlisted || global.inSeasonState.watchlist[normName] !== undefined,
+    );
+
+    const posClass = ['qb', 'rb', 'wr', 'te', 'dst', 'k'].includes(p.pos.toLowerCase())
+      ? p.pos.toLowerCase()
+      : 'flex';
+
+    let headerInj = '';
+    if (p.injury) {
+      const injText =
+        typeof p.injury === 'object' ? p.injury.status || p.injury.code : String(p.injury);
+      if (injText) {
+        headerInj = `<span class="injury-badge injury-badge-${injText.toLowerCase()}">${esc(injText)}</span>`;
+      }
+    }
+
+    const rankBadges = [];
+    if (p.ranks?.dynSF) rankBadges.push(`<span class="dossier-pill">Dyn SF <b>#${p.ranks.dynSF}</b></span>`);
+    if (p.ranks?.dyn1QB) rankBadges.push(`<span class="dossier-pill">Dyn 1QB <b>#${p.ranks.dyn1QB}</b></span>`);
+    if (p.ranks?.red_ppr) rankBadges.push(`<span class="dossier-pill">Redraft PPR <b>#${p.ranks.red_ppr}</b></span>`);
+    if (p.ranks?.red_half) rankBadges.push(`<span class="dossier-pill">Half PPR <b>#${p.ranks.red_half}</b></span>`);
+    if (p.ranks?.red_std) rankBadges.push(`<span class="dossier-pill">Standard <b>#${p.ranks.red_std}</b></span>`);
+    if (p.ranks?.boris) rankBadges.push(`<span class="dossier-pill">Boris <b>${p.ranks.boris}</b></span>`);
+
+    const subInfo = [
+      p.team && p.team !== 'FA' ? `<b>${esc(p.team)}</b>` : 'Free Agent',
+      p.bye ? `Bye Wk ${p.bye}` : null,
+      p.age ? `${p.age} yrs old` : null,
+      p.exp != null
+        ? p.exp === 0
+          ? 'Rookie'
+          : `${p.exp} yrs exp`
+        : p.rookie
+          ? 'Rookie'
+          : null,
+      p.college ? esc(p.college) : null,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    const headshotHtml = p.headshot_url
+      ? `<img src="${esc(p.headshot_url)}" class="dossier-avatar" onerror="this.style.display='none'; if (this.nextElementSibling) this.nextElementSibling.style.display='flex';" alt="${esc(p.name)}" /><div class="dossier-avatar-placeholder" style="display:none">${esc(p.pos)}</div>`
+      : `<div class="dossier-avatar-placeholder">${esc(p.pos)}</div>`;
+
+    const logsCount = d.game_logs?.length || 0;
+    const rosteredCount = d.portfolio?.rostered?.length || 0;
+    const waiversCount = d.portfolio?.waivers?.length || 0;
+    const newsCount = d.news?.length || 0;
+
+    const tabNavHtml = `
+      <div class="dossier-nav-tabs">
+        <button type="button" class="dossier-tab-btn ${activeTab === 'overview' ? 'active' : ''}" onclick="global.setPlayerModalTab('overview')">
+          📊 Overview & Matchup
+        </button>
+        <button type="button" class="dossier-tab-btn ${activeTab === 'logs' ? 'active' : ''}" onclick="global.setPlayerModalTab('logs')">
+          📈 2026 Game Logs (${logsCount})
+        </button>
+        <button type="button" class="dossier-tab-btn ${activeTab === 'depth' ? 'active' : ''}" onclick="global.setPlayerModalTab('depth')">
+          📋 Depth Chart & Room
+        </button>
+        <button type="button" class="dossier-tab-btn ${activeTab === 'schedule' ? 'active' : ''}" onclick="global.setPlayerModalTab('schedule')">
+          🗓️ Full Schedule
+        </button>
+        <button type="button" class="dossier-tab-btn ${activeTab === 'portfolio' ? 'active' : ''}" onclick="global.setPlayerModalTab('portfolio')">
+          🌐 My Leagues (${rosteredCount} owned)
+        </button>
+        <button type="button" class="dossier-tab-btn ${activeTab === 'news' ? 'active' : ''}" onclick="global.setPlayerModalTab('news')">
+          📰 News & Links (${newsCount})
+        </button>
+      </div>
+    `;
+
+    let contentHtml = '';
+    if (activeTab === 'overview') {
+      contentHtml = renderDossierOverviewTab(d);
+    } else if (activeTab === 'logs') {
+      contentHtml = renderDossierLogsTab(d);
+    } else if (activeTab === 'depth') {
+      contentHtml = renderDossierDepthTab(d);
+    } else if (activeTab === 'schedule') {
+      contentHtml = renderDossierScheduleTab(d);
+    } else if (activeTab === 'portfolio') {
+      contentHtml = renderDossierPortfolioTab(d);
+    } else if (activeTab === 'news') {
+      contentHtml = renderDossierNewsTab(d);
+    }
+
+    modal.className = 'modal player-dossier-modal';
     modal.innerHTML = `
-      <h3>📰 Player Report: ${esc(playerName)}
-        <button class="close" onclick="document.getElementById('playerOverlay').style.display='none'">×</button>
-      </h3>
-      <div style="max-height:60vh; overflow-y:auto; padding:10px 0">
-        ${itemsHtml || '<p class="meta">No recent news reports filed for this player.</p>'}
+      <div class="dossier-header">
+        <div class="dossier-header-main">
+          ${headshotHtml}
+          <div class="dossier-title-col">
+            <div class="dossier-name-row">
+              <span class="pos-tag pos-${posClass}">${esc(p.pos)}</span>
+              <span class="dossier-player-name">${esc(p.name)}</span>
+              ${headerInj}
+            </div>
+            <div class="dossier-meta-row">${subInfo}</div>
+            <div class="dossier-ranks-row">${rankBadges.join('')}</div>
+          </div>
+        </div>
+        <div class="dossier-actions-col">
+          <button type="button" class="act small ${isWatchlisted ? 'primary' : ''}" onclick="global.toggleDossierWatchlist('${esc(p.name)}')" title="Toggle Watchlist">
+            ${isWatchlisted ? '★ Watchlisted' : '☆ Add to Watchlist'}
+          </button>
+          <button type="button" class="act small" onclick="global.openWaiverNoteModal('${esc(p.name)}')" title="Edit Scouting Note">
+            📝 Notes
+          </button>
+          <button class="close dossier-close-btn" onclick="global.closePlayerModal()">×</button>
+        </div>
+      </div>
+      ${tabNavHtml}
+      <div class="dossier-body">
+        ${contentHtml}
+      </div>
+    `;
+  }
+
+  global.openPlayerModal = async (playerName, initialTab = 'overview') => {
+    const modal = document.getElementById('playerModalbox');
+    const overlay = document.getElementById('playerOverlay');
+    if (!modal || !overlay) return;
+
+    modal.className = 'modal player-dossier-modal';
+    modal.innerHTML = `
+      <div class="dossier-loading">
+        <div class="dossier-spinner"></div>
+        <div>Loading intelligence dossier for <b>${esc(playerName)}</b>...</div>
       </div>
     `;
     overlay.style.display = 'flex';
+    overlay.classList.add('show');
+
+    const details = await global.inSeasonManager.fetchPlayerDetails(playerName);
+    if (!details || !details.player) {
+      modal.innerHTML = `
+        <div class="dossier-header">
+          <h3>🏈 ${esc(playerName)}</h3>
+          <button class="close" onclick="global.closePlayerModal()">×</button>
+        </div>
+        <div style="padding:20px">
+          <p class="meta">No extended dossier data found for this player.</p>
+          <div class="links" style="margin-top:10px">
+            <a target="_blank" href="https://news.google.com/search?q=${encodeURIComponent(playerName)}+fantasy">🔎 Google News</a>
+            <a target="_blank" href="https://www.espn.com/search/_/q/${encodeURIComponent(playerName)}">ESPN</a>
+          </div>
+        </div>
+      `;
+      return;
+    }
+
+    global.inSeasonState.activePlayerDetails = details;
+    global.inSeasonState.activePlayerModalTab = initialTab || 'overview';
+    renderPlayerDossierModal();
+  };
+
+  global.closePlayerModal = () => {
+    const overlay = document.getElementById('playerOverlay');
+    if (overlay) {
+      overlay.style.display = 'none';
+      overlay.classList.remove('show');
+    }
+  };
+
+  global.setPlayerModalTab = (tabKey) => {
+    global.inSeasonState.activePlayerModalTab = tabKey;
+    renderPlayerDossierModal();
+  };
+
+  global.toggleDossierWatchlist = async (playerName) => {
+    await global.toggleWatchlist(playerName);
+    const normKey = normalizePlayerName(playerName);
+    const isNow = Boolean(global.inSeasonState.watchlist[normKey] !== undefined);
+    if (global.inSeasonState.activePlayerDetails?.player) {
+      global.inSeasonState.activePlayerDetails.player.is_watchlisted = isNow;
+    }
+    renderPlayerDossierModal();
+  };
+
+  global.openPlayerNewsModal = (playerName) => {
+    return global.openPlayerModal(playerName, 'news');
   };
 
   global.deleteManagerLeague = async (leagueId) => {

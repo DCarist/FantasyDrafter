@@ -24,7 +24,11 @@ PLAYERS_JSON = os.path.join(DATA_DIR, "players-data.json")
 # In-memory player index cache
 _PLAYERS_CACHE: list[dict[str, Any]] | None = None
 _PLAYER_BY_NAME: dict[str, dict[str, Any]] | None = None
+_DEPTH_CHARTS_CACHE: dict[str, Any] | None = None
+_SCHEDULES_CACHE: dict[str, Any] | None = None
+_BYES_CACHE: dict[str, Any] | None = None
 _SLEEPER_PLAYERS_CACHE: dict[str, dict[str, Any]] | None = None
+_SLEEPER_ID_BY_NORM_NAME: dict[str, str] | None = None
 
 
 def get_db_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
@@ -100,9 +104,51 @@ def init_db(db_path: str = DB_PATH) -> None:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS player_game_logs (
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    player_id TEXT NOT NULL,
+                    player_name TEXT NOT NULL,
+                    pos TEXT NOT NULL,
+                    team TEXT NOT NULL,
+                    opp TEXT NOT NULL,
+                    home_away TEXT NOT NULL DEFAULT '',
+                    game_result TEXT NOT NULL DEFAULT '',
+                    stats_json TEXT NOT NULL DEFAULT '{}',
+                    fantasy_pts_ppr REAL NOT NULL DEFAULT 0.0,
+                    fantasy_pts_half REAL NOT NULL DEFAULT 0.0,
+                    fantasy_pts_std REAL NOT NULL DEFAULT 0.0,
+                    off_snp REAL NOT NULL DEFAULT 0.0,
+                    tm_off_snp REAL NOT NULL DEFAULT 0.0,
+                    snap_pct REAL NOT NULL DEFAULT 0.0,
+                    pos_rank INTEGER,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (season, week, player_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS nfl_team_schedules (
+                    season INTEGER NOT NULL,
+                    team TEXT NOT NULL,
+                    schedule_json TEXT NOT NULL DEFAULT '[]',
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (season, team)
+                );
+
+                CREATE TABLE IF NOT EXISTS defensive_rankings (
+                    season INTEGER NOT NULL,
+                    team TEXT NOT NULL,
+                    pos TEXT NOT NULL,
+                    points_allowed_avg REAL NOT NULL DEFAULT 0.0,
+                    rank INTEGER NOT NULL DEFAULT 16,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (season, team, pos)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_roster_date ON roster_snapshots(snapshot_date);
                 CREATE INDEX IF NOT EXISTS idx_roster_league ON roster_snapshots(league_id);
                 CREATE INDEX IF NOT EXISTS idx_news_player ON player_news(player_name);
+                CREATE INDEX IF NOT EXISTS idx_game_logs_player ON player_game_logs(player_name);
+                CREATE INDEX IF NOT EXISTS idx_game_logs_week ON player_game_logs(season, week);
             """)
     finally:
         conn.close()
@@ -110,7 +156,7 @@ def init_db(db_path: str = DB_PATH) -> None:
 
 def load_players_data() -> list[dict[str, Any]]:
     """Loads player dataset from data/players-data.json with caching."""
-    global _PLAYERS_CACHE, _PLAYER_BY_NAME
+    global _PLAYERS_CACHE, _PLAYER_BY_NAME, _DEPTH_CHARTS_CACHE, _SCHEDULES_CACHE, _BYES_CACHE
     if _PLAYERS_CACHE is not None:
         return _PLAYERS_CACHE
 
@@ -124,10 +170,19 @@ def load_players_data() -> list[dict[str, Any]]:
             with open(target, encoding="utf-8") as f:
                 data = json.load(f)
                 _PLAYERS_CACHE = data.get("players", [])
+                _DEPTH_CHARTS_CACHE = data.get("depthCharts", {})
+                _SCHEDULES_CACHE = data.get("schedules", {})
+                _BYES_CACHE = data.get("byes", {})
         except Exception:
             _PLAYERS_CACHE = []
+            _DEPTH_CHARTS_CACHE = {}
+            _SCHEDULES_CACHE = {}
+            _BYES_CACHE = {}
     else:
         _PLAYERS_CACHE = []
+        _DEPTH_CHARTS_CACHE = {}
+        _SCHEDULES_CACHE = {}
+        _BYES_CACHE = {}
 
     _PLAYER_BY_NAME = {}
     for p in _PLAYERS_CACHE:
@@ -136,6 +191,33 @@ def load_players_data() -> list[dict[str, Any]]:
             _PLAYER_BY_NAME[n] = p
 
     return _PLAYERS_CACHE
+
+
+def load_sleeper_players_cache() -> dict[str, dict[str, Any]]:
+    """Loads Sleeper player cache mapping player_id to metadata."""
+    global _SLEEPER_PLAYERS_CACHE, _SLEEPER_ID_BY_NORM_NAME
+    if _SLEEPER_PLAYERS_CACHE is not None:
+        return _SLEEPER_PLAYERS_CACHE
+    path = os.path.join(DATA_DIR, "sleeper_players_cache.json")
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                _SLEEPER_PLAYERS_CACHE = json.load(f)
+        except Exception:
+            _SLEEPER_PLAYERS_CACHE = {}
+    else:
+        _SLEEPER_PLAYERS_CACHE = {}
+
+    _SLEEPER_ID_BY_NORM_NAME = {}
+    if isinstance(_SLEEPER_PLAYERS_CACHE, dict):
+        for pid, pdata in _SLEEPER_PLAYERS_CACHE.items():
+            if isinstance(pdata, dict):
+                fn = pdata.get("full_name")
+                if fn:
+                    norm = normalize_name(fn)
+                    if norm and norm not in _SLEEPER_ID_BY_NORM_NAME:
+                        _SLEEPER_ID_BY_NORM_NAME[norm] = str(pid)
+    return _SLEEPER_PLAYERS_CACHE
 
 
 def normalize_name(name: str) -> str:
@@ -2735,8 +2817,961 @@ def seed_demo_data(db_path: str = DB_PATH) -> dict[str, Any]:
     }
 
 
+# ==============================================================================
+# NFL SCHEDULES, GAME LOGS & DEFENSIVE RANKINGS
+# ==============================================================================
+
+NFL_ALL_TEAMS = [
+    "ARI",
+    "ATL",
+    "BAL",
+    "BUF",
+    "CAR",
+    "CHI",
+    "CIN",
+    "CLE",
+    "DAL",
+    "DEN",
+    "DET",
+    "GB",
+    "HOU",
+    "IND",
+    "JAX",
+    "KC",
+    "LAC",
+    "LAR",
+    "LV",
+    "MIA",
+    "MIN",
+    "NE",
+    "NO",
+    "NYG",
+    "NYJ",
+    "PHI",
+    "PIT",
+    "SEA",
+    "SF",
+    "TB",
+    "TEN",
+    "WSH",
+]
+
+
+def sync_nfl_schedules(season: int = 2026, db_path: str = DB_PATH) -> dict[str, Any]:
+    """Fetches full 18-week NFL schedule from ESPN scoreboard and caches in SQLite."""
+    init_db(db_path)
+    conn = get_db_connection(db_path)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    try:
+        from scripts import espn_client as ec
+    except ImportError:
+        import espn_client as ec  # type: ignore[no-redef]
+
+    team_schedules: dict[str, dict[int, dict[str, Any]]] = {t: {} for t in NFL_ALL_TEAMS}
+    fetch_success = False
+
+    try:
+        for w in range(1, 19):
+            url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?week={w}&year={season}"
+            sb = ec.fetch_espn_json(url)
+            events = sb.get("events", []) if sb else []
+            if not events and w <= 3:
+                continue
+            fetch_success = True
+            playing_teams: set[str] = set()
+
+            for ev in events:
+                comps = ev.get("competitions", [{}])[0]
+                competitors = comps.get("competitors", [])
+                if len(competitors) < 2:
+                    continue
+                home = next((c for c in competitors if c.get("homeAway") == "home"), {})
+                away = next((c for c in competitors if c.get("homeAway") == "away"), {})
+                h_team = home.get("team", {}).get("abbreviation")
+                a_team = away.get("team", {}).get("abbreviation")
+                if not h_team or not a_team:
+                    continue
+
+                playing_teams.add(h_team)
+                playing_teams.add(a_team)
+
+                status_type = ev.get("status", {}).get("type", {})
+                status_detail = status_type.get("detail", "")
+                is_final = bool(
+                    status_type.get("completed", False) or status_detail.startswith("Final")
+                )
+
+                h_score = home.get("score")
+                a_score = away.get("score")
+                h_win = bool(home.get("winner"))
+                a_win = bool(away.get("winner"))
+
+                venue_info = comps.get("venue", {})
+                venue_name = venue_info.get("fullName", "")
+                venue_surface = venue_info.get("surface", "Grass")
+
+                broadcasts = comps.get("broadcasts", [])
+                network = broadcasts[0].get("names", [""])[0] if broadcasts else ""
+
+                odds_list = comps.get("odds", [])
+                spread = odds_list[0].get("details") if odds_list else None
+                ou = odds_list[0].get("overUnder") if odds_list else None
+
+                h_res = (
+                    f"{'W' if h_win else 'L'} {h_score}-{a_score}"
+                    if is_final and h_score and a_score
+                    else None
+                )
+                team_schedules.setdefault(h_team, {})[w] = {
+                    "week": w,
+                    "opponent": a_team,
+                    "home_away": "home",
+                    "game_date": ev.get("date", ""),
+                    "status": status_detail,
+                    "is_final": is_final,
+                    "result": h_res,
+                    "venue": venue_name,
+                    "surface": venue_surface,
+                    "network": network,
+                    "spread": spread,
+                    "over_under": ou,
+                }
+
+                a_res = (
+                    f"{'W' if a_win else 'L'} {a_score}-{h_score}"
+                    if is_final and a_score and h_score
+                    else None
+                )
+                team_schedules.setdefault(a_team, {})[w] = {
+                    "week": w,
+                    "opponent": h_team,
+                    "home_away": "away",
+                    "game_date": ev.get("date", ""),
+                    "status": status_detail,
+                    "is_final": is_final,
+                    "result": a_res,
+                    "venue": venue_name,
+                    "surface": venue_surface,
+                    "network": network,
+                    "spread": spread,
+                    "over_under": ou,
+                }
+
+            # Bye teams for this week
+            for t in NFL_ALL_TEAMS:
+                if t not in playing_teams and w not in team_schedules[t]:
+                    team_schedules[t][w] = {
+                        "week": w,
+                        "opponent": "BYE",
+                        "home_away": None,
+                        "game_date": "",
+                        "status": "BYE",
+                        "is_final": False,
+                        "result": None,
+                        "venue": "",
+                        "surface": "",
+                        "network": "",
+                        "spread": None,
+                        "over_under": None,
+                    }
+    except Exception:
+        fetch_success = False
+
+    try:
+        with conn:
+            # Check existing count
+            existing = conn.execute(
+                "SELECT count(*) as cnt FROM nfl_team_schedules WHERE season=?", (season,)
+            ).fetchone()
+            if existing and existing["cnt"] >= 32 and not fetch_success:
+                return {"ok": True, "cached": True, "teams_synced": int(existing["cnt"])}
+
+            if fetch_success:
+                for t, weeks_map in team_schedules.items():
+                    sched_list = [
+                        weeks_map.get(w, {"week": w, "opponent": "TBD"}) for w in range(1, 19)
+                    ]
+                    conn.execute(
+                        """
+                        INSERT INTO nfl_team_schedules (season, team, schedule_json, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(season, team) DO UPDATE SET
+                            schedule_json = excluded.schedule_json,
+                            updated_at = excluded.updated_at
+                    """,
+                        (season, t, json.dumps(sched_list), now_iso),
+                    )
+                return {"ok": True, "teams_synced": len(team_schedules)}
+
+            # Baseline deterministic fallback if offline/empty
+            if not existing or existing["cnt"] == 0:
+                for t in NFL_ALL_TEAMS:
+                    sched_list = [
+                        {
+                            "week": w,
+                            "opponent": "BYE" if w == 7 else "TBD",
+                            "home_away": "home" if w % 2 == 1 else "away",
+                            "status": "Final" if w <= 2 else "Upcoming",
+                            "is_final": w <= 2,
+                            "result": "W 24-20" if w <= 2 else None,
+                            "venue": "NFL Stadium",
+                            "surface": "Grass",
+                            "network": "CBS",
+                            "spread": f"{t} -2.5" if w == 3 else None,
+                            "over_under": 45.5 if w == 3 else None,
+                        }
+                        for w in range(1, 19)
+                    ]
+                    conn.execute(
+                        """
+                        INSERT INTO nfl_team_schedules (season, team, schedule_json, updated_at)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(season, team) DO UPDATE SET
+                            schedule_json = excluded.schedule_json,
+                            updated_at = excluded.updated_at
+                    """,
+                        (season, t, json.dumps(sched_list), now_iso),
+                    )
+                return {"ok": True, "fallback": True, "teams_synced": len(NFL_ALL_TEAMS)}
+            return {"ok": True, "cached": True, "teams_synced": int(existing["cnt"])}
+    finally:
+        conn.close()
+
+
+def sync_nfl_weekly_stats(
+    season: int = 2026,
+    weeks: list[int] | None = None,
+    db_path: str = DB_PATH,
+) -> dict[str, Any]:
+    """Fetches weekly player stats from Sleeper API and persists to player_game_logs in SQLite."""
+    init_db(db_path)
+    sleeper_players = load_sleeper_players_cache()
+    conn = get_db_connection(db_path)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    if weeks is None:
+        weeks = [1, 2]
+
+    # Map (team, week) -> matchup info
+    sched_rows = conn.execute(
+        "SELECT team, schedule_json FROM nfl_team_schedules WHERE season=?", (season,)
+    ).fetchall()
+    team_week_matchup: dict[tuple[str, int], dict[str, Any]] = {}
+    for r in sched_rows:
+        t = str(r["team"])
+        try:
+            s_list = json.loads(r["schedule_json"])
+            for g in s_list:
+                w_val = g.get("week")
+                if w_val:
+                    team_week_matchup[(t, int(w_val))] = g
+        except Exception:
+            pass
+
+    inserted_total = 0
+    fetch_err = None
+
+    for w in weeks:
+        url = f"https://api.sleeper.app/v1/stats/nfl/regular/{season}/{w}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        stats_data = {}
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                stats_data = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            fetch_err = str(e)
+            continue
+
+        if not stats_data:
+            continue
+
+        with conn:
+            for pid, s in stats_data.items():
+                pinfo = sleeper_players.get(str(pid))
+                if not pinfo:
+                    continue
+                pname = pinfo.get("full_name")
+                pos = pinfo.get("position")
+                team = pinfo.get("team")
+                if not pname or not pos:
+                    continue
+
+                matchup = team_week_matchup.get((team or "", w), {})
+                opp = matchup.get("opponent", "")
+                home_away = matchup.get("home_away", "")
+                game_result = matchup.get("result", "")
+
+                pts_ppr = float(s.get("pts_ppr") or 0.0)
+                pts_half = float(s.get("pts_half_ppr") or 0.0)
+                pts_std = float(s.get("pts_std") or 0.0)
+
+                off_snp = float(s.get("off_snp") or 0.0)
+                tm_off_snp = float(s.get("tm_off_snp") or 0.0)
+                snap_pct = round((off_snp / tm_off_snp * 100.0), 1) if tm_off_snp > 0.0 else 0.0
+
+                pos_rank = (
+                    s.get("pos_rank_ppr") or s.get("pos_rank_half_ppr") or s.get("pos_rank_std")
+                )
+                pos_rank_int = int(pos_rank) if pos_rank is not None else None
+
+                conn.execute(
+                    """
+                    INSERT INTO player_game_logs (
+                        season, week, player_id, player_name, pos, team, opp,
+                        home_away, game_result, stats_json, fantasy_pts_ppr,
+                        fantasy_pts_half, fantasy_pts_std, off_snp, tm_off_snp,
+                        snap_pct, pos_rank, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(season, week, player_id) DO UPDATE SET
+                        player_name = excluded.player_name,
+                        pos = excluded.pos,
+                        team = excluded.team,
+                        opp = excluded.opp,
+                        home_away = excluded.home_away,
+                        game_result = excluded.game_result,
+                        stats_json = excluded.stats_json,
+                        fantasy_pts_ppr = excluded.fantasy_pts_ppr,
+                        fantasy_pts_half = excluded.fantasy_pts_half,
+                        fantasy_pts_std = excluded.fantasy_pts_std,
+                        off_snp = excluded.off_snp,
+                        tm_off_snp = excluded.tm_off_snp,
+                        snap_pct = excluded.snap_pct,
+                        pos_rank = excluded.pos_rank,
+                        updated_at = excluded.updated_at
+                """,
+                    (
+                        season,
+                        w,
+                        str(pid),
+                        pname,
+                        pos,
+                        team or "",
+                        opp,
+                        home_away,
+                        game_result or "",
+                        json.dumps(s),
+                        pts_ppr,
+                        pts_half,
+                        pts_std,
+                        off_snp,
+                        tm_off_snp,
+                        snap_pct,
+                        pos_rank_int,
+                        now_iso,
+                    ),
+                )
+                inserted_total += 1
+
+    # If offline and empty, insert fallback demo logs
+    if inserted_total == 0:
+        existing = conn.execute(
+            "SELECT count(*) as cnt FROM player_game_logs WHERE season=?", (season,)
+        ).fetchone()
+        if existing and existing["cnt"] > 0:
+            calculate_defensive_rankings(season=season, db_path=db_path)
+            conn.close()
+            return {"ok": True, "cached": True, "logs_count": int(existing["cnt"])}
+
+        # Seed baseline logs for top demo players
+        demo_log_candidates = [
+            ("Baker Mayfield", "QB", "TB", "4892", 216.0, 1.0, 57.0, 57.0, 18.5, 12),
+            ("Bryce Young", "QB", "CAR", "9228", 361.0, 3.0, 61.0, 68.0, 32.4, 3),
+            ("CeeDee Lamb", "WR", "DAL", "6786", 0.0, 1.0, 47.0, 58.0, 25.4, 6),
+            ("Rome Odunze", "WR", "CHI", "11632", 0.0, 1.0, 45.0, 55.0, 16.2, 18),
+            ("Kyren Williams", "RB", "LAR", "8150", 0.0, 2.0, 50.0, 60.0, 22.1, 4),
+        ]
+        with conn:
+            for w in [1, 2]:
+                for name, pos, tm, pid, pyd, ptd, snp, tmsnp, pts, prank in demo_log_candidates:
+                    mock_s = {
+                        "pass_yd": pyd if pos == "QB" else 0.0,
+                        "pass_td": ptd if pos == "QB" else 0.0,
+                        "pass_att": 35.0 if pos == "QB" else 0.0,
+                        "pass_cmp": 24.0 if pos == "QB" else 0.0,
+                        "rush_yd": 50.0 if pos == "RB" else 15.0,
+                        "rush_td": 1.0 if pos == "RB" else 0.0,
+                        "rush_att": 15.0 if pos == "RB" else 2.0,
+                        "rec_tgt": 9.0 if pos == "WR" else 3.0,
+                        "rec": 6.0 if pos == "WR" else 2.0,
+                        "rec_yd": 85.0 if pos == "WR" else 20.0,
+                        "rec_td": 1.0 if pos == "WR" else 0.0,
+                        "rec_air_yd": 65.0 if pos == "WR" else 5.0,
+                        "rec_yar": 20.0 if pos == "WR" else 15.0,
+                        "pts_ppr": pts,
+                        "pts_half_ppr": pts - 3.0,
+                        "pts_std": pts - 6.0,
+                        "off_snp": snp,
+                        "tm_off_snp": tmsnp,
+                    }
+                    conn.execute(
+                        """
+                        INSERT INTO player_game_logs (
+                            season, week, player_id, player_name, pos, team, opp,
+                            home_away, game_result, stats_json, fantasy_pts_ppr,
+                            fantasy_pts_half, fantasy_pts_std, off_snp, tm_off_snp,
+                            snap_pct, pos_rank, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(season, week, player_id) DO UPDATE SET
+                            player_name = excluded.player_name,
+                            stats_json = excluded.stats_json,
+                            fantasy_pts_ppr = excluded.fantasy_pts_ppr,
+                            updated_at = excluded.updated_at
+                    """,
+                        (
+                            season,
+                            w,
+                            pid,
+                            name,
+                            pos,
+                            tm,
+                            "DET" if w == 1 else "MIN",
+                            "home" if w == 1 else "away",
+                            "W 27-24",
+                            json.dumps(mock_s),
+                            pts,
+                            pts - 3.0,
+                            pts - 6.0,
+                            snp,
+                            tmsnp,
+                            round((snp / tmsnp) * 100.0, 1),
+                            prank,
+                            now_iso,
+                        ),
+                    )
+                    inserted_total += 1
+
+    calculate_defensive_rankings(season=season, db_path=db_path)
+    conn.close()
+    return {"ok": True, "logs_synced": inserted_total, "fetch_err": fetch_err}
+
+
+def calculate_defensive_rankings(season: int = 2026, db_path: str = DB_PATH) -> dict[str, Any]:
+    """Calculates defensive matchup rankings per position based on fantasy points allowed."""
+    init_db(db_path)
+    conn = get_db_connection(db_path)
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT opp as defense_team, pos, sum(fantasy_pts_ppr) as total_pts, count(distinct week) as games
+            FROM player_game_logs
+            WHERE season=? AND opp != '' AND opp != 'BYE' AND pos IN ('QB', 'RB', 'WR', 'TE')
+            GROUP BY opp, pos
+        """,
+            (season,),
+        ).fetchall()
+
+        def_stats: dict[str, dict[str, float]] = {}
+        for r in rows:
+            dteam = str(r["defense_team"])
+            pos = str(r["pos"])
+            total = float(r["total_pts"])
+            games = max(1, int(r["games"]))
+            avg = round(total / games, 2)
+            def_stats.setdefault(pos, {})[dteam] = avg
+
+        # Ensure all 32 teams have baseline rankings even if some haven't played yet
+        for pos in ["QB", "RB", "WR", "TE"]:
+            def_stats.setdefault(pos, {})
+            for t in NFL_ALL_TEAMS:
+                if t not in def_stats[pos]:
+                    def_stats[pos][t] = 20.0
+
+        with conn:
+            for pos, team_avgs in def_stats.items():
+                sorted_teams = sorted(team_avgs.items(), key=lambda x: x[1])
+                for rank_idx, (dteam, avg_pts) in enumerate(sorted_teams, 1):
+                    conn.execute(
+                        """
+                        INSERT INTO defensive_rankings (season, team, pos, points_allowed_avg, rank, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(season, team, pos) DO UPDATE SET
+                            points_allowed_avg = excluded.points_allowed_avg,
+                            rank = excluded.rank,
+                            updated_at = excluded.updated_at
+                    """,
+                        (season, dteam, pos, avg_pts, rank_idx, now_iso),
+                    )
+
+        return {"ok": True, "positions_ranked": len(def_stats)}
+    finally:
+        conn.close()
+
+
+def get_player_details(
+    player_name: str,
+    league_id: str | None = None,
+    db_path: str = DB_PATH,
+) -> dict[str, Any]:
+    """Assembles comprehensive player details, game logs, next matchup scouting, depth chart, schedule, and cross-league portfolio."""
+    init_db(db_path)
+    norm_target = normalize_name(player_name)
+    conn = get_db_connection(db_path)
+
+    # 1. Base player metadata
+    players_cache = load_players_data()
+    base_player = next(
+        (p for p in players_cache if normalize_name(p.get("name", "")) == norm_target),
+        None,
+    )
+
+    sleeper_cache = load_sleeper_players_cache()
+    s_id, s_info = next(
+        (
+            (k, v)
+            for k, v in sleeper_cache.items()
+            if normalize_name(v.get("full_name", "")) == norm_target
+        ),
+        (None, {}),
+    )
+
+    p_name = str(
+        base_player.get("name") if base_player else (s_info.get("full_name") or player_name)
+    )
+    p_pos = (base_player.get("pos") if base_player else s_info.get("position")) or "FLEX"
+    p_team = (base_player.get("team") if base_player else s_info.get("team")) or "FA"
+    p_bye = base_player.get("bye") if base_player else None
+    p_age = base_player.get("age") if base_player else s_info.get("age")
+    p_college = s_info.get("college") if s_info else ""
+    p_exp = s_info.get("years_exp") if s_info else None
+    p_rookie = bool(base_player.get("rookie")) if base_player else (p_exp == 0)
+    p_injury = base_player.get("injury") if base_player else s_info.get("injury_status")
+
+    espn_id = s_info.get("espn_id") if s_info else None
+    headshot_url = f"https://sleepercdn.com/content/nfl/players/{s_id}.jpg" if s_id else ""
+
+    # Watchlist check
+    w_row = conn.execute(
+        "SELECT note FROM waiver_watchlist WHERE player_name = ?", (p_name,)
+    ).fetchone()
+    is_watchlisted = w_row is not None
+    watchlist_note = w_row["note"] if w_row else ""
+
+    # 2. Game Logs from DB (auto-sync if logs table is empty)
+    log_rows = conn.execute(
+        """
+        SELECT week, opp, home_away, game_result, stats_json, fantasy_pts_ppr,
+               fantasy_pts_half, fantasy_pts_std, off_snp, tm_off_snp, snap_pct, pos_rank
+        FROM player_game_logs
+        WHERE season=2026 AND (player_name=? OR player_id=?)
+        ORDER BY week ASC
+    """,
+        (p_name, str(s_id) if s_id else ""),
+    ).fetchall()
+
+    if not log_rows:
+        count_check = conn.execute(
+            "SELECT count(*) as cnt FROM player_game_logs WHERE season=2026"
+        ).fetchone()
+        if not count_check or count_check["cnt"] == 0:
+            sync_nfl_schedules(season=2026, db_path=db_path)
+            sync_nfl_weekly_stats(season=2026, db_path=db_path)
+            log_rows = conn.execute(
+                """
+                SELECT week, opp, home_away, game_result, stats_json, fantasy_pts_ppr,
+                       fantasy_pts_half, fantasy_pts_std, off_snp, tm_off_snp, snap_pct, pos_rank
+                FROM player_game_logs
+                WHERE season=2026 AND (player_name=? OR player_id=?)
+                ORDER BY week ASC
+            """,
+                (p_name, str(s_id) if s_id else ""),
+            ).fetchall()
+
+    game_logs = []
+    total_snaps = 0.0
+    snap_pcts: list[float] = []
+    ppr_pts: list[float] = []
+    half_pts: list[float] = []
+    std_pts: list[float] = []
+    tot_pass_yd = 0.0
+    tot_pass_td = 0.0
+    tot_pass_att = 0.0
+    tot_pass_cmp = 0.0
+    tot_rush_yd = 0.0
+    tot_rush_td = 0.0
+    tot_rush_att = 0.0
+    tot_rec_tgt = 0.0
+    tot_rec = 0.0
+    tot_rec_yd = 0.0
+    tot_rec_td = 0.0
+    tot_rec_air_yd = 0.0
+    tot_rec_yac = 0.0
+
+    for r in log_rows:
+        w = int(r["week"])
+        s_dict = json.loads(r["stats_json"]) if r["stats_json"] else {}
+        snaps = float(r["off_snp"])
+        tm_snaps = float(r["tm_off_snp"])
+        spct = float(r["snap_pct"])
+        pts_p = float(r["fantasy_pts_ppr"])
+        pts_h = float(r["fantasy_pts_half"])
+        pts_s = float(r["fantasy_pts_std"])
+
+        total_snaps += snaps
+        if tm_snaps > 0.0:
+            snap_pcts.append(spct)
+        ppr_pts.append(pts_p)
+        half_pts.append(pts_h)
+        std_pts.append(pts_s)
+
+        tot_pass_yd += float(s_dict.get("pass_yd") or 0.0)
+        tot_pass_td += float(s_dict.get("pass_td") or 0.0)
+        tot_pass_att += float(s_dict.get("pass_att") or 0.0)
+        tot_pass_cmp += float(s_dict.get("pass_cmp") or 0.0)
+        tot_rush_yd += float(s_dict.get("rush_yd") or 0.0)
+        tot_rush_td += float(s_dict.get("rush_td") or 0.0)
+        tot_rush_att += float(s_dict.get("rush_att") or 0.0)
+        tot_rec_tgt += float(s_dict.get("rec_tgt") or 0.0)
+        tot_rec += float(s_dict.get("rec") or 0.0)
+        tot_rec_yd += float(s_dict.get("rec_yd") or 0.0)
+        tot_rec_td += float(s_dict.get("rec_td") or 0.0)
+        tot_rec_air_yd += float(s_dict.get("rec_air_yd") or 0.0)
+        tot_rec_yac += float(s_dict.get("rec_yar") or 0.0)
+
+        game_logs.append(
+            {
+                "week": w,
+                "opp": r["opp"],
+                "home_away": r["home_away"],
+                "game_result": r["game_result"],
+                "snaps": snaps,
+                "tm_snaps": tm_snaps,
+                "snap_pct": spct,
+                "fantasy_pts_ppr": pts_p,
+                "fantasy_pts_half": pts_h,
+                "fantasy_pts_std": pts_s,
+                "pos_rank": r["pos_rank"],
+                "stats": s_dict,
+            }
+        )
+
+    games_played = len(game_logs)
+    avg_snap_pct = round(sum(snap_pcts) / len(snap_pcts), 1) if snap_pcts else 0.0
+
+    season_summary = {
+        "games_played": games_played,
+        "total_snaps": total_snaps,
+        "avg_snap_pct": avg_snap_pct,
+        "pts_ppr_total": round(sum(ppr_pts), 2),
+        "pts_ppr_avg": round(sum(ppr_pts) / games_played, 2) if games_played else 0.0,
+        "pts_half_avg": round(sum(half_pts) / games_played, 2) if games_played else 0.0,
+        "pts_std_avg": round(sum(std_pts) / games_played, 2) if games_played else 0.0,
+        "pass_yd_total": tot_pass_yd,
+        "pass_td_total": tot_pass_td,
+        "pass_att_total": tot_pass_att,
+        "pass_cmp_total": tot_pass_cmp,
+        "rush_yd_total": tot_rush_yd,
+        "rush_td_total": tot_rush_td,
+        "rush_att_total": tot_rush_att,
+        "rec_tgt_total": tot_rec_tgt,
+        "rec_total": tot_rec,
+        "rec_yd_total": tot_rec_yd,
+        "rec_td_total": tot_rec_td,
+        "rec_air_yd_total": tot_rec_air_yd,
+        "rec_yac_total": tot_rec_yac,
+    }
+
+    # 3. Next Matchup & Full Schedule
+    sched_row = conn.execute(
+        "SELECT schedule_json FROM nfl_team_schedules WHERE season=2026 AND team=?",
+        (p_team,),
+    ).fetchone()
+    if not sched_row:
+        sync_nfl_schedules(season=2026, db_path=db_path)
+        sched_row = conn.execute(
+            "SELECT schedule_json FROM nfl_team_schedules WHERE season=2026 AND team=?",
+            (p_team,),
+        ).fetchone()
+
+    full_schedule = json.loads(sched_row["schedule_json"]) if sched_row else []
+
+    next_game = next(
+        (
+            g
+            for g in full_schedule
+            if not g.get("is_final") and g.get("opponent") not in ("BYE", "TBD")
+        ),
+        None,
+    )
+    next_matchup = None
+    if next_game:
+        opp = next_game.get("opponent")
+        def_row = conn.execute(
+            """
+            SELECT rank, points_allowed_avg FROM defensive_rankings
+            WHERE season=2026 AND team=? AND pos=?
+        """,
+            (opp, p_pos),
+        ).fetchone()
+
+        d_rank = int(def_row["rank"]) if def_row else 16
+        d_pts = float(def_row["points_allowed_avg"]) if def_row else 0.0
+        tier = "tough" if d_rank <= 10 else ("neutral" if d_rank <= 22 else "favorable")
+
+        next_matchup = {
+            "week": next_game.get("week"),
+            "opponent": opp,
+            "home_away": next_game.get("home_away"),
+            "game_date": next_game.get("game_date"),
+            "status": next_game.get("status"),
+            "venue": next_game.get("venue"),
+            "surface": next_game.get("surface"),
+            "network": next_game.get("network"),
+            "spread": next_game.get("spread"),
+            "over_under": next_game.get("over_under"),
+            "defensive_rank": {
+                "pos": p_pos,
+                "rank": d_rank,
+                "points_allowed_avg": d_pts,
+                "tier": tier,
+                "label": f"Rank {d_rank} vs {p_pos} ({tier.capitalize()})",
+            },
+        }
+
+    # 4. Depth Chart & Positional Room
+    depth_charts = _DEPTH_CHARTS_CACHE or {}
+    t_depth = depth_charts.get(p_team, {})
+    pos_key = p_pos.lower()
+    if pos_key in ("dst", "def"):
+        pos_key = "pk"
+
+    raw_pos_depth = t_depth.get(pos_key, [])
+    room_players: list[dict[str, Any]] = []
+
+    if isinstance(raw_pos_depth, dict):
+        for slot_label, player_list in raw_pos_depth.items():
+            if isinstance(player_list, list):
+                for pl in player_list:
+                    if isinstance(pl, dict):
+                        pl_copy = dict(pl)
+                        if "role" not in pl_copy:
+                            pl_copy["role"] = slot_label.upper()
+                        room_players.append(pl_copy)
+                    elif isinstance(pl, str):
+                        room_players.append(
+                            {
+                                "name": pl,
+                                "rank": len(room_players) + 1,
+                                "role": slot_label.upper(),
+                            }
+                        )
+    elif isinstance(raw_pos_depth, list):
+        for pl in raw_pos_depth:
+            if isinstance(pl, dict):
+                room_players.append(dict(pl))
+            elif isinstance(pl, str):
+                room_players.append({"name": pl, "rank": len(room_players) + 1})
+
+    enriched_room: list[dict[str, Any]] = []
+    my_depth_rank = None
+    for rp in room_players:
+        rp_name = str(rp.get("name") or "")
+        rp_rank = rp.get("rank")
+        if normalize_name(rp_name) == norm_target:
+            my_depth_rank = rp_rank
+
+        s_row = conn.execute(
+            """
+            SELECT sum(off_snp) as total_snaps, avg(snap_pct) as avg_pct
+            FROM player_game_logs
+            WHERE season=2026 AND player_name=?
+        """,
+            (rp_name,),
+        ).fetchone()
+        snaps_val = float(s_row["total_snaps"] or 0.0) if s_row else 0.0
+        pct_val = round(float(s_row["avg_pct"] or 0.0), 1) if s_row else 0.0
+        enriched_room.append(
+            {
+                "name": rp_name,
+                "rank": rp_rank,
+                "injury": rp.get("injury"),
+                "snaps": snaps_val,
+                "snap_pct": pct_val,
+                "role": "Starter" if rp_rank == 1 else f"Depth #{rp_rank}",
+            }
+        )
+
+    handcuff_note = ""
+    if p_pos == "RB":
+        if my_depth_rank == 1 and len(enriched_room) > 1:
+            handcuff_note = f"Primary starting back. Direct handcuff: {enriched_room[1]['name']}."
+        elif my_depth_rank and my_depth_rank > 1:
+            handcuff_note = f"Key handcuff behind {enriched_room[0]['name']}. High contingency upside if starter misses time."
+    elif p_pos == "QB":
+        if my_depth_rank == 1:
+            handcuff_note = "Franchise starting quarterback."
+        elif my_depth_rank and my_depth_rank > 1:
+            handcuff_note = f"Backup quarterback behind {enriched_room[0]['name']}."
+    elif p_pos in ("WR", "TE") and my_depth_rank == 1:
+        handcuff_note = "Primary featured pass-catcher."
+
+    # 5. Multi-League Portfolio Matrix
+    leagues = get_leagues(db_path)
+    rostered: list[dict[str, Any]] = []
+    available: list[dict[str, Any]] = []
+    opponent_owned: list[dict[str, Any]] = []
+
+    for lg in leagues:
+        lid = lg["id"]
+        my_tid = lg.get("my_team_id")
+        rosters = get_roster_snapshots(lid, db_path=db_path)
+        found = False
+        for r in rosters:
+            tid = r["team_id"]
+            is_me = str(tid) == str(my_tid)
+            all_slots = [
+                ("Starter", r.get("starters") or []),
+                ("Bench", r.get("bench") or []),
+                ("Taxi", r.get("taxi") or []),
+                ("IR", r.get("ir") or []),
+            ]
+            for slot_type, plist in all_slots:
+                for p in plist:
+                    pname = p.get("name") if isinstance(p, dict) else str(p)
+                    if normalize_name(pname) == norm_target:
+                        found = True
+                        if is_me:
+                            slot_str = slot_type
+                            if isinstance(p, dict) and p.get("slot"):
+                                slot_str += f" ({p['slot']})"
+                            rostered.append(
+                                {
+                                    "league_id": lid,
+                                    "league_name": lg["name"],
+                                    "platform": lg["platform"],
+                                    "format": lg.get("format_key", "standard"),
+                                    "slot": slot_str,
+                                    "record": f"{r.get('wins', 0)}-{r.get('losses', 0)}",
+                                }
+                            )
+                        else:
+                            opponent_owned.append(
+                                {
+                                    "league_id": lid,
+                                    "league_name": lg["name"],
+                                    "platform": lg["platform"],
+                                    "format": lg.get("format_key", "standard"),
+                                    "owner": r.get("owner_name") or r.get("team_name"),
+                                    "team_name": r.get("team_name") or "",
+                                }
+                            )
+        if not found:
+            available.append(
+                {
+                    "league_id": lid,
+                    "league_name": lg["name"],
+                    "platform": lg["platform"],
+                    "format": lg.get("format_key", "standard"),
+                }
+            )
+
+    # 6. Player News
+    news_rows = conn.execute(
+        """
+        SELECT headline, body, source, impact, timestamp
+        FROM player_news
+        WHERE lower(player_name) LIKE ? OR ? LIKE lower(player_name)
+        ORDER BY timestamp DESC LIMIT 10
+    """,
+        (f"%{p_name.lower()}%", p_name.lower()),
+    ).fetchall()
+    news_list = [dict(n) for n in news_rows]
+
+    # 7. Deep Links
+    q_name = urllib.parse.quote_plus(p_name)
+    links = {
+        "espn": (
+            f"https://www.espn.com/nfl/player/_/id/{espn_id}"
+            if espn_id
+            else f"https://www.espn.com/search/_/q/{q_name}"
+        ),
+        "sleeper": (
+            f"https://sleeper.com/players/nfl/{s_id}"
+            if s_id
+            else f"https://sleeper.com/search?q={q_name}"
+        ),
+        "fantasypros": f"https://www.fantasypros.com/nfl/players/{norm_target.replace(' ', '-')}.php",
+        "pfr": f"https://www.pro-football-reference.com/search/search.fcgi?search={q_name}",
+        "news": f"https://news.google.com/search?q={q_name}+fantasy",
+    }
+
+    conn.close()
+
+    return {
+        "player": {
+            "name": p_name,
+            "pos": p_pos,
+            "team": p_team,
+            "bye": p_bye,
+            "age": p_age,
+            "rookie": p_rookie,
+            "college": p_college,
+            "exp": p_exp,
+            "injury": p_injury,
+            "headshot_url": headshot_url,
+            "is_watchlisted": is_watchlisted,
+            "watchlist_note": watchlist_note,
+            "ranks": {
+                "dynSF": base_player.get("dynSF") if base_player else None,
+                "dyn1QB": base_player.get("dyn1QB") if base_player else None,
+                "red_ppr": (
+                    base_player.get("red_1qb_ppr") or base_player.get("redraft")
+                    if base_player
+                    else None
+                ),
+                "red_half": base_player.get("red_1qb_half") if base_player else None,
+                "red_std": base_player.get("red_1qb_std") if base_player else None,
+                "boris": base_player.get("boris_ppr") if base_player else None,
+            },
+        },
+        "next_matchup": next_matchup,
+        "season_summary": season_summary,
+        "game_logs": game_logs,
+        "depth_chart": {
+            "team": p_team,
+            "pos": p_pos,
+            "my_rank": my_depth_rank,
+            "players": enriched_room,
+            "handcuff_note": handcuff_note,
+        },
+        "schedule": full_schedule,
+        "portfolio": {
+            "rostered": rostered,
+            "waivers": available,
+            "opponent_owned": opponent_owned,
+        },
+        "news": news_list,
+        "links": links,
+    }
+
+
 if __name__ == "__main__":
-    print("Initializing Fantasy Drafter In-Season SQLite Store...")
+    import argparse
+
+    parser = argparse.ArgumentParser(description="In-Season Manager CLI")
+    parser.add_argument("--seed", action="store_true", help="Seed demo leagues and news")
+    parser.add_argument(
+        "--sync-nfl", action="store_true", help="Sync NFL schedules and weekly stats"
+    )
+    parser.add_argument("--player-details", type=str, help="Fetch details for player name")
+    args = parser.parse_args()
+
     init_db()
-    seed_res = seed_demo_data()
-    print("Seed result:", json.dumps(seed_res, indent=2))
+
+    if args.seed:
+        res = seed_demo_data()
+        print("Seed result:", json.dumps(res, indent=2))
+    elif args.sync_nfl:
+        s_res = sync_nfl_schedules()
+        w_res = sync_nfl_weekly_stats()
+        print("Schedules synced:", s_res)
+        print("Weekly stats synced:", w_res)
+    elif args.player_details:
+        p_res = get_player_details(args.player_details)
+        print(json.dumps(p_res, indent=2))
+    else:
+        print("Initializing Fantasy Drafter In-Season SQLite Store...")
+        seed_res = seed_demo_data()
+        print("Seed result:", json.dumps(seed_res, indent=2))

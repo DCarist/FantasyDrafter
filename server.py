@@ -746,6 +746,13 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({"ok": True, "rankings": rankings})
                 return
 
+            if path == "/api/manager/player/details":
+                name = params.get("name", [""])[0] or params.get("player_name", [""])[0]
+                league_id = params.get("league_id", [None])[0]
+                details = mgr.get_player_details(name, league_id=league_id)
+                self.send_json({"ok": True, "details": details})
+                return
+
             self.send_error(404, f"Manager endpoint {path} not found")
         except Exception as e:
             self.send_json({"ok": False, "error": str(e)}, status=500)
@@ -933,6 +940,13 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                     return
                 res = mgr.save_watchlist_note(player_name, note=note)
                 self.send_json(res)
+                return
+
+            if path == "/api/manager/player/details":
+                name = body.get("name") or body.get("player_name") or ""
+                league_id = body.get("league_id") or body.get("leagueId")
+                details = mgr.get_player_details(name, league_id=league_id)
+                self.send_json({"ok": True, "details": details})
                 return
 
             self.send_error(404, f"Manager endpoint {path} not found")
