@@ -1,29 +1,31 @@
 ---
 name: feature-testing
 description: >-
-  Standards, runbook, and patterns for adding automated tests when implementing new features,
-  draft calculations, UI state changes, or data pipelines in FantasyDrafter without modifying existing tests.
+  Standards and patterns for deterministic, behavior-focused automated tests when implementing
+  features, draft calculations, UI state changes, or data pipelines in FantasyDrafter.
 ---
 
 # Feature Testing Skill for FantasyDrafter
 
-This skill defines the testing standards and procedures for extending **FantasyDrafter**. Whenever you add new features, scoring models, UI state transitions, or data pipeline tools to this project, follow this runbook to ensure comprehensive test coverage while strictly preserving existing test suites.
+Use this runbook when adding or updating tests for features, scoring models, UI transitions, or data pipelines. Keep related coverage together and verify behavior through the same entry points consumers use.
 
 ---
 
 ## 1. Core Principles & Golden Rules
 
-1. **Preserve Existing Tests:**
-   * **Do NOT modify or remove existing test suites** (such as [`test-draft-logic.mjs`](file:///d:/Programming/FantasyDrafter/test-draft-logic.mjs)) unless explicitly instructed by the user.
-   * New functionality must be tested in dedicated test files inside the `tests/` directory.
+1. **Extend the Closest Suite:**
+   * Modify or extend an existing `tests/<feature>.test.mjs` when it already covers the behavior. Move related regressions into that suite rather than creating a one-case module.
+   * Create a new `tests/<feature>.test.mjs` only for a distinct feature area with a cohesive set of contracts. Remove obsolete suites after migrating their meaningful assertions; keep `test-draft-logic.mjs` as the baseline.
+   * Test files matching `tests/*.test.mjs` are automatically discovered by `test-runner.mjs`.
 
-2. **Modular Test Architecture:**
-   * Place all new test suites in `tests/<feature-name>.test.mjs`.
-   * Test files matching `tests/*.test.mjs` are automatically discovered and executed by [`test-runner.mjs`](file:///d:/Programming/FantasyDrafter/test-runner.mjs).
+2. **Test Observable Behavior:**
+   * Assert results, rendered UI, state transitions, persisted values, requests, errors, and boundaries through real production APIs. Do not assert source text, internal names, incidental wording, arbitrary nonempty results, or copied test-side implementations.
+   * Each assertion must fail for a plausible regression. Keep distinct contract coverage when refactoring; delete tautological or implementation-pinning checks rather than rewording them.
 
-3. **Zero External Test Dependencies:**
-   * Tests run directly in Node.js ESM format without requiring bulky test runners (like Jest/Mocha).
-   * Use the shared helper functions in [`tests/test-helper.mjs`](file:///d:/Programming/FantasyDrafter/tests/test-helper.mjs).
+3. **Make Tests Deterministic and Isolated:**
+   * Use fixed fixtures and mocked external transports instead of live APIs, current data, or timing assumptions. Preserve success and failure paths that consumers observe.
+   * Use unique temporary files/databases for mutable fixtures and clean up with `finally`. Suites must pass when run concurrently or repeatedly.
+   * Tests run directly in Node.js ESM without an external test framework; use the shared `tests/test-helper.mjs` assertions.
 
 ---
 
@@ -36,7 +38,7 @@ import { eq, assert, assertThrows, printSuiteHeader, finishSuite, resetFailures 
 ```
 
 ### Available Helper Functions:
-* `eq(actual, expected, label)`: Deep JSON equality comparison with descriptive error logging.
+* `eq(actual, expected, label)`: Deep equality, including cross-realm cloneable values, with descriptive failure logging.
 * `assert(condition, label)`: Truthy boolean check.
 * `assertThrows(fn, label)`: Asserts that executing `fn()` throws an error.
 * `printSuiteHeader(suiteName)`: Prints a formatted banner for test output.
@@ -48,9 +50,8 @@ import { eq, assert, assertThrows, printSuiteHeader, finishSuite, resetFailures 
 
 When implementing a new feature in this repository:
 
-### Step 1: Create a New Test Suite
-Create a new file in `tests/<feature>.test.mjs` using the template below:
-
+### Step 1: Extend a Related Suite or Create a New One
+Add the contract to the existing feature suite when possible. Otherwise create `tests/<feature>.test.mjs` using this template:
 ```javascript
 // Test suite for <Feature Name>
 import { createRequire } from 'module';
@@ -88,7 +89,7 @@ npm test
 ```
 
 ### Step 4: Verify All Suites Pass
-Ensure both the legacy baseline suite (`test-draft-logic.mjs`) and your new test suite (`tests/<feature>.test.mjs`) pass with 0 failures before committing.
+Ensure the baseline suite (`test-draft-logic.mjs`) and every affected feature suite pass before committing.
 
 ### Step 5: Verify Code Quality Checks Pass 100%
 Prior to committing any code, run the code quality checks for your modified code types and ensure 100% compliance:

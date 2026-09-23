@@ -38,7 +38,7 @@ During development, invoke the relevant tool incrementally:
 
 #### Automated Tests
 - Full test suite: `npm test` (or `node test-runner.mjs`)
-- Never modify existing test suites in `tests/` or `test-draft-logic.mjs` unless explicitly instructed.
+- Extend an existing feature suite when it covers the behavior; create a new suite only for a distinct feature area. Preserve meaningful coverage when consolidating suites.
 
 ---
 
@@ -46,7 +46,7 @@ During development, invoke the relevant tool incrementally:
 
 When implementing any feature, bug fix, or refactor:
 
-1. **Develop incrementally**: Write tests in `tests/<feature>.test.mjs` (following the `feature-testing` skill).
+1. **Develop incrementally**: Add deterministic, behavior-focused assertions to the relevant existing suite (or `tests/<feature>.test.mjs` for a distinct feature), following the `feature-testing` skill.
 2. **Run Domain Quality Checks**:
    - If editing JS/HTML/CSS: run `npm run check:biome`.
    - If editing Python: run `npm run check:py`.
