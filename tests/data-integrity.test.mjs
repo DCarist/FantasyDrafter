@@ -1,5 +1,7 @@
 // Test suite validating player data integrity, schemas, byes, and positions
 import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -10,48 +12,86 @@ const playersJsPath = existsSync('data/players-data.js')
   : 'players-data.js';
 assert(existsSync(playersJsPath), 'players-data.js exists');
 
-const jsContent = readFileSync(playersJsPath, 'utf-8');
-const eqIdx = jsContent.indexOf('=');
-assert(eqIdx !== -1, 'players-data.js contains assignment');
-const jsonStr = jsContent
-  .substring(eqIdx + 1)
-  .trim()
-  .replace(/;$/, '');
-const data = JSON.parse(jsonStr);
+const browser = { window: {} };
+runInNewContext(readFileSync(playersJsPath, 'utf-8'), browser, { filename: playersJsPath });
+const data = browser.window.DRAFT_DATA;
 
 assert(Array.isArray(data.players), 'data.players is an array');
-assert(data.players.length > 0, `data.players has ${data.players.length} players`);
+assert(/^\d{4}-\d{2}-\d{2}$/.test(data.generated), 'data.generated is an ISO date');
 assert(
-  data.generated && typeof data.generated === 'string',
-  `data.generated timestamp is present (${data.generated})`,
+  data.byes && !Array.isArray(data.byes) && typeof data.byes === 'object',
+  'data.byes map is present',
 );
-assert(data.byes && typeof data.byes === 'object', 'data.byes map is present');
-assert(
-  Object.keys(data.byes).length === 32,
-  `32 NFL teams in bye map (found ${Object.keys(data.byes).length})`,
+eq(Object.keys(data.byes).length, 32, '32 NFL teams in bye map');
+eq(
+  Object.entries(data.byes)
+    .filter(([, week]) => !Number.isInteger(week) || week < 4 || week > 18)
+    .slice(0, 3),
+  [],
+  'Every NFL team has a valid bye week',
 );
 
-// Validate player structure
-let validRanks = 0;
-let validPositions = 0;
+// Aggregate invalid records instead of logging once per player in the full dataset.
 const validPosSet = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DST']);
-
-for (const p of data.players) {
-  assert(p.name && typeof p.name === 'string', `Player has valid name: ${p.name}`);
-  if (validPosSet.has(p.pos)) {
-    validPositions++;
+const invalidNames = [];
+const invalidPositions = [];
+const invalidTeams = [];
+const invalidByes = [];
+const invalidRookies = [];
+const invalidRankings = [];
+for (const [index, player] of data.players.entries()) {
+  const id = `${index}: ${player.name}`;
+  if (typeof player.name !== 'string' || !player.name.trim()) invalidNames.push(id);
+  if (!validPosSet.has(player.pos)) invalidPositions.push(id);
+  if (
+    player.team !== null &&
+    player.team !== 'FA' &&
+    (typeof player.team !== 'string' || !Object.hasOwn(data.byes, player.team))
+  ) {
+    invalidTeams.push(id);
   }
-  if (p.dynSF != null || p.redraft != null || p.adp != null) {
-    validRanks++;
+  if (player.bye !== null && (!Number.isInteger(player.bye) || player.bye < 4 || player.bye > 18)) {
+    invalidByes.push(id);
+  }
+  if (typeof player.rookie !== 'boolean') invalidRookies.push(id);
+  const rankings = [player.dynSF, player.dyn1QB, player.redraft, player.adp];
+  if (
+    !rankings.some((rank) => Number.isFinite(rank) && rank > 0) ||
+    rankings.some((rank) => rank != null && (!Number.isFinite(rank) || rank <= 0))
+  ) {
+    invalidRankings.push(id);
   }
 }
-
 eq(
-  validPositions,
-  data.players.length,
-  'All players have standard fantasy positions (QB/RB/WR/TE/K/DST)',
+  invalidNames.slice(0, 3),
+  [],
+  `All ${data.players.length} players have nonempty names (${invalidNames.length} invalid)`,
 );
-eq(validRanks, data.players.length, 'All players have at least one valid ranking metric');
+eq(
+  invalidPositions.slice(0, 3),
+  [],
+  `All players have standard fantasy positions (${invalidPositions.length} invalid)`,
+);
+eq(
+  invalidTeams.slice(0, 3),
+  [],
+  `Player teams are NFL teams, free agents, or unassigned (${invalidTeams.length} invalid)`,
+);
+eq(
+  invalidByes.slice(0, 3),
+  [],
+  `Player byes are valid weeks or unknown (${invalidByes.length} invalid)`,
+);
+eq(
+  invalidRookies.slice(0, 3),
+  [],
+  `All players have a boolean rookie flag (${invalidRookies.length} invalid)`,
+);
+eq(
+  invalidRankings.slice(0, 3),
+  [],
+  `All players have a finite positive ranking metric (${invalidRankings.length} invalid)`,
+);
 
 // --- Validate Defense (DST) Harmonization (Exactly 32 unique teams, no duplicates) ---
 const dstPlayers = data.players.filter((p) => p.pos === 'DST');
@@ -74,8 +114,6 @@ assert(
 );
 
 // Verify draft-logic resolver
-import { createRequire } from 'node:module';
-
 const require = createRequire(import.meta.url);
 const L = require('../draft-logic.js');
 

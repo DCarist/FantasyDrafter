@@ -5,72 +5,61 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import os from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 console.log('=============================================');
 console.log('     FantasyDrafter Test Suite Runner        ');
 console.log('=============================================\n');
 
-const testFiles = [];
+const root = dirname(fileURLToPath(import.meta.url));
+const testFiles = ['test-draft-logic.mjs'];
 
-// 1. Existing baseline test suite (kept intact)
-if (existsSync('test-draft-logic.mjs')) {
-  testFiles.push('test-draft-logic.mjs');
+if (existsSync(join(root, 'tests'))) {
+  testFiles.push(
+    ...readdirSync(join(root, 'tests'))
+      .filter((file) => file.endsWith('.test.mjs') || file.endsWith('.test.js'))
+      .sort()
+      .map((file) => join('tests', file)),
+  );
 }
+if (testFiles.length === 1) throw new Error('No feature suites found in tests/');
 
-// 2. Discover test suites in tests/
-if (existsSync('tests')) {
-  const dirFiles = readdirSync('tests')
-    .filter((f) => f.endsWith('.test.mjs') || f.endsWith('.test.js'))
-    .map((f) => join('tests', f));
-  testFiles.push(...dirFiles);
-}
-
-let passedSuites = 0;
-let failedSuites = 0;
-const concurrency = Math.min(os.cpus().length || 4, 8);
+const concurrency = Math.min(os.availableParallelism?.() || os.cpus().length, 8, testFiles.length);
+const results = new Array(testFiles.length);
 let nextIdx = 0;
 
 async function runWorker() {
   while (nextIdx < testFiles.length) {
-    const file = testFiles[nextIdx++];
-    const result = await new Promise((resolve) => {
-      const p = spawn(process.execPath, [file], { stdio: 'pipe' });
+    const index = nextIdx++;
+    const file = testFiles[index];
+    results[index] = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [file], { cwd: root, stdio: 'pipe' });
       let output = '';
-      p.stdout.on('data', (chunk) => {
+      child.stdout.on('data', (chunk) => {
         output += chunk;
       });
-      p.stderr.on('data', (chunk) => {
+      child.stderr.on('data', (chunk) => {
         output += chunk;
       });
-      p.on('close', (status) => {
-        resolve({ file, status, output });
-      });
+      child.on('error', (error) => resolve({ file, status: null, output: `${output}\n${error}` }));
+      child.on('close', (status) => resolve({ file, status, output }));
     });
-
-    console.log(`\n▶ Running: ${result.file}`);
-    if (result.output) {
-      process.stdout.write(result.output);
-    }
-    if (result.status === 0) {
-      passedSuites++;
-    } else {
-      failedSuites++;
-      console.error(`❌ Suite failed: ${result.file} (Exit code: ${result.status})`);
-    }
   }
 }
 
 await Promise.all(Array.from({ length: concurrency }, () => runWorker()));
 
-console.log('\n=============================================');
-console.log(
-  `Summary: ${passedSuites} passed, ${failedSuites} failed (Total: ${testFiles.length} suites)`,
-);
-console.log('=============================================');
-
-if (failedSuites > 0) {
-  process.exit(1);
-} else {
-  process.exit(0);
+let failedSuites = 0;
+for (const result of results) {
+  console.log(`\nRunning: ${result.file}`);
+  if (result.output) process.stdout.write(result.output);
+  if (result.status !== 0) {
+    failedSuites++;
+    console.error(`Suite failed: ${result.file} (exit code: ${result.status})`);
+  }
 }
+console.log(
+  `\nSummary: ${testFiles.length - failedSuites} passed, ${failedSuites} failed (Total: ${testFiles.length} suites)`,
+);
+if (failedSuites > 0) process.exitCode = 1;

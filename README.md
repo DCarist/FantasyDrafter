@@ -125,7 +125,7 @@ FantasyDrafter/
 ├── server.py                       # Python HTTP relay, SSE streaming, and sync server
 ├── draft-logic.js                  # Pure core draft calculations, snake/3RR, roster slots & analytics
 ├── test-draft-logic.mjs            # Baseline unit test suite
-├── test-runner.mjs                 # Test runner discovering all 22 test suites
+├── test-runner.mjs                 # Parallel test discovery with deterministic suite reporting
 │
 ├── js/                             # Client-side modular UI and sync components
 │   ├── draft-state.js              # State store, schema normalization, and persistence
@@ -143,30 +143,10 @@ FantasyDrafter/
 │       ├── background.js           # Background service worker (PNA loopback relay)
 │       └── content-script.js       # Live DOM observer and pick parser
 │
-├── tests/                          # Automated test suites (21 modular suites)
-│   ├── bye-conflicts.test.mjs
-│   ├── data-integrity.test.mjs
-│   ├── data-pipeline.test.mjs
-│   ├── depth-chart-and-league-type.test.mjs
-│   ├── draft-board-grid.test.mjs
-│   ├── draft-queue.test.mjs
-│   ├── draft-serialization.test.mjs
-│   ├── draft-strategy-radar.test.mjs
-│   ├── draft-summary-analysis.test.mjs
-│   ├── draft-tiers.test.mjs
-│   ├── espn-sync-robustness.test.mjs
-│   ├── espn-fetch-robustness.test.mjs
-│   ├── injury-tracking.test.mjs
-│   ├── keepers.test.mjs
-│   ├── league-formats.test.mjs
-│   ├── league-setup.test.mjs
-│   ├── live-sync.test.mjs
-│   ├── pick-trading.test.mjs
-│   ├── roster-slots.test.mjs
-│   ├── server-startup.test.mjs
-│   ├── unlisted-picks.test.mjs
-│   └── watchlist.test.mjs
-│
+├── tests/                          # Feature, integration, and test-infrastructure suites
+│   ├── *.test.mjs                  # Automatically discovered by the test runner
+│   ├── test-helper.mjs             # Shared assertions and suite reporting
+│   └── test-helper.test.mjs        # Assertion helper regression checks
 ├── scripts/                        # Automated data pipelines and fetchers
 │   ├── espn_client.py              # Resilient ESPN API client (anti-403 & native curl transport)
 │   ├── update_rankings.py          # Master consensus rankings updater
@@ -184,12 +164,9 @@ FantasyDrafter/
 
 ## 🧪 Testing
 
-Fantasy Drafter includes a comprehensive suite of **23 automated test suites** covering draft matrix calculations, 3RR order, live synchronization, pick trading, keepers, roster slots, depth charts, injury tracking, natural breaks tiering, watchlist priority reordering, anti-403 HTTP resilience, and post-draft league assessment.
+Fantasy Drafter's automated suites cover draft order and scoring, browser state and rendering, platform synchronization, the in-season manager, data ingestion, and HTTP behavior. Tests should assert observable behavior using deterministic fixtures and isolated temporary databases; external APIs are mocked rather than called from the suite.
 
-Run the full test suite with:
-```bash
-npm test
-```
+Run every suite with `npm test`. Successful suites print one summary line; failures include assertion details. Set `TEST_VERBOSE=1` to print each passing assertion while debugging.
 
 ---
 

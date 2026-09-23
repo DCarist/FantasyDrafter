@@ -50,46 +50,46 @@ assert(
   'server.py documents --max-age flag in help output',
 );
 
-// --- Test 5: server.py Source Code Anchoring & Pick/Log/Update Handlers ---
-const serverPyContent = readFileSync('server.py', 'utf-8');
-assert(serverPyContent.includes('webbrowser'), 'server.py imports webbrowser module');
-assert(
-  serverPyContent.includes('os.chdir'),
-  'server.py ensures working directory is anchored to script directory',
-);
-assert(serverPyContent.includes('/favicon.ico'), 'server.py handles /favicon.ico requests');
-assert(serverPyContent.includes('FAVICON_SVG'), 'server.py defines SVG football favicon');
-assert(serverPyContent.includes('/api/sync/log'), 'server.py handles /api/sync/log requests');
-assert(
-  serverPyContent.includes('get_player_data_age'),
-  'server.py defines get_player_data_age function',
-);
-assert(
-  serverPyContent.includes('ensure_player_data_fresh'),
-  'server.py defines ensure_player_data_fresh function',
-);
-assert(
-  serverPyContent.includes('log_message'),
-  'server.py overrides log_message to filter background noise',
-);
+// Dispatch real handler methods against an in-memory HTTP response. A source
+// string containing an endpoint name does not prove that it is reachable.
+const handlerScript = `
+import io, json
+from unittest.mock import patch
+from server import SyncRelayHandler
 
-// --- Test 6: draft-board.html Favicon, Smart Zero-Poll SSE & Server Reporting ---
-const htmlContent = readFileSync('draft-board.html', 'utf-8');
-const syncClientContent = existsSync('js/draft-sync-client.js')
-  ? readFileSync('js/draft-sync-client.js', 'utf-8')
-  : '';
-const combinedClient = `${htmlContent}\n${syncClientContent}`;
-assert(htmlContent.includes('rel="icon"'), 'draft-board.html defines favicon link tag');
-assert(
-  combinedClient.includes('stopFallbackPolling()'),
-  'client halts polling on SSE connect/message',
+def request(path, method, body=b''):
+    handler = SyncRelayHandler.__new__(SyncRelayHandler)
+    handler.path = path
+    handler.wfile = io.BytesIO()
+    handler.rfile = io.BytesIO(body)
+    handler.headers = {'Content-Length': str(len(body))}
+    statuses, headers = [], {}
+    handler.send_response = lambda status: statuses.append(status)
+    handler.send_header = lambda name, value: headers.__setitem__(name, value)
+    handler.end_headers = lambda: None
+    with patch('server.log_event') as log:
+        getattr(handler, method)()
+    return statuses[0], headers, handler.wfile.getvalue().decode(), log.call_args is not None
+
+favicon = request('/favicon.ico', 'do_GET')
+logged = request('/api/sync/log', 'do_POST', json.dumps({'message': 'fixture'}).encode())
+print(json.dumps({'favicon': favicon, 'logged': logged}))
+`;
+const handlerResult = spawnSync('python', ['-c', handlerScript], { encoding: 'utf-8' });
+eq(
+  handlerResult.status,
+  0,
+  `HTTP handler dispatches (${handlerResult.stderr || 'no Python errors'})`,
 );
-assert(
-  combinedClient.includes('startFallbackPolling()'),
-  'client only activates fallback polling on error',
-);
-assert(combinedClient.includes('reportServerPick'), 'client defines reportServerPick helper');
-assert(combinedClient.includes('reportServerEvent'), 'client defines reportServerEvent helper');
+if (handlerResult.status === 0) {
+  const { favicon, logged } = JSON.parse(handlerResult.stdout);
+  eq(favicon[0], 200, 'Favicon GET succeeds');
+  eq(favicon[1]['Content-Type'], 'image/svg+xml', 'Favicon serves SVG');
+  assert(favicon[2].includes('<svg'), 'Favicon body contains SVG markup');
+  eq(logged[0], 200, 'Log POST succeeds');
+  eq(JSON.parse(logged[2]), { ok: true }, 'Log POST acknowledges the message');
+  assert(logged[3], 'Log POST records the submitted message');
+}
 
 // --- Test 7: Player Data Age Evaluation ---
 const ageCheckResult = spawnSync(
@@ -101,7 +101,7 @@ const ageCheckResult = spawnSync(
   { encoding: 'utf-8' },
 );
 eq(ageCheckResult.status, 0, 'get_player_data_age runs without error');
-assert(ageCheckResult.stdout.includes('2026-'), 'get_player_data_age returns valid date timestamp');
+assert(/\b\d{4}-\d{2}-\d{2}\b/.test(ageCheckResult.stdout), 'get_player_data_age returns a date');
 
 const success = finishSuite('Server Startup & 1-Click Launchers');
 if (!success) {

@@ -72,30 +72,68 @@ const stateSandbox = {
   },
   getDefaultSeason: L.getDefaultSeason,
 };
+stateSandbox.window = stateSandbox;
 vm.createContext(stateSandbox);
 const draftStateCode = readFileSync('js/draft-state.js', 'utf8');
 vm.runInContext(draftStateCode, stateSandbox);
 
 const draftState = stateSandbox.window.state;
-assert(draftState != null, 'Draft state loaded in sandbox');
-assert(draftState.settings != null, 'Draft state settings initialized');
-assert('platform' in draftState.settings, 'Settings defines platform');
-assert('platformLeagueId' in draftState.settings, 'Settings defines platformLeagueId');
-assert('platformUserId' in draftState.settings, 'Settings defines platformUserId');
-assert('season' in draftState.settings, 'Settings defines season');
-assert('espnSwid' in draftState.settings, 'Settings defines espnSwid');
-assert('espnS2' in draftState.settings, 'Settings defines espnS2');
-assert('inSeasonLeagueId' in draftState.settings, 'Settings defines inSeasonLeagueId');
-assert('inSeasonConnected' in draftState.settings, 'Settings defines inSeasonConnected');
+eq(draftState.settings.platform, 'manual', 'New draft starts without a platform connection');
+eq(draftState.settings.inSeasonConnected, false, 'New draft is not linked to an in-season league');
+const restored = {
+  settings: {
+    platform: 'espn',
+    platformLeagueId: 'provider-123',
+    platformUserId: 'owner-5',
+    season: '2026',
+    espnSwid: 'swid-value',
+    espnS2: 'cookie-value',
+    inSeasonLeagueId: 'manager-123',
+    inSeasonConnected: 1,
+  },
+  log: [],
+  keepers: [],
+};
+const restoredStore = new Map([
+  [
+    'fantasy_drafter_leagues_manifest',
+    JSON.stringify({
+      activeLeagueId: 'league_restored',
+      leagues: [{ id: 'league_restored', name: 'Restored League' }],
+    }),
+  ],
+  ['fantasy_drafter_league_league_restored', JSON.stringify(restored)],
+]);
+const restoredSandbox = {
+  localStorage: {
+    getItem: (key) => restoredStore.get(key) ?? null,
+    setItem: (key, value) => restoredStore.set(key, String(value)),
+  },
+  document: { getElementById: () => null },
+};
+restoredSandbox.window = restoredSandbox;
+restoredSandbox.globalThis = restoredSandbox;
+vm.createContext(restoredSandbox);
+vm.runInContext(draftStateCode, restoredSandbox);
+const restoredSettings = restoredSandbox.state.settings;
+eq(
+  restoredSettings.platformLeagueId,
+  'provider-123',
+  'Restored draft retains provider league identity',
+);
+eq(restoredSettings.platformUserId, 'owner-5', 'Restored draft retains its platform user');
+eq(restoredSettings.inSeasonLeagueId, 'manager-123', 'Restored draft retains manager connection');
+eq(restoredSettings.espnS2, 'cookie-value', 'Restored draft retains private ESPN credentials');
+eq(restoredSettings.inSeasonConnected, true, 'Restored connection status is normalized');
 
 // 4. In-Season UI Sandbox: League Setup Buttons & openLeagueSetupForManager
+const managerView = { innerHTML: '' };
 const uiSandbox = {
   localStorage: {
     getItem: (k) => {
-      if (k === 'fantasy_drafter_leagues_manifest') {
+      if (k === 'fantasy_drafter_league_league_dynasty_1') {
         return JSON.stringify({
-          activeLeagueId: 'league_dynasty_1',
-          leagues: [{ id: 'league_dynasty_1', name: 'Alpha Dynasty' }],
+          settings: { leagueName: 'Alpha Dynasty', inSeasonLeagueId: 'lg_sleeper_100' },
         });
       }
       return null;
@@ -103,7 +141,7 @@ const uiSandbox = {
     setItem: () => {},
   },
   document: {
-    getElementById: () => null,
+    getElementById: (id) => (id === 'manager_views_container' ? managerView : null),
     querySelectorAll: () => [],
   },
   inSeasonState: {
@@ -140,19 +178,41 @@ assert(
   'Exports openLeagueSetupForManager on window',
 );
 
-// Verify openLeagueSetupForManager switches or creates league
-let _switchedToLeague = null;
+// Exercise the handlers in rendered league cards and the active-league header.
+let switchedToLeague = null;
 let openedSetup = false;
 uiSandbox.switchLeague = (id) => {
-  _switchedToLeague = id;
+  switchedToLeague = id;
 };
 uiSandbox.openLeagueSetup = () => {
   openedSetup = true;
 };
-
-// Test existing match by name
-uiSandbox.window.openLeagueSetupForManager('lg_sleeper_100');
-assert(openedSetup, 'openLeagueSetupForManager calls openLeagueSetup');
+const cards = uiSandbox.renderLeaguesView();
+const cardActions = [...cards.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].filter(
+  ([, , text]) => text.includes('League Setup'),
+);
+eq(cardActions.length, 2, 'Each in-season league offers a setup action');
+const clickSetup = (markup) => {
+  const handler = markup.match(/\bonclick="([^"]+)"/)?.[1];
+  assert(handler, 'League setup action has a click handler');
+  vm.runInContext(handler, uiSandbox);
+};
+clickSetup(cardActions[0][0]);
+eq(
+  switchedToLeague,
+  'league_dynasty_1',
+  'Existing matching draft league is selected from its card',
+);
+assert(openedSetup, 'League setup opens for the existing league');
+uiSandbox.inSeasonState.currentView = 'team';
+uiSandbox.renderManagerView();
+const subheaderAction = [
+  ...managerView.innerHTML.matchAll(/<button\b[^>]*onclick="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g),
+].find(([, , text]) => text.includes('League Setup'));
+assert(subheaderAction, 'Active league header offers League Setup');
+switchedToLeague = null;
+vm.runInContext(subheaderAction[1], uiSandbox);
+eq(switchedToLeague, 'league_dynasty_1', 'Active league header opens the matching draft league');
 
 // Test new league auto-creation when no draft league exists
 let createdLeagueName = null;
@@ -164,7 +224,7 @@ uiSandbox.state = { settings: {} };
 uiSandbox.save = () => {};
 
 openedSetup = false;
-uiSandbox.window.openLeagueSetupForManager('lg_espn_200');
+clickSetup(cardActions[1][0]);
 eq(
   createdLeagueName,
   'Work ESPN League',
@@ -178,43 +238,82 @@ eq(
 );
 assert(openedSetup, 'Opens league setup modal after creating draft league');
 
-// 5. Verify HTML Templates Contain League Setup Buttons
-assert(
-  managerUiCode.includes('openLeagueSetupForManager(global.inSeasonState.activeLeagueId)'),
-  'Sub-header contains League Setup button linking to active league',
-);
-assert(
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: raw string match
-  managerUiCode.includes("openLeagueSetupForManager('${esc(lg.id)}')"),
-  'Leagues cards contain League Setup button linking to each specific league',
-);
-assert(managerUiCode.includes('league-setup-btn'), 'Leagues cards use .league-setup-btn class');
+eq(uiSandbox.state.settings.inSeasonConnected, true, 'Created draft league is marked connected');
 
-// 6. Verify Draft UI Code Contains In-Season Connection Inputs
-const draftUiCode = readFileSync('js/draft-ui.js', 'utf8');
+// Open the real draft setup modal; test the user-visible connection fields and provider transition.
+const inputs = new Map();
+const getInput = (id) => {
+  if (!inputs.has(id)) {
+    const defaults = {
+      setup_roster_qb: 1,
+      setup_roster_rb: 2,
+      setup_roster_wr: 2,
+      setup_roster_te: 1,
+      setup_roster_flex: 3,
+      setup_roster_superflex: 1,
+      setup_roster_k: 0,
+      setup_roster_dst: 0,
+      setup_roster_bench: 15,
+    };
+    inputs.set(id, {
+      value: defaults[id] ?? '',
+      innerHTML: '',
+      style: {},
+      classList: { add: () => {} },
+      addEventListener: () => {},
+    });
+  }
+  return inputs.get(id);
+};
+const draftUi = {
+  document: { getElementById: getInput },
+  state: {
+    settings: {
+      ...sourceState.settings,
+      slot: 1,
+      rounds: 25,
+      mode: 'snake',
+      scoring: 'half',
+      qbFormat: 'sf',
+      teamNames: Array.from({ length: 12 }, (_, i) => `Team ${i + 1}`),
+      rosterSlots: {},
+    },
+    keepers: [],
+  },
+  getLeagueList: () => [{ id: 'league_dynasty_1', name: 'Alpha Dynasty' }],
+  formatLineupSummary: () => 'Lineup',
+};
+draftUi.window = draftUi;
+draftUi.globalThis = draftUi;
+vm.createContext(draftUi);
+vm.runInContext(readFileSync('js/draft-ui.js', 'utf8'), draftUi);
+draftUi.openLeagueSetup();
+const setupMarkup = getInput('modalbox').innerHTML;
+for (const label of [
+  'Platform Provider',
+  'Platform League ID',
+  'My Team / User ID',
+  'Season',
+  'SWID',
+  'espn_s2',
+]) {
+  assert(setupMarkup.includes(label), `League setup presents ${label}`);
+}
 assert(
-  draftUiCode.includes('setup_platform_select'),
-  'draft-ui.js renders platform provider selector',
+  setupMarkup.includes('Sleeper Fantasy') && setupMarkup.includes('ESPN Fantasy'),
+  'League setup offers both platform providers',
 );
-assert(
-  draftUiCode.includes('setup_platform_league_id'),
-  'draft-ui.js renders platform league ID input',
+draftUi.onSetupPlatformChange('espn');
+eq(
+  getInput('setup_espn_creds_container').style.display,
+  'block',
+  'Selecting ESPN reveals credential fields',
 );
-assert(
-  draftUiCode.includes('setup_platform_user_id'),
-  'draft-ui.js renders platform user ID input',
-);
-assert(
-  draftUiCode.includes('setup_espn_creds_container'),
-  'draft-ui.js renders collapsible ESPN credentials container',
-);
-assert(
-  draftUiCode.includes('/api/manager/leagues/add'),
-  'draft-ui.js syncs league setup changes to in-season manager endpoint',
-);
-assert(
-  draftUiCode.includes('onSetupPlatformChange'),
-  'draft-ui.js exports onSetupPlatformChange handler',
+draftUi.onSetupPlatformChange('sleeper');
+eq(
+  getInput('setup_espn_creds_container').style.display,
+  'none',
+  'Selecting Sleeper hides ESPN credentials',
 );
 
 const success = finishSuite('Draft League Setup & In-Season Manager Connection');

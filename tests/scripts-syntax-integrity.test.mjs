@@ -20,10 +20,8 @@ const scriptsToVerify = [
 // 1. Verify all script files parse cleanly with no SyntaxErrors
 for (const scriptPath of scriptsToVerify) {
   const fullPath = resolve(scriptPath);
-  if (!existsSync(fullPath)) {
-    console.warn(`Skipping missing script: ${scriptPath}`);
-    continue;
-  }
+  assert(existsSync(fullPath), `${scriptPath} must exist`);
+  if (!existsSync(fullPath)) continue;
   const code = readFileSync(fullPath, 'utf8');
   let syntaxOk = false;
   try {
@@ -91,7 +89,7 @@ let evalSuccess = true;
 try {
   for (const scriptPath of scriptsToVerify) {
     const fullPath = resolve(scriptPath);
-    if (!existsSync(fullPath)) continue;
+    if (!existsSync(fullPath)) throw new Error(`Missing browser script: ${scriptPath}`);
     const code = readFileSync(fullPath, 'utf8');
     vm.runInContext(code, vmContext, { filename: scriptPath });
   }

@@ -1,20 +1,12 @@
 // Tests for the 3rd-round-reversal pick math. Run: node test-draft-logic.mjs
 import { createRequire } from 'node:module';
+import { eq, finishSuite, printSuiteHeader, resetFailures } from './tests/test-helper.mjs';
 
 const require = createRequire(import.meta.url);
 const L = require('./draft-logic.js');
 
-let failures = 0;
-function eq(actual, expected, label) {
-  const a = JSON.stringify(actual);
-  const e = JSON.stringify(expected);
-  if (a !== e) {
-    failures++;
-    console.error(`FAIL ${label}: expected ${e}, got ${a}`);
-  } else {
-    console.log(`ok   ${label}`);
-  }
-}
+resetFailures();
+printSuiteHeader('Draft Logic');
 
 // --- Commissioner's own examples (12-team language from the league message) ---
 // "The team in the 12th draft slot will pick 1.12, 2.1, and then 3.1"
@@ -130,8 +122,4 @@ eq(
   'Pick 11 in 3RR is round 3 slot 2 Ken',
 );
 
-if (failures > 0) {
-  console.error(`\n${failures} test(s) FAILED`);
-  process.exit(1);
-}
-console.log('\nAll tests passed');
+if (!finishSuite('Draft Logic')) process.exitCode = 1;

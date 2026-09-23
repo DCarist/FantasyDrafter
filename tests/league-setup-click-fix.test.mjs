@@ -7,7 +7,7 @@ import { assert, finishSuite, printSuiteHeader, resetFailures } from './test-hel
 printSuiteHeader('League Setup Modal & Button Click Integrity Fix');
 resetFailures();
 
-// 1. Simulate Clean Browser Window with NO initial mockWindow.global
+// 1. Simulate a clean browser window and load scripts in page order.
 const mockElements = new Map();
 function getOrCreateElement(id) {
   if (!mockElements.has(id)) {
@@ -63,7 +63,6 @@ const mockWindow = {
 };
 mockWindow.window = mockWindow;
 mockWindow.globalThis = mockWindow;
-// Notice: mockWindow.global is NOT defined initially, simulating a real browser
 
 const vmContext = vm.createContext(mockWindow);
 
@@ -92,10 +91,6 @@ try {
   scriptsLoadedOk = false;
 }
 assert(scriptsLoadedOk, 'All browser scripts evaluate cleanly in sequential order');
-assert(
-  mockWindow.global === mockWindow,
-  'window.global alias is established for browser environments',
-);
 
 // 2. Initialize application
 let appInitOk = true;
@@ -134,27 +129,42 @@ assert(
   'modalbox contains In-Season Platform selector',
 );
 
-// 4. Verify openLeagueSetupForManager() executes cleanly
-let mgrSetupOpenedOk = false;
+// Click the handler emitted in the actual in-season view, rather than inventing a snippet.
+mockWindow.inSeasonState.activeLeagueId = 'click-target';
+mockWindow.inSeasonState.leagues = [
+  {
+    id: 'click-target',
+    name: 'Click Test League',
+    platform: 'espn',
+    season: '2026',
+    team_count: 10,
+  },
+];
+mockWindow.inSeasonState.currentView = 'team';
+mockWindow.inSeasonState.rosterData = null;
+mockWindow.renderManagerView();
+const managerHtml = getOrCreateElement('manager_views_container').innerHTML;
+const setupButtons = [
+  ...managerHtml.matchAll(/<button\b[^>]*onclick="([^"]+)"[^>]*>([\s\S]*?)<\/button>/g),
+].filter(([, , text]) => text.includes('League Setup'));
+assert(setupButtons.length === 1, 'Active league displays one setup button');
 try {
-  mockWindow.openLeagueSetupForManager();
-  mgrSetupOpenedOk = true;
-} catch (err) {
-  console.error('openLeagueSetupForManager error:', err);
-}
-assert(mgrSetupOpenedOk, 'openLeagueSetupForManager() executes without error');
-
-// 5. Verify inline HTML click snippet simulation in browser context
-let inlineClickOk = false;
-try {
-  vm.runInContext(
-    'global.openLeagueSetupForManager(global.inSeasonState ? global.inSeasonState.activeLeagueId : null)',
-    vmContext,
+  vm.runInContext(setupButtons[0][1], vmContext);
+  assert(
+    getOrCreateElement('overlay').classList.contains('show'),
+    'Clicking active league setup opens the modal',
   );
-  inlineClickOk = true;
+  assert(
+    mockWindow.state.settings.inSeasonLeagueId === 'click-target',
+    'Clicking active league setup links the selected league',
+  );
+  assert(
+    mockWindow.state.settings.platform === 'espn',
+    'Clicking active league setup loads its platform',
+  );
 } catch (err) {
-  console.error('Inline button click evaluation error:', err);
+  console.error('Rendered league setup click failed:', err);
+  assert(false, 'Rendered league setup button executes without a browser ReferenceError');
 }
-assert(inlineClickOk, 'Simulated inline button click executes without ReferenceError or error');
 
 finishSuite('League Setup Modal & Button Click Integrity Fix');

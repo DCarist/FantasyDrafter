@@ -1,7 +1,9 @@
 // Test suite for Data Pipeline & Ingestion
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
@@ -19,11 +21,7 @@ assert(helpResult.stdout.includes('--out-js'), 'CLI supports --out-js');
 assert(helpResult.stdout.includes('--offline'), 'CLI supports --offline');
 
 // --- Test 2: Local Fixture Ingestion (Offline Testing) ---
-const testFixtureDir = join('tests', 'fixtures');
-if (!existsSync(testFixtureDir)) {
-  mkdirSync(testFixtureDir, { recursive: true });
-}
-
+const testFixtureDir = mkdtempSync(join(tmpdir(), 'fantasy-drafter-pipeline-'));
 const mockEcrCsv = `player,pos,team,bye,page_type,ecr
 "Justin Jefferson","WR","MIN",6,"dynasty-overall",1.0
 "Justin Jefferson","WR","MIN",6,"dynasty-op",4.0
@@ -52,58 +50,64 @@ const sheetPath = join(testFixtureDir, 'mock_sheet.csv');
 const outJsPath = join(testFixtureDir, 'mock_players.js');
 const outJsonPath = join(testFixtureDir, 'mock_players.json');
 
-writeFileSync(ecrPath, mockEcrCsv, 'utf-8');
-writeFileSync(valPath, mockValuesCsv, 'utf-8');
-writeFileSync(sheetPath, mockSheetCsv, 'utf-8');
-
-const runResult = spawnSync(
-  'python',
-  [
-    updateScript,
-    '--offline',
-    '--ecr-source',
-    ecrPath,
-    '--values-source',
-    valPath,
-    '--sheet-source',
-    sheetPath,
-    '--out-js',
-    outJsPath,
-    '--out-json',
-    outJsonPath,
-  ],
-  { encoding: 'utf-8' },
-);
-
-eq(runResult.status, 0, 'Local fixture update completes successfully');
-assert(
-  runResult.stdout.includes('Total active players merged: 3'),
-  'Correctly merges 3 fixture players',
-);
-
-assert(existsSync(outJsPath), 'Generated mock_players.js exists');
-assert(existsSync(outJsonPath), 'Generated mock_players.json exists');
-
-const generatedJson = JSON.parse(readFileSync(outJsonPath, 'utf-8'));
-eq(generatedJson.players.length, 3, 'Payload contains exactly 3 players');
-
-const jjeff = generatedJson.players.find((p) => p.name === 'Justin Jefferson');
-assert(jjeff !== undefined, 'Justin Jefferson is present in output');
-eq(jjeff.pos, 'WR', 'Justin Jefferson pos is WR');
-eq(jjeff.team, 'MIN', 'Justin Jefferson team is MIN');
-eq(jjeff.bye, 6, 'Justin Jefferson bye is 6');
-eq(jjeff.dyn1QB, 1.0, 'Justin Jefferson dyn1QB is 1.0');
-eq(jjeff.dynSF, 4.0, 'Justin Jefferson dynSF is 4.0');
-eq(jjeff.age, 27.1, 'Justin Jefferson age is 27.1');
-
-// Clean up mock files
 try {
-  unlinkSync(ecrPath);
-  unlinkSync(valPath);
-  unlinkSync(sheetPath);
-  unlinkSync(outJsPath);
-  unlinkSync(outJsonPath);
-} catch (_e) {}
+  writeFileSync(ecrPath, mockEcrCsv, 'utf-8');
+  writeFileSync(valPath, mockValuesCsv, 'utf-8');
+  writeFileSync(sheetPath, mockSheetCsv, 'utf-8');
+
+  const runResult = spawnSync(
+    'python',
+    [
+      updateScript,
+      '--offline',
+      '--ecr-source',
+      ecrPath,
+      '--values-source',
+      valPath,
+      '--sheet-source',
+      sheetPath,
+      '--out-js',
+      outJsPath,
+      '--out-json',
+      outJsonPath,
+    ],
+    { encoding: 'utf-8' },
+  );
+
+  eq(
+    runResult.status,
+    0,
+    `Local fixture update completes successfully (${runResult.stderr || runResult.error || 'no Python errors'})`,
+  );
+  if (runResult.status === 0) {
+    const generatedJson = JSON.parse(readFileSync(outJsonPath, 'utf-8'));
+    const browser = { window: {} };
+    runInNewContext(readFileSync(outJsPath, 'utf-8'), browser);
+    eq(
+      JSON.stringify(browser.window.DRAFT_DATA),
+      JSON.stringify(generatedJson),
+      'Browser script exposes the same dataset as the JSON output',
+    );
+    eq(generatedJson.players.length, 3, 'Payload contains exactly 3 players');
+
+    const jjeff = generatedJson.players.find((p) => p.name === 'Justin Jefferson');
+    assert(jjeff !== undefined, 'Justin Jefferson is present in output');
+    eq(jjeff.pos, 'WR', 'Justin Jefferson pos is WR');
+    eq(jjeff.team, 'MIN', 'Justin Jefferson team is MIN');
+    eq(jjeff.bye, 6, 'Justin Jefferson bye is 6');
+    eq(jjeff.dyn1QB, 1.0, 'Justin Jefferson dyn1QB is 1.0');
+    eq(jjeff.dynSF, 4.0, 'Justin Jefferson dynSF is 4.0');
+    eq(jjeff.age, 27.1, 'Justin Jefferson age is 27.1');
+    eq(generatedJson.byes.MIN, 6, 'Fixture bye overrides the default for Minnesota');
+    eq(
+      generatedJson.players.find((p) => p.name === 'Josh Allen').dynSF,
+      1,
+      'Quarterback Superflex rank uses its own ECR',
+    );
+  }
+} finally {
+  rmSync(testFixtureDir, { recursive: true, force: true });
+}
 
 const success = finishSuite('Data Pipeline & Ingestion');
 process.exit(success ? 0 : 1);

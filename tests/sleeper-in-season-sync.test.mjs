@@ -1,28 +1,26 @@
 // Test Suite for Sleeper In-Season Sync, ID Extraction, Player Resolution, and UI Handlers
 import { execFileSync } from 'node:child_process';
-import { existsSync, unlinkSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('Sleeper In-Season League Sync & Player Resolution');
 
-const TEST_DB = resolve('tests/fixtures/test_sleeper_sync.db');
-if (existsSync(TEST_DB)) {
-  try {
-    unlinkSync(TEST_DB);
-  } catch (_e) {}
-}
+const tempDir = mkdtempSync(join(tmpdir(), 'fantasy-sleeper-sync-'));
+const TEST_DB = join(tempDir, 'sleeper.db');
+try {
+  const pyRunner = (script) => {
+    const output = execFileSync(process.execPath ? 'python' : 'python3', ['-c', script], {
+      encoding: 'utf-8',
+      env: { ...process.env, TEST_DB },
+    });
+    return JSON.parse(output.trim());
+  };
 
-const pyRunner = (script) => {
-  const output = execFileSync(process.execPath ? 'python' : 'python3', ['-c', script], {
-    encoding: 'utf-8',
-  });
-  return JSON.parse(output.trim());
-};
-
-// 1. Sleeper ID Extraction Tests (raw, prefixed, web URL, app URL)
-const idExtractionScript = `
+  // 1. Sleeper ID Extraction Tests (raw, prefixed, web URL, app URL)
+  const idExtractionScript = `
 import json, sys, os
 sys.path.insert(0, os.path.abspath('.'))
 from scripts import in_season_manager as mgr
@@ -40,17 +38,21 @@ print(json.dumps({
 }))
 `;
 
-const res1 = pyRunner(idExtractionScript);
-eq(res1.ids[0], '1125219984928374784', 'Extracts raw numeric Sleeper league ID');
-eq(res1.ids[1], '1125219984928374784', 'Extracts ID from sleeper_ prefixed string');
-eq(res1.ids[2], '1125219984928374784', 'Extracts ID from sleeper.com URL');
-eq(res1.ids[3], '1222367201336508416', 'Extracts ID from sleeper.app URL with subpaths');
+  const res1 = pyRunner(idExtractionScript);
+  eq(res1.ids[0], '1125219984928374784', 'Extracts raw numeric Sleeper league ID');
+  eq(res1.ids[1], '1125219984928374784', 'Extracts ID from sleeper_ prefixed string');
+  eq(res1.ids[2], '1125219984928374784', 'Extracts ID from sleeper.com URL');
+  eq(res1.ids[3], '1222367201336508416', 'Extracts ID from sleeper.app URL with subpaths');
 
-// 2. Sleeper Player ID & Defense Resolution
-const playerResolutionScript = `
+  // 2. Sleeper Player ID & Defense Resolution
+  const playerResolutionScript = `
 import json, sys, os
 sys.path.insert(0, os.path.abspath('.'))
 from scripts import in_season_manager as mgr
+mgr._SLEEPER_PLAYERS_CACHE = {
+    "4984": {"full_name": "Josh Allen", "position": "QB", "team": "BUF"},
+    "BAL": {"full_name": "Baltimore Ravens", "position": "DEF", "team": "BAL"},
+}
 
 mgr.load_players_data()
 sp_dict = mgr.load_sleeper_players()
@@ -77,23 +79,23 @@ print(json.dumps({
 }))
 `;
 
-const res2 = pyRunner(playerResolutionScript);
-assert(res2.has_sleeper_dict, 'Sleeper player dictionary loaded successfully');
-eq(res2.josh_name, 'Josh Allen', 'Sleeper ID 4984 resolves to Josh Allen');
-eq(res2.josh_team, 'BUF', 'Josh Allen team is BUF');
-assert(res2.josh_has_consensus, 'Josh Allen matches consensus dataset');
-eq(res2.josh_bye, 7, 'Josh Allen has consensus bye week 7');
-eq(res2.bal_name, 'Baltimore Ravens', 'Sleeper ID BAL resolves to Baltimore Ravens');
-assert(res2.bal_has_consensus, 'Baltimore Ravens matches consensus dataset');
-eq(res2.bal_pos, 'DST', 'Baltimore Ravens maps to DST position');
+  const res2 = pyRunner(playerResolutionScript);
+  assert(res2.has_sleeper_dict, 'Sleeper player dictionary loaded successfully');
+  eq(res2.josh_name, 'Josh Allen', 'Sleeper ID 4984 resolves to Josh Allen');
+  eq(res2.josh_team, 'BUF', 'Josh Allen team is BUF');
+  assert(res2.josh_has_consensus, 'Josh Allen matches consensus dataset');
+  eq(res2.josh_bye, 7, 'Josh Allen has consensus bye week 7');
+  eq(res2.bal_name, 'Baltimore Ravens', 'Sleeper ID BAL resolves to Baltimore Ravens');
+  assert(res2.bal_has_consensus, 'Baltimore Ravens matches consensus dataset');
+  eq(res2.bal_pos, 'DST', 'Baltimore Ravens maps to DST position');
 
-// 3. Database Persistence & Target League In-Place Update
-const dbSyncScript = `
+  // 3. Database Persistence & Target League In-Place Update
+  const dbSyncScript = `
 import json, sys, os
 sys.path.insert(0, os.path.abspath('.'))
 from scripts import in_season_manager as mgr
 
-db = '${TEST_DB.replace(/\\/g, '\\\\')}'
+db = os.environ["TEST_DB"]
 mgr.init_db(db)
 
 # Create pre-existing league entry as if created from League Setup modal
@@ -108,10 +110,40 @@ mgr.save_league(
     db_path=db
 )
 
-# Mock sync rosters by invoking sync_sleeper_league on real Sleeper API
-# or verifying the in-place merge logic
-leagues_before = mgr.get_leagues(db_path=db)
-target_before = next(lg for lg in leagues_before if lg["id"] == target_lid)
+# Stub every Sleeper API response; unexpected URLs fail without touching the network.
+import io
+from urllib.parse import urlparse
+mgr._SLEEPER_PLAYERS_CACHE = {
+    "4984": {"full_name": "Josh Allen", "position": "QB", "team": "BUF"},
+    "BAL": {"full_name": "Baltimore Ravens", "position": "DEF", "team": "BAL"},
+    "9228": {"full_name": "Bryce Young", "position": "QB", "team": "CAR"},
+}
+league_id = "1354636057651445760"
+payloads = {
+    f"/v1/league/{league_id}": {
+        "name": "Fixture Sleeper League", "season": "2026", "total_rosters": 12,
+        "roster_positions": ["QB", "DEF", "BN"], "scoring_settings": {"rec": 0.5},
+    },
+    f"/v1/league/{league_id}/users": [
+        {"user_id": f"user_{i}", "display_name": "DougC95" if i == 3 else f"Owner {i}"}
+        for i in range(1, 13)
+    ],
+    f"/v1/league/{league_id}/rosters": [
+        {
+            "roster_id": i, "owner_id": f"user_{i}",
+            "starters": ["4984", "BAL"], "players": ["4984", "BAL", "9228"],
+            "settings": {"wins": i, "losses": 12 - i, "fpts": 1000 + i},
+        }
+        for i in range(1, 13)
+    ],
+}
+def fixture_urlopen(request, **kwargs):
+    url = request.full_url
+    assert url.startswith("https://api.sleeper.app"), url
+    path = urlparse(url).path
+    assert path in payloads, url
+    return io.BytesIO(json.dumps(payloads[path]).encode("utf-8"))
+mgr.urllib.request.urlopen = fixture_urlopen
 
 # Perform sync targeting this existing league
 sync_res = mgr.sync_sleeper_league(
@@ -134,6 +166,9 @@ print(json.dumps({
     "my_team_found": my_team is not None,
     "my_team_owner": my_team.get("owner_name") if my_team else None,
     "starters_count": len(my_team.get("starters", [])) if my_team else 0,
+    "starter_names": [p["name"] for p in my_team["starters"]] if my_team else [],
+    "bench_names": [p["name"] for p in my_team["bench"]] if my_team else [],
+    "my_team_wins": my_team["wins"] if my_team else None,
     "has_named_starters": all(
         isinstance(p, dict) and not p.get("name", "").isdigit()
         for p in (my_team.get("starters", []) if my_team else [])
@@ -146,24 +181,34 @@ print(json.dumps({
 }))
 `;
 
-const res3 = pyRunner(dbSyncScript);
-assert(res3.sync_ok, 'sync_sleeper_league executes successfully');
-eq(res3.target_id, 'league_custom_sleeper', 'Preserves target league ID in SQLite');
-eq(res3.preserved_scoring, 'half', 'Preserves custom settings during in-place league update');
-eq(res3.teams_synced, 12, 'Synced all 12 teams in Sleeper league');
-assert(res3.my_team_found, 'Matched user team by username');
-eq(res3.my_team_owner, 'DougC95', 'User team owner matched to DougC95');
-assert(res3.starters_count > 0, 'Populated starter players');
-assert(res3.has_named_starters, 'All starters resolved to real player names, no bare numeric IDs');
-assert(res3.all_have_slots, 'All Sleeper starters have slot attribute populated');
-assert(res3.qb_first, 'Sleeper starters are sorted with QB in lead position');
+  const res3 = pyRunner(dbSyncScript);
+  assert(res3.sync_ok, 'sync_sleeper_league executes successfully');
+  eq(res3.target_id, 'league_custom_sleeper', 'Preserves target league ID in SQLite');
+  eq(res3.preserved_scoring, 'half', 'Preserves custom settings during in-place league update');
+  eq(res3.teams_synced, 12, 'Synced all 12 teams in Sleeper league');
+  assert(res3.my_team_found, 'Matched user team by username');
+  eq(res3.my_team_owner, 'DougC95', 'User team owner matched to DougC95');
+  eq(res3.starters_count, 2, 'Both fixture starters persisted');
+  eq(
+    res3.starter_names,
+    ['Josh Allen', 'Baltimore Ravens'],
+    'Starter IDs resolve to QB and defense names',
+  );
+  eq(res3.bench_names, ['Bryce Young'], 'Unstarted player is persisted on the bench');
+  eq(res3.my_team_wins, 3, 'Fixture standings persist for the matched team');
+  assert(
+    res3.has_named_starters,
+    'All starters resolved to real player names, no bare numeric IDs',
+  );
+  assert(res3.all_have_slots, 'All Sleeper starters have slot attribute populated');
+  assert(res3.qb_first, 'Sleeper starters are sorted with QB in lead position');
 
-// 4. Client State & UI Integration
-const clientUiScript = execFileSync(
-  process.execPath,
-  [
-    '-e',
-    `
+  // 4. Client State & UI Integration
+  const clientUiScript = execFileSync(
+    process.execPath,
+    [
+      '-e',
+      `
   const fs = require('fs');
   const vm = require('vm');
   const sandbox = {
@@ -185,7 +230,6 @@ const clientUiScript = execFileSync(
 
   const mgr = sandbox.window.inSeasonManager;
   console.log(JSON.stringify({
-    ok: true,
     hasSyncLeague: typeof mgr.syncLeague === 'function',
     hasRefreshActive: typeof sandbox.window.refreshActiveManagerView === 'function',
     hasSyncManagerLeague: typeof sandbox.window.syncManagerLeague === 'function',
@@ -193,23 +237,18 @@ const clientUiScript = execFileSync(
     hasImportDiscovered: typeof sandbox.window.importDiscoveredSleeperLeague === 'function'
   }));
 `,
-  ],
-  { encoding: 'utf-8' },
-);
+    ],
+    { encoding: 'utf-8' },
+  );
 
-const res4 = JSON.parse(clientUiScript.trim());
-assert(res4.ok, 'Browser scripts evaluate in sandbox');
-assert(res4.hasSyncLeague, 'inSeasonManager.syncLeague is defined');
-assert(res4.hasRefreshActive, 'window.refreshActiveManagerView is defined');
-assert(res4.hasSyncManagerLeague, 'window.syncManagerLeague is defined');
-assert(res4.hasSyncDirectSleeperLeague, 'window.syncDirectSleeperLeague is defined');
-assert(res4.hasImportDiscovered, 'window.importDiscoveredSleeperLeague is defined');
-
-// Clean up fixture db
-if (existsSync(TEST_DB)) {
-  try {
-    unlinkSync(TEST_DB);
-  } catch (_e) {}
+  const res4 = JSON.parse(clientUiScript.trim());
+  assert(res4.hasSyncLeague, 'inSeasonManager.syncLeague is defined');
+  assert(res4.hasRefreshActive, 'window.refreshActiveManagerView is defined');
+  assert(res4.hasSyncManagerLeague, 'window.syncManagerLeague is defined');
+  assert(res4.hasSyncDirectSleeperLeague, 'window.syncDirectSleeperLeague is defined');
+  assert(res4.hasImportDiscovered, 'window.importDiscoveredSleeperLeague is defined');
+} finally {
+  rmSync(tempDir, { recursive: true, force: true });
 }
 
 const success = finishSuite('Sleeper In-Season League Sync & Player Resolution');
