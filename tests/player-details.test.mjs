@@ -226,6 +226,8 @@ const setupSandbox = () => {
       },
       innerHTML: '',
       className: '',
+      value: '',
+      focus() {},
       setAttribute: () => {},
       getAttribute: () => null,
       addEventListener: () => {},
@@ -288,7 +290,7 @@ const setupSandbox = () => {
   return { context, elements, modalbox, overlay };
 };
 
-const { context, modalbox, overlay } = setupSandbox();
+const { context, elements, modalbox, overlay } = setupSandbox();
 
 // Load client state and UI scripts
 import { readFileSync } from 'node:fs';
@@ -381,6 +383,290 @@ eq(
   'news',
   'openPlayerNewsModal directly opens news tab',
 );
+context.closePlayerModal();
+
+// ----------------------------------------------------------------------------
+// 6. Dossier Modal CSS Performance & Multi-Row Tab Layout Rules
+// ----------------------------------------------------------------------------
+const cssContent = readFileSync(resolve('css/draft-board.css'), 'utf-8');
+
+const playerOverlayCssMatch = cssContent.match(/#playerOverlay\s*\{([^}]+)\}/);
+assert(playerOverlayCssMatch != null, '#playerOverlay rule exists in draft-board.css');
+const playerOverlayBody = playerOverlayCssMatch[1];
+assert(
+  !playerOverlayBody.includes('backdrop-filter'),
+  '#playerOverlay does NOT use backdrop-filter blur (prevents compositor lag)',
+);
+assert(
+  playerOverlayBody.includes('background: rgba(5, 8, 15, 0.85);'),
+  '#playerOverlay has crisp dark background',
+);
+
+const dossierModalCssMatch = cssContent.match(/\.modal\.player-dossier-modal\s*\{([^}]+)\}/);
+assert(dossierModalCssMatch != null, '.modal.player-dossier-modal rule exists in draft-board.css');
+const dossierModalBody = dossierModalCssMatch[1];
+assert(
+  dossierModalBody.includes('1160px'),
+  '.modal.player-dossier-modal width increased to 1160px to fit all 6 tabs on desktop',
+);
+assert(
+  dossierModalBody.includes('contain: layout paint;'),
+  '.modal.player-dossier-modal uses contain: layout paint for isolated rendering',
+);
+assert(
+  dossierModalBody.includes('transform: translateZ(0);'),
+  '.modal.player-dossier-modal has hardware acceleration layer promotion',
+);
+
+const navTabsCssMatch = cssContent.match(/\.dossier-nav-tabs\s*\{([^}]+)\}/);
+assert(navTabsCssMatch != null, '.dossier-nav-tabs rule exists in draft-board.css');
+const navTabsBody = navTabsCssMatch[1];
+assert(
+  navTabsBody.includes('flex-wrap: wrap;'),
+  '.dossier-nav-tabs has flex-wrap: wrap for multi-row tab layout',
+);
+assert(
+  !navTabsBody.includes('overflow-x: auto;'),
+  '.dossier-nav-tabs does not force horizontal scrollbar',
+);
+
+const dossierBodyCssMatch = cssContent.match(/\.dossier-body\s*\{([^}]+)\}/);
+assert(dossierBodyCssMatch != null, '.dossier-body rule exists in draft-board.css');
+assert(
+  dossierBodyCssMatch[1].includes('overscroll-behavior: contain;'),
+  '.dossier-body contains overscroll-behavior to prevent scroll chaining',
+);
+
+// ----------------------------------------------------------------------------
+// 7. Player Names with Apostrophes (Tre' Harris, De'Zhaun Stribling)
+// ----------------------------------------------------------------------------
+const treDossier = {
+  player: {
+    name: "Tre' Harris",
+    pos: 'WR',
+    team: 'LAC',
+    bye: 7,
+    ranks: { dynSF: 145, red_ppr: 174 },
+    headshot_url: '',
+  },
+  next_matchup: {
+    week: 3,
+    opponent: 'KC',
+    home_away: 'home',
+    defensive_rank: { tier: 'favorable', label: 'Plus Matchup', points_allowed_avg: 32.5 },
+  },
+  season_summary: {
+    games_played: 2,
+    rec_total: 8,
+    rec_tgt_total: 12,
+    rec_yd_total: 115,
+    rec_td_total: 1,
+    pts_ppr_total: 25.5,
+    pts_ppr_avg: 12.8,
+  },
+  game_logs: [
+    {
+      week: 1,
+      opp: 'MIA',
+      home_away: 'away',
+      game_result: 'W',
+      off_snp: 45,
+      tm_off_snp: 65,
+      snap_pct: 69.2,
+      fantasy_pts_ppr: 14.2,
+      stats: { rec: 5, rec_yd: 72, rec_td: 1 },
+    },
+  ],
+  depth_chart: {
+    team: 'LAC',
+    pos: 'WR',
+    players: [
+      { name: "Tre' Harris", rank: 2, role: 'Depth #2', snaps: 95, snap_pct: 70.3 },
+      { name: 'Quentin Johnston', rank: 1, role: 'Starter', snaps: 110, snap_pct: 81.5 },
+    ],
+    handcuff_note: 'Rotational target with high upside.',
+  },
+  schedule: [
+    { week: 1, opponent: 'MIA', is_home: false, status: 'Final W 24-20', is_bye: false },
+  ],
+  portfolio: {
+    rostered: [{ league_id: 'lg_1', league_name: 'Dynasty Championship', slot: 'WR2' }],
+    waivers: [{ league_id: 'lg_2', league_name: 'Redraft Superflex' }],
+  },
+  news: [],
+};
+
+const dezhaunDossier = {
+  player: {
+    name: "De'Zhaun Stribling",
+    pos: 'WR',
+    team: 'SF',
+    bye: 8,
+    ranks: { dynSF: 140, red_ppr: 123 },
+    headshot_url: '',
+  },
+  next_matchup: null,
+  season_summary: {},
+  game_logs: [],
+  depth_chart: { team: 'SF', pos: 'WR', players: [], handcuff_note: '' },
+  schedule: [],
+  portfolio: { rostered: [], waivers: [] },
+  news: [],
+};
+
+const origFetch = context.inSeasonManager.fetchPlayerDetails;
+context.inSeasonManager.fetchPlayerDetails = async (playerName) => {
+  if (playerName === "Tre' Harris") return treDossier;
+  if (playerName === "De'Zhaun Stribling") return dezhaunDossier;
+  return origFetch(playerName);
+};
+
+// Test Team View Roster Row Escaping
+context.inSeasonState.rosterData = {
+  team_name: 'Super Team',
+  starters: [
+    { name: "Tre' Harris", pos: 'WR', team: 'LAC', bye: 7, rank: 145, projected_score: 12.4 },
+  ],
+  bench: [
+    { name: "De'Zhaun Stribling", pos: 'WR', team: 'SF', bye: 8, rank: 140, projected_score: 8.5 },
+  ],
+};
+
+context.inSeasonState.currentView = 'team';
+context.renderManagerView();
+const containerEl = context.document.getElementById('manager_views_container');
+const teamHtml = containerEl.innerHTML;
+
+for (const name of ["Tre' Harris", "De'Zhaun Stribling"]) {
+  const expectedEscaped = name.replace(/'/g, "\\'");
+  assert(
+    teamHtml.includes(`openPlayerModal('${expectedEscaped}')`),
+    `Team view contains valid escaped onclick handler for ${name}`,
+  );
+
+  const onclickRegex = new RegExp(
+    `onclick="(global\\.openPlayerModal\\('${expectedEscaped.replace(/\\/g, '\\\\')}'\\))"`,
+  );
+  const match = teamHtml.match(onclickRegex);
+  assert(match != null, `Found onclick handler attribute for ${name}`);
+
+  let calledWith = null;
+  const originalOpen = context.global.openPlayerModal;
+  context.global.openPlayerModal = (arg) => {
+    calledWith = arg;
+  };
+  vm.runInContext(match[1], context);
+  eq(
+    calledWith,
+    name,
+    `onclick execution successfully calls openPlayerModal with uncorrupted name "${name}"`,
+  );
+  context.global.openPlayerModal = originalOpen;
+}
+
+// Test Waivers Table Escaping
+context.inSeasonState.waivers = [
+  {
+    name: "Tre' Harris",
+    pos: 'WR',
+    team: 'LAC',
+    bye: 7,
+    rank: 145,
+    score: 68.5,
+    is_watchlisted: false,
+    available_in: [{ league_name: 'Dynasty Championship' }],
+  },
+];
+context.inSeasonState.currentView = 'waivers';
+context.renderManagerView();
+const waiversHtml = containerEl.innerHTML;
+
+assert(
+  waiversHtml.includes("openPlayerModal('Tre\\' Harris')"),
+  'Waivers table renders escaped openPlayerModal handler for Tre\' Harris',
+);
+assert(
+  waiversHtml.includes("toggleWaiverWatchlist('Tre\\' Harris')"),
+  'Waivers table renders escaped toggleWaiverWatchlist handler for Tre\' Harris',
+);
+assert(
+  waiversHtml.includes("openWaiverNoteModal('Tre\\' Harris')"),
+  'Waivers table renders escaped openWaiverNoteModal handler for Tre\' Harris',
+);
+
+// Test openPlayerModal for Tre' Harris
+await context.openPlayerModal("Tre' Harris");
+eq(overlay.style.display, 'flex', 'openPlayerModal shows overlay for Tre\' Harris');
+assert(modalbox.innerHTML.includes("Tre' Harris"), 'Modal header displays "Tre\' Harris"');
+assert(
+  modalbox.innerHTML.includes('Overview &amp; Matchup') || modalbox.innerHTML.includes('Overview & Matchup'),
+  'Renders overview tab',
+);
+assert(
+  modalbox.innerHTML.includes('dossier-tab-btn active'),
+  'Active tab button styled with active class',
+);
+assert(
+  modalbox.innerHTML.includes("toggleDossierWatchlist('Tre\\' Harris')"),
+  'Watchlist button in dossier header has escaped name',
+);
+assert(
+  modalbox.innerHTML.includes("openWaiverNoteModal('Tre\\' Harris')"),
+  'Notes button in dossier header has escaped name',
+);
+
+// Test tab switching
+context.setPlayerModalTab('logs');
+eq(context.inSeasonState.activePlayerModalTab, 'logs', 'Switched to logs tab');
+assert(modalbox.innerHTML.includes('Game Logs'), 'Logs tab renders');
+
+context.setPlayerModalTab('depth');
+eq(context.inSeasonState.activePlayerModalTab, 'depth', 'Switched to depth tab');
+assert(
+  modalbox.innerHTML.includes("openPlayerModal('Quentin Johnston')"),
+  'Depth chart tab renders sub-player links',
+);
+
+// Test watchlist toggling for Tre' Harris
+context.inSeasonManager.toggleWatchlist = async (playerName) => {
+  const norm = context.normalizePlayerName(playerName);
+  if (context.inSeasonState.watchlist[norm] !== undefined) {
+    delete context.inSeasonState.watchlist[norm];
+  } else {
+    context.inSeasonState.watchlist[norm] = 'Target';
+  }
+};
+context.toggleWatchlist = context.inSeasonManager.toggleWatchlist;
+await context.toggleDossierWatchlist("Tre' Harris");
+assert(
+  context.inSeasonState.activePlayerDetails.player.is_watchlisted,
+  'toggleDossierWatchlist toggles Tre\' Harris watchlist status to true',
+);
+
+// Test openPlayerModal for De'Zhaun Stribling
+await context.openPlayerModal("De'Zhaun Stribling");
+eq(overlay.style.display, 'flex', 'openPlayerModal shows overlay for De\'Zhaun Stribling');
+assert(modalbox.innerHTML.includes("De'Zhaun Stribling"), 'Modal header displays "De\'Zhaun Stribling"');
+context.closePlayerModal();
+
+// Test Waiver Note Modal for Tre' Harris
+context.inSeasonManager.saveWatchlistNote = async (playerName, note) => {
+  const norm = context.normalizePlayerName(playerName);
+  context.inSeasonState.watchlist[norm] = note;
+};
+context.openWaiverNoteModal("Tre' Harris");
+eq(overlay.style.display, 'flex', 'openWaiverNoteModal opens overlay');
+assert(modalbox.innerHTML.includes("Waiver Note: Tre' Harris"), 'Modal title includes player name');
+assert(
+  modalbox.innerHTML.includes("saveWaiverNote('Tre\\' Harris')"),
+  'Save button contains escaped player name',
+);
+
+elements.waiver_note_textarea.value = 'High priority waiver stash';
+await context.saveWaiverNote("Tre' Harris");
+eq(overlay.style.display, 'none', 'saveWaiverNote closes overlay');
+const normKey = context.normalizePlayerName("Tre' Harris");
+eq(context.inSeasonState.watchlist[normKey], 'High priority waiver stash', 'Watchlist note saved for Tre\' Harris');
 
 // Clean up test DB
 if (existsSync(TEST_DB)) {

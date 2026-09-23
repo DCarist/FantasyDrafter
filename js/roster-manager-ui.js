@@ -12,6 +12,16 @@ if (typeof window !== 'undefined' && !window.global) {
       .replace(/"/g, '&quot;');
   }
 
+  function escJs(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '&quot;')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r');
+  }
+
   function getInjuryBadge(injury) {
     if (!injury?.status) return '';
     const st = String(injury.status).toUpperCase();
@@ -148,7 +158,7 @@ if (typeof window !== 'undefined' && !window.global) {
         <tr class="roster-player-row player-row-${esc(pos.toLowerCase())}">
           <td class="slot-col"><span class="slot-badge slot-${esc(slotClass)}"><b>${esc(finalSlot)}</b></span></td>
           <td class="name-col">
-            <span class="player-name-link" onclick="global.openPlayerModal('${esc(name)}')">${esc(name)}</span>
+            <span class="player-name-link" onclick="global.openPlayerModal('${escJs(name)}')">${esc(name)}</span>
             ${injuryHtml}
           </td>
           <td class="pos-col"><span class="pos-tag pos-${esc(pos.toLowerCase())}">${esc(pos)}</span></td>
@@ -157,7 +167,7 @@ if (typeof window !== 'undefined' && !window.global) {
           <td class="rank-col num">${esc(rank)}</td>
           <td class="score-col num"><b>${esc(score)}</b></td>
           <td class="action-col">
-            <button type="button" class="small" onclick="global.openPlayerModal('${esc(name)}')">📋 Dossier</button>
+            <button type="button" class="small" onclick="global.openPlayerModal('${escJs(name)}')">📋 Dossier</button>
           </td>
         </tr>
       `;
@@ -208,7 +218,7 @@ if (typeof window !== 'undefined' && !window.global) {
             <div class="room-player-item ${isStarter ? 'room-starter' : 'room-bench'}">
               <span class="depth-num">#${p.room_depth || 1}</span>
               <div class="room-player-info">
-                <div class="room-player-name" onclick="global.openPlayerModal('${esc(p.name)}')" style="cursor:pointer" title="${esc(p.name)}">
+                <div class="room-player-name" onclick="global.openPlayerModal('${escJs(p.name)}')" style="cursor:pointer" title="${esc(p.name)}">
                   <b>${esc(p.name)}</b> ${injuryHtml}
                 </div>
                 <div class="meta" style="font-size:11px">
@@ -511,7 +521,7 @@ if (typeof window !== 'undefined' && !window.global) {
       newsCardsHtml += `
         <div class="news-card">
           <div class="news-card-header">
-            <span class="news-player-tag" onclick="global.openPlayerModal('${esc(item.player_name)}')">🏈 ${esc(item.player_name)}</span>
+            <span class="news-player-tag" onclick="global.openPlayerModal('${escJs(item.player_name)}')">🏈 ${esc(item.player_name)}</span>
             <span class="impact-badge ${badgeCls}">${esc(impact.toUpperCase())}</span>
             <span class="news-time">${esc(new Date(item.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }))}</span>
           </div>
@@ -691,17 +701,17 @@ if (typeof window !== 'undefined' && !window.global) {
       // Note chip
       let noteHtml = '';
       if (note) {
-        noteHtml = `<div class="watchlist-note-chip" onclick="global.openWaiverNoteModal('${esc(name)}')" title="Click to edit note">📝 ${esc(note)}</div>`;
+        noteHtml = `<div class="watchlist-note-chip" onclick="global.openWaiverNoteModal('${escJs(name)}')" title="Click to edit note">📝 ${esc(note)}</div>`;
       }
 
       rowsHtml += `
         <tr class="waiver-row ${isPriority ? 'waiver-priority' : ''}">
           <td style="text-align:center">
-            <button type="button" class="watchlist-star-btn ${isWatchlisted ? 'is-active' : ''}" onclick="global.toggleWaiverWatchlist('${esc(name)}')" title="${isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}">${isWatchlisted ? '★' : '☆'}</button>
+            <button type="button" class="watchlist-star-btn ${isWatchlisted ? 'is-active' : ''}" onclick="global.toggleWaiverWatchlist('${escJs(name)}')" title="${isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}">${isWatchlisted ? '★' : '☆'}</button>
           </td>
           <td class="num" style="color:var(--dim)">${idx + 1}</td>
           <td>
-            <span class="player-name-link" onclick="global.openPlayerModal('${esc(name)}')"><b>${esc(name)}</b></span>
+            <span class="player-name-link" onclick="global.openPlayerModal('${escJs(name)}')"><b>${esc(name)}</b></span>
             ${getInjuryBadge(p.injury)}
             ${noteHtml}
             ${needHtml ? `<div class="need-badges-wrap" style="margin-top:4px">${needHtml}</div>` : ''}
@@ -715,8 +725,8 @@ if (typeof window !== 'undefined' && !window.global) {
           <td class="num"><b style="font-size:14px">${esc(score)}</b></td>
           <td class="avail-col">${availHtml || '<span class="meta">All Rostered</span>'}</td>
           <td style="text-align:right">
-            <button type="button" class="small" onclick="global.openWaiverNoteModal('${esc(name)}')">📝 Note</button>
-            <button type="button" class="small" onclick="global.openPlayerModal('${esc(name)}')">📋 Dossier</button>
+            <button type="button" class="small" onclick="global.openWaiverNoteModal('${escJs(name)}')">📝 Note</button>
+            <button type="button" class="small" onclick="global.openPlayerModal('${escJs(name)}')">📋 Dossier</button>
           </td>
         </tr>
       `;
@@ -1319,7 +1329,7 @@ if (typeof window !== 'undefined' && !window.global) {
           <span class="depth-badge ${pl.rank === 1 ? 'rank-1' : ''}">#${pl.rank}</span>
           <div class="depth-info">
             <div class="depth-name-row">
-              <span class="player-name-link" onclick="global.openPlayerModal('${esc(pl.name)}')"><b>${esc(pl.name)}</b></span>
+              <span class="player-name-link" onclick="global.openPlayerModal('${escJs(pl.name)}')"><b>${esc(pl.name)}</b></span>
               ${injHtml}
               ${isMe ? '<span class="target-tag">Current Player</span>' : ''}
             </div>
@@ -1327,7 +1337,7 @@ if (typeof window !== 'undefined' && !window.global) {
               ${esc(pl.role || 'Depth')} · ${pl.snaps || 0} snaps (${pl.snap_pct || 0}% share)
             </div>
           </div>
-          <button type="button" class="small" onclick="global.openPlayerModal('${esc(pl.name)}')">View</button>
+          <button type="button" class="small" onclick="global.openPlayerModal('${escJs(pl.name)}')">View</button>
         </div>
       `;
     }
@@ -1655,10 +1665,10 @@ if (typeof window !== 'undefined' && !window.global) {
           </div>
         </div>
         <div class="dossier-actions-col">
-          <button type="button" class="act small ${isWatchlisted ? 'primary' : ''}" onclick="global.toggleDossierWatchlist('${esc(p.name)}')" title="Toggle Watchlist">
+          <button type="button" class="act small ${isWatchlisted ? 'primary' : ''}" onclick="global.toggleDossierWatchlist('${escJs(p.name)}')" title="Toggle Watchlist">
             ${isWatchlisted ? '★ Watchlisted' : '☆ Add to Watchlist'}
           </button>
-          <button type="button" class="act small" onclick="global.openWaiverNoteModal('${esc(p.name)}')" title="Edit Scouting Note">
+          <button type="button" class="act small" onclick="global.openWaiverNoteModal('${escJs(p.name)}')" title="Edit Scouting Note">
             📝 Notes
           </button>
           <button class="close dossier-close-btn" onclick="global.closePlayerModal()">×</button>
@@ -2189,10 +2199,10 @@ if (typeof window !== 'undefined' && !window.global) {
         <p class="meta" style="margin-top:0">Save private notes or waiver bidding targets for this player across your leagues.</p>
         <textarea id="waiver_note_textarea" class="waiver-note-input" rows="4" style="width:100%; box-sizing:border-box; background:rgba(0,0,0,0.3); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:10px; font-size:13px; resize:vertical" placeholder="e.g. Must-add if lead back is ruled out; bid $15 FAAB">${esc(currentNote)}</textarea>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:14px">
-          <button type="button" class="act" onclick="global.toggleWaiverWatchlist('${esc(playerName)}'); document.getElementById('playerOverlay').style.display='none';">⭐ ${isWatchlisted ? 'Un-Watchlist' : 'Add to Watchlist'}</button>
+          <button type="button" class="act" onclick="global.toggleWaiverWatchlist('${escJs(playerName)}'); document.getElementById('playerOverlay').style.display='none';">⭐ ${isWatchlisted ? 'Un-Watchlist' : 'Add to Watchlist'}</button>
           <div style="display:flex; gap:8px">
             <button type="button" class="act" onclick="document.getElementById('playerOverlay').style.display='none'">Cancel</button>
-            <button type="button" class="act primary" onclick="global.saveWaiverNote('${esc(playerName)}')">Save Note</button>
+            <button type="button" class="act primary" onclick="global.saveWaiverNote('${escJs(playerName)}')">Save Note</button>
           </div>
         </div>
       </div>
