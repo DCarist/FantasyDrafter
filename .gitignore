@@ -34,4 +34,4 @@ data/*.csv
 # Project skills and setup.
 !.agents/skills/**
 Fantasy Football Draft - ESPN.html
-Fantasy Football Draft - Espn_files/
+Fantasy Football Draft - ESPN_files/

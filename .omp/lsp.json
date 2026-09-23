@@ -1,0 +1,19 @@
+{
+  "servers": {
+    "biome": {
+      "fileTypes": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".json",
+        ".jsonc",
+        ".css",
+        ".html",
+        ".htm"
+      ]
+    }
+  }
+}
