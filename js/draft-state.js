@@ -203,7 +203,8 @@ if (typeof window !== 'undefined' && !window.global) {
     if (s.settings.syncRollback === undefined) s.settings.syncRollback = true;
     if (!s.settings.sleeperDraftId) s.settings.sleeperDraftId = '';
     if (!s.settings.sleeperUsername) s.settings.sleeperUsername = '';
-    if (!['manual', 'sleeper', 'espn'].includes(s.settings.platform)) s.settings.platform = 'manual';
+    if (!['manual', 'sleeper', 'espn'].includes(s.settings.platform))
+      s.settings.platform = 'manual';
     if (!s.settings.platformLeagueId) s.settings.platformLeagueId = '';
     if (!s.settings.platformUserId) s.settings.platformUserId = '';
     if (!s.settings.season) s.settings.season = getDefaultSeason();
@@ -1330,6 +1331,40 @@ if (typeof window !== 'undefined' && !window.global) {
       }
       saveManifest();
       switchLeague(manifest.activeLeagueId);
+
+      // Asynchronously sync all imported leagues to In-Season Manager
+      const batchPayload = [];
+      for (const item of incomingManifest.leagues) {
+        const statePayload = incomingLeagues[item.id];
+        if (statePayload) {
+          const s = statePayload.settings || {};
+          const defSeason = typeof getDefaultSeason === 'function' ? getDefaultSeason() : '2026';
+          batchPayload.push({
+            id: item.id,
+            name: item.name || s.leagueName || 'Imported League',
+            platform: s.platform || 'manual',
+            season: s.season || defSeason,
+            my_team_id: s.platformUserId || String(s.slot || 1),
+            settings: s,
+            draft_state: statePayload,
+          });
+        }
+      }
+      if (batchPayload.length > 0 && typeof fetch !== 'undefined') {
+        fetch('/api/manager/leagues/batch-add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leagues: batchPayload }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((_data) => {
+            if (typeof global.inSeasonManager?.fetchLeagues === 'function') {
+              global.inSeasonManager.fetchLeagues();
+            }
+          })
+          .catch((_e) => {});
+      }
+
       return { ok: true, type: 'multi', count: incomingManifest.leagues.length };
     } else if (parsed.type === 'single') {
       const l = parsed.league;
@@ -1356,6 +1391,31 @@ if (typeof window !== 'undefined' && !window.global) {
       applyLoadedState(normalizedState);
       save();
 
+      if (typeof fetch !== 'undefined') {
+        const s = normalizedState.settings || {};
+        const defSeason = typeof getDefaultSeason === 'function' ? getDefaultSeason() : '2026';
+        fetch('/api/manager/leagues/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: newId,
+            name: name,
+            platform: s.platform || 'manual',
+            season: s.season || defSeason,
+            my_team_id: s.platformUserId || String(s.slot || 1),
+            settings: s,
+            draft_state: normalizedState,
+          }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((_data) => {
+            if (typeof global.inSeasonManager?.fetchLeagues === 'function') {
+              global.inSeasonManager.fetchLeagues();
+            }
+          })
+          .catch((_e) => {});
+      }
+
       if (typeof global.switchSyncContext === 'function') global.switchSyncContext();
       if (typeof global.bindHeaderControls === 'function') global.bindHeaderControls();
       if (typeof document !== 'undefined') {
@@ -1368,6 +1428,55 @@ if (typeof window !== 'undefined' && !window.global) {
     }
 
     return { ok: false, error: 'Unknown import format' };
+  }
+
+  async function syncAllDraftLeaguesToManager() {
+    if (typeof fetch === 'undefined') return { ok: false, error: 'fetch not available' };
+    const list = Array.isArray(manifest.leagues) ? manifest.leagues : [];
+    if (list.length === 0) return { ok: true, count: 0 };
+    const batchPayload = [];
+    for (const item of list) {
+      let st = null;
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(LEAGUE_STORE_PREFIX + item.id);
+        if (raw) {
+          try {
+            st = JSON.parse(raw);
+          } catch (_e) {}
+        }
+      }
+      if (item.id === manifest.activeLeagueId && state) {
+        st = state;
+      }
+      if (st) {
+        const s = st.settings || {};
+        const defSeason = typeof getDefaultSeason === 'function' ? getDefaultSeason() : '2026';
+        batchPayload.push({
+          id: item.id,
+          name: item.name || s.leagueName || 'Draft League',
+          platform: s.platform || 'manual',
+          season: s.season || defSeason,
+          my_team_id: s.platformUserId || String(s.slot || 1),
+          settings: s,
+          draft_state: st,
+        });
+      }
+    }
+    if (batchPayload.length === 0) return { ok: true, count: 0 };
+    try {
+      const res = await fetch('/api/manager/leagues/batch-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leagues: batchPayload }),
+      });
+      const data = await res.json();
+      if (data?.ok && typeof global.inSeasonManager?.fetchLeagues === 'function') {
+        await global.inSeasonManager.fetchLeagues();
+      }
+      return data;
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   }
 
   function reconcileWithPlayerPool(newPlayers) {
@@ -1428,6 +1537,7 @@ if (typeof window !== 'undefined' && !window.global) {
   global.deleteLeague = deleteLeague;
   global.exportLeagueBackup = exportLeagueBackup;
   global.importLeagueBackup = importLeagueBackup;
+  global.syncAllDraftLeaguesToManager = syncAllDraftLeaguesToManager;
   global.reconcileWithPlayerPool = reconcileWithPlayerPool;
   global.getDefaultSeason = getDefaultSeason;
 })(typeof window !== 'undefined' ? window : globalThis);

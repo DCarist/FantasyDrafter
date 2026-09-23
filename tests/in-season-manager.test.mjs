@@ -3,13 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  assert,
-  eq,
-  finishSuite,
-  printSuiteHeader,
-  resetFailures,
-} from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('In-Season Roster Management & Multi-League Engine');
@@ -23,13 +17,9 @@ if (existsSync(TEST_DB)) {
 
 // 1. Python In-Season Manager Core Engine & SQLite Verification
 const pyRunner = (script) => {
-  const output = execFileSync(
-    process.execPath ? 'python' : 'python3',
-    ['-c', script],
-    {
-      encoding: 'utf-8',
-    },
-  );
+  const output = execFileSync(process.execPath ? 'python' : 'python3', ['-c', script], {
+    encoding: 'utf-8',
+  });
   return JSON.parse(output.trim());
 };
 
@@ -94,16 +84,8 @@ print(json.dumps({
 `;
 
 const res2 = pyRunner(historyScript);
-eq(
-  res2.initial_history_len,
-  2,
-  'History tracks multiple dates (Yesterday + Today)',
-);
-eq(
-  res2.after_history_len,
-  2,
-  'Same-day refresh upserts in-place without duplicate rows',
-);
+eq(res2.initial_history_len, 2, 'History tracks multiple dates (Yesterday + Today)');
+eq(res2.after_history_len, 2, 'Same-day refresh upserts in-place without duplicate rows');
 eq(res2.updated_points, 999.0, 'Snapshot data successfully updated on upsert');
 eq(res2.latest_teams_count, 12, 'Latest snapshot retains full 12-team roster');
 
@@ -130,19 +112,9 @@ const res3 = pyRunner(lineupScript);
 eq(res3.team_id, '1', 'Team view resolves requested team');
 assert(res3.starters_count > 0, 'Team view populates starters');
 assert(res3.bench_count > 0, 'Team view populates bench');
-assert(
-  res3.advice.length > 0,
-  'Start/Sit optimization generates advice for injured starter',
-);
-eq(
-  res3.advice[0].type,
-  'INJURY_SUB',
-  'First advice flags INJURY_SUB for injured starter',
-);
-assert(
-  res3.drop_candidates.length > 0,
-  'Drop candidates identified for bench cuts',
-);
+assert(res3.advice.length > 0, 'Start/Sit optimization generates advice for injured starter');
+eq(res3.advice[0].type, 'INJURY_SUB', 'First advice flags INJURY_SUB for injured starter');
+assert(res3.drop_candidates.length > 0, 'Drop candidates identified for bench cuts');
 
 // 4. Player News Aggregator & Filtering
 const newsScript = `
@@ -215,10 +187,7 @@ const res6 = pyRunner(prScript);
 eq(res6.total_teams, 12, 'Power rankings evaluates all 12 teams');
 eq(res6.top_team_rank, 1, 'Top team has rank 1');
 eq(res6.top_team_tier, 'Contender', 'Rank 1 is tiered as Contender');
-assert(
-  res6.has_grades,
-  'Calculates positional room grades for QB, RB, WR, TE',
-);
+assert(res6.has_grades, 'Calculates positional room grades for QB, RB, WR, TE');
 
 // 7. Client-Side Browser State & UI Scripts Compilation Integrity
 const stateCode = execFileSync(
@@ -261,9 +230,7 @@ if (existsSync(TEST_DB)) {
   } catch (_e) {}
 }
 
-const success = finishSuite(
-  'In-Season Roster Management & Multi-League Engine',
-);
+const success = finishSuite('In-Season Roster Management & Multi-League Engine');
 if (!success) {
   process.exit(1);
 }

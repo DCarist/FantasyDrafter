@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import vm from 'node:vm';
-import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
+import { assert, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 printSuiteHeader('League Setup Modal & Button Click Integrity Fix');
 resetFailures();
@@ -92,7 +92,10 @@ try {
   scriptsLoadedOk = false;
 }
 assert(scriptsLoadedOk, 'All browser scripts evaluate cleanly in sequential order');
-assert(mockWindow.global === mockWindow, 'window.global alias is established for browser environments');
+assert(
+  mockWindow.global === mockWindow,
+  'window.global alias is established for browser environments',
+);
 
 // 2. Initialize application
 let appInitOk = true;

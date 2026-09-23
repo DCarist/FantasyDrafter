@@ -7,13 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import vm from 'node:vm';
-import {
-  assert,
-  eq,
-  finishSuite,
-  printSuiteHeader,
-  resetFailures,
-} from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('Player Details Intelligence Dossier & Matchup Engine');
@@ -26,13 +20,9 @@ if (existsSync(TEST_DB)) {
 }
 
 const pyRunner = (script) => {
-  const output = execFileSync(
-    process.execPath ? 'python' : 'python3',
-    ['-c', script],
-    {
-      encoding: 'utf-8',
-    },
-  );
+  const output = execFileSync(process.execPath ? 'python' : 'python3', ['-c', script], {
+    encoding: 'utf-8',
+  });
   return JSON.parse(output.trim());
 };
 
@@ -123,8 +113,14 @@ eq(nextM.week, 3, 'Next matchup is Week 3');
 assert(nextM.opponent && nextM.opponent !== 'BYE', 'Next matchup has valid opponent');
 assert(['home', 'away'].includes(nextM.home_away), 'Next matchup specifies home or away');
 assert(nextM.defensive_rank != null, 'Defensive ranking attached to next matchup');
-assert(nextM.defensive_rank.rank >= 1 && nextM.defensive_rank.rank <= 32, 'Defensive rank between 1 and 32');
-assert(['favorable', 'neutral', 'tough'].includes(nextM.defensive_rank.tier), 'Defensive tier valid');
+assert(
+  nextM.defensive_rank.rank >= 1 && nextM.defensive_rank.rank <= 32,
+  'Defensive rank between 1 and 32',
+);
+assert(
+  ['favorable', 'neutral', 'tough'].includes(nextM.defensive_rank.tier),
+  'Defensive tier valid',
+);
 
 // Verify Official Depth Chart Room
 const depth = qbDossier.depth_chart;
@@ -296,6 +292,7 @@ const { context, modalbox, overlay } = setupSandbox();
 
 // Load client state and UI scripts
 import { readFileSync } from 'node:fs';
+
 const stateCode = readFileSync(resolve('js/roster-manager-state.js'), 'utf-8');
 const uiCode = readFileSync(resolve('js/roster-manager-ui.js'), 'utf-8');
 
@@ -316,7 +313,10 @@ assert(overlay.classList.contains('show'), 'Overlay has "show" class');
 assert(modalbox.className.includes('player-dossier-modal'), 'Modal has player-dossier-modal class');
 assert(modalbox.innerHTML.includes('Baker Mayfield'), 'Modal header contains player name');
 assert(modalbox.innerHTML.includes('Next Matchup'), 'Default overview tab renders Next Matchup');
-assert(modalbox.innerHTML.includes('Passing Yards'), 'Default overview tab renders QB KPI stat card');
+assert(
+  modalbox.innerHTML.includes('Passing Yards'),
+  'Default overview tab renders QB KPI stat card',
+);
 
 // Test Tab Navigation: 2026 Game Logs
 context.setPlayerModalTab('logs');
@@ -327,8 +327,14 @@ assert(modalbox.innerHTML.includes('Season Totals'), 'Logs tab renders season to
 // Test Tab Navigation: Depth Chart
 context.setPlayerModalTab('depth');
 eq(context.inSeasonState.activePlayerModalTab, 'depth', 'Active tab set to depth');
-assert(modalbox.innerHTML.includes('TB Official QB Depth Chart'), 'Depth tab renders team room title');
-assert(modalbox.innerHTML.includes('Handcuff & Contingency Note'), 'Depth tab renders handcuff note');
+assert(
+  modalbox.innerHTML.includes('TB Official QB Depth Chart'),
+  'Depth tab renders team room title',
+);
+assert(
+  modalbox.innerHTML.includes('Handcuff & Contingency Note'),
+  'Depth tab renders handcuff note',
+);
 
 // Test Tab Navigation: Full Schedule
 context.setPlayerModalTab('schedule');
@@ -339,8 +345,14 @@ assert(modalbox.innerHTML.includes('W18'), 'Schedule grid renders through Week 1
 // Test Tab Navigation: Portfolio Matrix
 context.setPlayerModalTab('portfolio');
 eq(context.inSeasonState.activePlayerModalTab, 'portfolio', 'Active tab set to portfolio');
-assert(modalbox.innerHTML.includes('Rostered on My Teams'), 'Portfolio tab renders user squads header');
-assert(modalbox.innerHTML.includes('Available on Free Agency'), 'Portfolio tab renders waivers header');
+assert(
+  modalbox.innerHTML.includes('Rostered on My Teams'),
+  'Portfolio tab renders user squads header',
+);
+assert(
+  modalbox.innerHTML.includes('Available on Free Agency'),
+  'Portfolio tab renders waivers header',
+);
 
 // Test Tab Navigation: News & Research Links
 context.setPlayerModalTab('news');
@@ -364,7 +376,11 @@ assert(!overlay.classList.contains('show'), 'closePlayerModal removes "show" cla
 // Test openPlayerNewsModal backwards compatibility alias
 await context.openPlayerNewsModal('Baker Mayfield');
 eq(overlay.style.display, 'flex', 'openPlayerNewsModal opens overlay');
-eq(context.inSeasonState.activePlayerModalTab, 'news', 'openPlayerNewsModal directly opens news tab');
+eq(
+  context.inSeasonState.activePlayerModalTab,
+  'news',
+  'openPlayerNewsModal directly opens news tab',
+);
 
 // Clean up test DB
 if (existsSync(TEST_DB)) {

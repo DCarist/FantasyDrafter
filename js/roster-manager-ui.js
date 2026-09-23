@@ -140,7 +140,9 @@ if (typeof window !== 'undefined' && !window.global) {
       const rank = p.rank != null ? `#${p.rank}` : '';
 
       const finalSlot = slotName || p.slot || p.lineupSlot || pos || 'FLEX';
-      const slotClass = String(finalSlot).toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const slotClass = String(finalSlot)
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '_');
 
       return `
         <tr class="roster-player-row player-row-${esc(pos.toLowerCase())}">
@@ -357,23 +359,99 @@ if (typeof window !== 'undefined' && !window.global) {
       `;
     }
 
+    const unsynced =
+      typeof global.inSeasonManager?.getUnsyncedDraftLeagues === 'function'
+        ? global.inSeasonManager.getUnsyncedDraftLeagues()
+        : [];
+
+    let draftManifest = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('fantasy_drafter_leagues_manifest');
+        if (raw) draftManifest = JSON.parse(raw);
+      }
+    } catch (_e) {}
+    const allDraftLeagues =
+      draftManifest && Array.isArray(draftManifest.leagues) ? draftManifest.leagues : [];
+
+    let draftBannerHtml = '';
+    if (unsynced.length > 0) {
+      draftBannerHtml = `
+        <div class="draft-import-banner" style="margin-bottom:16px; padding:14px 18px; background:linear-gradient(135deg, rgba(56,189,248,0.12), rgba(99,102,241,0.10)); border:1px solid rgba(56,189,248,0.3); border-radius:10px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+          <div>
+            <div style="font-weight:700; font-size:14.5px; color:var(--text); display:flex; align-items:center; gap:8px">
+              <span>📥</span>
+              <span><b>${unsynced.length} Draft Window League${unsynced.length === 1 ? '' : 's'} Detected</b></span>
+            </div>
+            <div style="font-size:12px; color:var(--dim); margin-top:3px">
+              Found leagues configured in your Draft Window ready to pull into In-Season Manager. Pull them over to track active rosters, waiver targets, and power rankings.
+            </div>
+          </div>
+          <div style="display:flex; gap:8px">
+            <button type="button" class="act primary" onclick="global.pullAllDraftLeagues(this)" style="font-weight:700; padding:6px 16px;">
+              📥 Pull All ${unsynced.length} Leagues into Manager
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    let draftRowsHtml = '';
+    if (allDraftLeagues.length === 0) {
+      draftRowsHtml = '<p class="meta">No draft window leagues found in browser storage.</p>';
+    } else {
+      draftRowsHtml = '<div class="discovered-leagues-list">';
+      for (const dl of allDraftLeagues) {
+        const isUnsynced = unsynced.some((u) => u.id === dl.id);
+        draftRowsHtml += `
+          <div class="discovered-league-row" style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border)">
+            <div>
+              <b>${esc(dl.name || 'Draft League')}</b>
+              <div class="meta" style="font-size:11.5px; color:var(--dim)">ID: ${esc(dl.id)}</div>
+            </div>
+            <div>
+              ${
+                isUnsynced
+                  ? `<button type="button" class="act primary small" onclick="global.pullSingleDraftLeague('${esc(dl.id)}', this)">📥 Pull into In-Season</button>`
+                  : `<button type="button" class="act small" onclick="global.syncDraftBoardRoster('${esc(dl.id)}', this)" title="Re-sync roster snapshot from draft board">🔄 Re-sync Roster</button>`
+              }
+            </div>
+          </div>
+        `;
+      }
+      draftRowsHtml += '</div>';
+    }
+
     return `
       <div class="manager-sub-header">
         <h2 style="margin:0">🏆 Connected Leagues Dashboard</h2>
         <div style="margin-left:auto; display:flex; gap:8px">
+          ${
+            unsynced.length > 0
+              ? `<button type="button" class="act primary" onclick="global.pullAllDraftLeagues(this)">📥 Pull Draft Leagues (${unsynced.length})</button>`
+              : ''
+          }
           <button type="button" class="act" onclick="global.inSeasonManager.seedDemoData()">🌱 Seed Demo Leagues</button>
         </div>
       </div>
 
+      ${draftBannerHtml}
+
       <div class="leagues-dashboard-layout">
         <div class="leagues-grid">
-          ${cardsHtml || '<div class="empty-state-card">No leagues connected yet. Onboard via Sleeper, ESPN, or Demo Seed below.</div>'}
+          ${cardsHtml || '<div class="empty-state-card">No leagues connected yet. Onboard via Draft Window, Sleeper, ESPN, or Demo Seed below.</div>'}
         </div>
 
         <div class="panel onboarding-panel">
           <h3>➕ Connect a League</h3>
           <div class="onboarding-tabs">
             <div class="onboarding-section">
+              <h4>📋 Pull from Draft Window</h4>
+              <p>Import and sync leagues already configured on your Fantasy Drafter draft board:</p>
+              ${draftRowsHtml}
+            </div>
+
+            <div class="onboarding-section" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px">
               <h4>⚡ Sleeper Auto-Sync</h4>
               <p>Enter your Sleeper username to automatically discover and import your leagues, or enter a League ID / URL:</p>
               <div class="input-action-row">
@@ -474,7 +552,7 @@ if (typeof window !== 'undefined' && !window.global) {
 
     const isDynastyFormat = (wf.format || 'dyn_sf').startsWith('dyn');
     const relevantLeagues = leagues.filter((lg) =>
-      isDynastyFormat ? Boolean(lg.is_dynasty) : !lg.is_dynasty
+      isDynastyFormat ? Boolean(lg.is_dynasty) : !lg.is_dynasty,
     );
     const allLabel = isDynastyFormat
       ? '👑 All Connected Dynasty Leagues'
@@ -504,17 +582,22 @@ if (typeof window !== 'undefined' && !window.global) {
       { key: 'red_std', label: 'Redraft Standard' },
     ];
 
-    let formatPillsHtml = '<div class="format-pill-groups" style="display:flex; gap:8px; align-items:center">';
-    formatPillsHtml += '<div class="format-pill-group" style="display:flex; background:rgba(255,215,0,0.06); padding:2px 4px; border-radius:6px; border:1px solid rgba(255,215,0,0.2); gap:4px; align-items:center">';
-    formatPillsHtml += '<span style="font-size:10px; font-weight:700; color:#ffd700; margin:0 2px">👑 DYNASTY:</span>';
+    let formatPillsHtml =
+      '<div class="format-pill-groups" style="display:flex; gap:8px; align-items:center">';
+    formatPillsHtml +=
+      '<div class="format-pill-group" style="display:flex; background:rgba(255,215,0,0.06); padding:2px 4px; border-radius:6px; border:1px solid rgba(255,215,0,0.2); gap:4px; align-items:center">';
+    formatPillsHtml +=
+      '<span style="font-size:10px; font-weight:700; color:#ffd700; margin:0 2px">👑 DYNASTY:</span>';
     for (const f of dynastyFormats) {
       const isAct = wf.format === f.key;
       formatPillsHtml += `<button type="button" class="format-pill-btn ${isAct ? 'active' : ''}" onclick="global.onWaiverFormatFilter('${f.key}')">${f.label}</button>`;
     }
     formatPillsHtml += '</div>';
 
-    formatPillsHtml += '<div class="format-pill-group" style="display:flex; background:rgba(56,189,248,0.06); padding:2px 4px; border-radius:6px; border:1px solid rgba(56,189,248,0.2); gap:4px; align-items:center">';
-    formatPillsHtml += '<span style="font-size:10px; font-weight:700; color:#38bdf8; margin:0 2px">🔄 REDRAFT:</span>';
+    formatPillsHtml +=
+      '<div class="format-pill-group" style="display:flex; background:rgba(56,189,248,0.06); padding:2px 4px; border-radius:6px; border:1px solid rgba(56,189,248,0.2); gap:4px; align-items:center">';
+    formatPillsHtml +=
+      '<span style="font-size:10px; font-weight:700; color:#38bdf8; margin:0 2px">🔄 REDRAFT:</span>';
     for (const f of redraftFormats) {
       const isAct = wf.format === f.key;
       formatPillsHtml += `<button type="button" class="format-pill-btn ${isAct ? 'active' : ''}" onclick="global.onWaiverFormatFilter('${f.key}')">${f.label}</button>`;
@@ -531,7 +614,9 @@ if (typeof window !== 'undefined' && !window.global) {
     posPillsHtml += '</div>';
 
     function normalizePlayerName(name) {
-      let str = String(name || '').toLowerCase().trim();
+      let str = String(name || '')
+        .toLowerCase()
+        .trim();
       for (const ch of ['.', "'", '’', '-', ',', '/', '`']) {
         str = str.replaceAll(ch, '');
       }
@@ -547,7 +632,7 @@ if (typeof window !== 'undefined' && !window.global) {
     let displayedWaivers = waivers;
     if (wf.needsOnly) {
       displayedWaivers = displayedWaivers.filter(
-        (item) => item.need_matches && item.need_matches.length > 0
+        (item) => item.need_matches && item.need_matches.length > 0,
       );
     }
     if (wf.watchlistOnly) {
@@ -576,7 +661,7 @@ if (typeof window !== 'undefined' && !window.global) {
         item.is_watchlisted ||
           (watchlist &&
             (watchlist[normName] !== undefined ||
-              watchlist[normName.replace(/\s+/g, '')] !== undefined))
+              watchlist[normName.replace(/\s+/g, '')] !== undefined)),
       );
       const note = item.watchlist_note || watchlist[normName] || '';
 
@@ -859,7 +944,8 @@ if (typeof window !== 'undefined' && !window.global) {
 
       if (v === 'team') await global.inSeasonManager.fetchTeamView();
       else if (v === 'leagues') await global.inSeasonManager.fetchLeagues();
-      else if (v === 'news') await global.inSeasonManager.fetchNews(global.inSeasonState.newsFilter);
+      else if (v === 'news')
+        await global.inSeasonManager.fetchNews(global.inSeasonState.newsFilter);
       else if (v === 'waivers') await global.inSeasonManager.fetchWaivers();
       else if (v === 'rankings') await global.inSeasonManager.fetchPowerRankings();
     } finally {
@@ -976,8 +1062,7 @@ if (typeof window !== 'undefined' && !window.global) {
         <div class="kpi-card"><span class="kpi-lbl">Fantasy Output</span><span class="kpi-val">${s.pts_ppr_avg || 0.0}</span><span class="kpi-sub">PPR PPG (${s.pts_ppr_total || 0.0} total)</span></div>
       `;
     } else {
-      const catchPct =
-        s.rec_tgt_total > 0 ? Math.round((s.rec_total / s.rec_tgt_total) * 100) : 0;
+      const catchPct = s.rec_tgt_total > 0 ? Math.round((s.rec_total / s.rec_tgt_total) * 100) : 0;
       keyStatsHtml = `
         <div class="kpi-card"><span class="kpi-lbl">Targets & Rec</span><span class="kpi-val">${s.rec_total || 0}/${s.rec_tgt_total || 0}</span><span class="kpi-sub">${catchPct}% Catch Rate</span></div>
         <div class="kpi-card"><span class="kpi-lbl">Receiving Yards</span><span class="kpi-val">${s.rec_yd_total || 0}</span><span class="kpi-sub">${s.rec_td_total || 0} TDs · ${Math.round((s.rec_yd_total || 0) / Math.max(1, s.games_played || 1))} YPG</span></div>
@@ -993,7 +1078,12 @@ if (typeof window !== 'undefined' && !window.global) {
         <div class="card-header"><span class="card-title">🌐 Portfolio Quick Status</span></div>
         <div style="display:flex; gap:16px; flex-wrap:wrap; font-size:13px">
           <div>🏆 Rostered in: <b>${rostered.length} league${rostered.length === 1 ? '' : 's'}</b> ${rostered.map((r) => `<span class="portfolio-pill owned">${esc(r.league_name)} (${esc(r.slot)})</span>`).join(' ')}</div>
-          <div>⚡ Available on Waivers: <b>${waivers.length} league${waivers.length === 1 ? '' : 's'}</b> ${waivers.slice(0, 3).map((w) => `<span class="portfolio-pill avail">${esc(w.league_name)}</span>`).join(' ')}${waivers.length > 3 ? `<span class="meta">+${waivers.length - 3} more</span>` : ''}</div>
+          <div>⚡ Available on Waivers: <b>${waivers.length} league${waivers.length === 1 ? '' : 's'}</b> ${waivers
+            .slice(0, 3)
+            .map((w) => `<span class="portfolio-pill avail">${esc(w.league_name)}</span>`)
+            .join(
+              ' ',
+            )}${waivers.length > 3 ? `<span class="meta">+${waivers.length - 3} more</span>` : ''}</div>
         </div>
       </div>
     `;
@@ -1456,7 +1546,7 @@ if (typeof window !== 'undefined' && !window.global) {
     if (!modal || !overlay) return;
 
     const d = global.inSeasonState.activePlayerDetails;
-    if (!d || !d.player) return;
+    if (!d?.player) return;
 
     const p = d.player;
     const activeTab = global.inSeasonState.activePlayerModalTab || 'overview';
@@ -1480,24 +1570,24 @@ if (typeof window !== 'undefined' && !window.global) {
     }
 
     const rankBadges = [];
-    if (p.ranks?.dynSF) rankBadges.push(`<span class="dossier-pill">Dyn SF <b>#${p.ranks.dynSF}</b></span>`);
-    if (p.ranks?.dyn1QB) rankBadges.push(`<span class="dossier-pill">Dyn 1QB <b>#${p.ranks.dyn1QB}</b></span>`);
-    if (p.ranks?.red_ppr) rankBadges.push(`<span class="dossier-pill">Redraft PPR <b>#${p.ranks.red_ppr}</b></span>`);
-    if (p.ranks?.red_half) rankBadges.push(`<span class="dossier-pill">Half PPR <b>#${p.ranks.red_half}</b></span>`);
-    if (p.ranks?.red_std) rankBadges.push(`<span class="dossier-pill">Standard <b>#${p.ranks.red_std}</b></span>`);
-    if (p.ranks?.boris) rankBadges.push(`<span class="dossier-pill">Boris <b>${p.ranks.boris}</b></span>`);
+    if (p.ranks?.dynSF)
+      rankBadges.push(`<span class="dossier-pill">Dyn SF <b>#${p.ranks.dynSF}</b></span>`);
+    if (p.ranks?.dyn1QB)
+      rankBadges.push(`<span class="dossier-pill">Dyn 1QB <b>#${p.ranks.dyn1QB}</b></span>`);
+    if (p.ranks?.red_ppr)
+      rankBadges.push(`<span class="dossier-pill">Redraft PPR <b>#${p.ranks.red_ppr}</b></span>`);
+    if (p.ranks?.red_half)
+      rankBadges.push(`<span class="dossier-pill">Half PPR <b>#${p.ranks.red_half}</b></span>`);
+    if (p.ranks?.red_std)
+      rankBadges.push(`<span class="dossier-pill">Standard <b>#${p.ranks.red_std}</b></span>`);
+    if (p.ranks?.boris)
+      rankBadges.push(`<span class="dossier-pill">Boris <b>${p.ranks.boris}</b></span>`);
 
     const subInfo = [
       p.team && p.team !== 'FA' ? `<b>${esc(p.team)}</b>` : 'Free Agent',
       p.bye ? `Bye Wk ${p.bye}` : null,
       p.age ? `${p.age} yrs old` : null,
-      p.exp != null
-        ? p.exp === 0
-          ? 'Rookie'
-          : `${p.exp} yrs exp`
-        : p.rookie
-          ? 'Rookie'
-          : null,
+      p.exp != null ? (p.exp === 0 ? 'Rookie' : `${p.exp} yrs exp`) : p.rookie ? 'Rookie' : null,
       p.college ? esc(p.college) : null,
     ]
       .filter(Boolean)
@@ -1509,7 +1599,6 @@ if (typeof window !== 'undefined' && !window.global) {
 
     const logsCount = d.game_logs?.length || 0;
     const rosteredCount = d.portfolio?.rostered?.length || 0;
-    const waiversCount = d.portfolio?.waivers?.length || 0;
     const newsCount = d.news?.length || 0;
 
     const tabNavHtml = `
@@ -1598,7 +1687,7 @@ if (typeof window !== 'undefined' && !window.global) {
     overlay.classList.add('show');
 
     const details = await global.inSeasonManager.fetchPlayerDetails(playerName);
-    if (!details || !details.player) {
+    if (!details?.player) {
       modal.innerHTML = `
         <div class="dossier-header">
           <h3>🏈 ${esc(playerName)}</h3>
@@ -1829,6 +1918,105 @@ if (typeof window !== 'undefined' && !window.global) {
     }
   };
 
+  global.pullAllDraftLeagues = async (btn) => {
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Pulling Leagues...';
+    }
+    try {
+      if (typeof global.inSeasonManager?.pullDraftLeagues === 'function') {
+        const res = await global.inSeasonManager.pullDraftLeagues();
+        if (res?.ok) {
+          alert(`✅ Successfully pulled ${res.count || 'all'} leagues into In-Season Manager!`);
+          await global.inSeasonManager.fetchLeagues();
+          renderManagerView();
+        } else {
+          alert(`Failed to pull leagues: ${res?.error || 'Unknown error'}`);
+        }
+      }
+    } catch (err) {
+      alert(`Pull error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+  };
+
+  global.pullSingleDraftLeague = async (leagueId, btn) => {
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Pulling...';
+    }
+    try {
+      if (typeof global.inSeasonManager?.pullDraftLeagues === 'function') {
+        const res = await global.inSeasonManager.pullDraftLeagues([leagueId]);
+        if (res?.ok) {
+          alert('✅ League successfully pulled into In-Season Manager!');
+          await global.inSeasonManager.fetchLeagues();
+          renderManagerView();
+        } else {
+          alert(`Failed to pull league: ${res?.error || 'Unknown error'}`);
+        }
+      }
+    } catch (err) {
+      alert(`Pull error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+  };
+
+  global.syncDraftBoardRoster = async (leagueId, btn) => {
+    const origText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Syncing...';
+    }
+    try {
+      let st = null;
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(`fantasy_drafter_league_${leagueId}`);
+        if (raw) st = JSON.parse(raw);
+      }
+      if (leagueId === global.state?.activeLeagueId || (!st && global.state)) {
+        st = global.state;
+      }
+      const res = await fetch('/api/manager/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          league_id: leagueId,
+          platform: 'manual',
+          draft_state: st || {},
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        alert('✅ Roster snapshot re-synced from Draft Board!');
+        await global.inSeasonManager.fetchLeagues();
+        if (global.inSeasonState?.activeLeagueId === leagueId) {
+          await global.inSeasonManager.fetchTeamView(leagueId);
+        }
+        renderManagerView();
+      } else {
+        alert(`Sync failed: ${data?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Sync error: ${err.message}`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    }
+  };
+
   global.openLeagueSetupForManager = (inSeasonLeagueId) => {
     const targetId = inSeasonLeagueId || global.inSeasonState?.activeLeagueId;
     const inSeasonLeague = (global.inSeasonState?.leagues || []).find((l) => l.id === targetId);
@@ -1853,7 +2041,8 @@ if (typeof window !== 'undefined' && !window.global) {
                 parsed?.settings?.inSeasonLeagueId === targetId ||
                 parsed?.settings?.platformLeagueId === targetId ||
                 (inSeasonLeague &&
-                  parsed?.settings?.leagueName?.toLowerCase() === inSeasonLeague.name?.toLowerCase())
+                  parsed?.settings?.leagueName?.toLowerCase() ===
+                    inSeasonLeague.name?.toLowerCase())
               ) {
                 matchingDraftId = dl.id;
                 break;
@@ -2023,4 +2212,5 @@ if (typeof window !== 'undefined' && !window.global) {
   };
 
   global.renderManagerView = renderManagerView;
+  global.renderLeaguesView = renderLeaguesView;
 })(typeof window !== 'undefined' ? window : globalThis);

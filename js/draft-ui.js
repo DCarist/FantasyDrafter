@@ -4351,6 +4351,14 @@
             espnSwid: s.espnSwid || '',
             espnS2: s.espnS2 || '',
           },
+          draft_state: {
+            settings: s,
+            log: global.state?.log || [],
+            keepers: global.state?.keepers || [],
+            teamNames: s.teamNames || [],
+            slot: s.slot || 1,
+            rosterSlots: s.rosterSlots,
+          },
         }),
       })
         .then((res) => (res.ok ? res.json() : null))
@@ -4362,7 +4370,7 @@
                 s.platformLeagueId &&
                 typeof global.inSeasonManager?.syncLeague === 'function'
               ) {
-                global.inSeasonManager.syncLeague(targetLeagueId).then(() => {
+                global.inSeasonManager.syncLeague(inSeasonId).then(() => {
                   if (typeof global.renderManagerView === 'function') {
                     global.renderManagerView();
                   }

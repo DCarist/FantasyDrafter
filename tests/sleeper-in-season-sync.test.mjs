@@ -2,13 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  assert,
-  eq,
-  finishSuite,
-  printSuiteHeader,
-  resetFailures,
-} from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('Sleeper In-Season League Sync & Player Resolution');
@@ -21,13 +15,9 @@ if (existsSync(TEST_DB)) {
 }
 
 const pyRunner = (script) => {
-  const output = execFileSync(
-    process.execPath ? 'python' : 'python3',
-    ['-c', script],
-    {
-      encoding: 'utf-8',
-    },
-  );
+  const output = execFileSync(process.execPath ? 'python' : 'python3', ['-c', script], {
+    encoding: 'utf-8',
+  });
   return JSON.parse(output.trim());
 };
 

@@ -3777,7 +3777,9 @@ div.setup-field select {
   color: var(--dim);
   padding: 2px 4px;
   line-height: 1;
-  transition: transform 0.15s ease, color 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    color 0.15s ease;
 }
 
 .watchlist-star-btn:hover {
@@ -4698,4 +4700,3 @@ div.setup-field select {
   background: rgba(255, 255, 255, 0.06);
   color: var(--dim);
 }
-

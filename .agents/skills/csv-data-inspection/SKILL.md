@@ -66,12 +66,13 @@ def fetch_and_save_csv(url: str, description_or_path: str = None, output_dir: st
 #### Option A: Python Import
 ```python
 import sys
+
 sys.path.append(".agents/skills/csv-data-inspection/scripts")
 from fetch_csv import fetch_and_save_csv
 
 local_file = fetch_and_save_csv(
     url="http://docs.google.com/spreadsheets/d/.../gviz/tq?tqx=out:csv&sheet=MainPaste",
-    description_or_path="google_sheet_rankings"
+    description_or_path="google_sheet_rankings",
 )
 # Returns: 'data/google_sheet_rankings_2026-08-23.csv'
 ```

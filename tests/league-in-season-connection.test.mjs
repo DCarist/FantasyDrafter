@@ -1,6 +1,7 @@
 // Test Suite for Draft League Setup & In-Season Manager Connection
-import { createRequire } from 'node:module';
+
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
@@ -24,7 +25,10 @@ const sep20 = new Date(2026, 8, 20); // Month 8 = September
 eq(L.getDefaultSeason(sep20), '2026', 'September 20 defaults to current year (2026)');
 
 const currentSeason = L.getDefaultSeason();
-assert(/^\d{4}$/.test(currentSeason), 'getDefaultSeason() returns a 4-digit string without arguments');
+assert(
+  /^\d{4}$/.test(currentSeason),
+  'getDefaultSeason() returns a 4-digit string without arguments',
+);
 
 // 2. Duplicate League Settings with In-Season Fields
 const sourceState = {
@@ -137,10 +141,10 @@ assert(
 );
 
 // Verify openLeagueSetupForManager switches or creates league
-let switchedToLeague = null;
+let _switchedToLeague = null;
 let openedSetup = false;
 uiSandbox.switchLeague = (id) => {
-  switchedToLeague = id;
+  _switchedToLeague = id;
 };
 uiSandbox.openLeagueSetup = () => {
   openedSetup = true;
@@ -161,9 +165,17 @@ uiSandbox.save = () => {};
 
 openedSetup = false;
 uiSandbox.window.openLeagueSetupForManager('lg_espn_200');
-eq(createdLeagueName, 'Work ESPN League', 'Creates matching draft league for unlinked in-season league');
+eq(
+  createdLeagueName,
+  'Work ESPN League',
+  'Creates matching draft league for unlinked in-season league',
+);
 eq(uiSandbox.state.settings.platform, 'espn', 'Sets platform on created draft league');
-eq(uiSandbox.state.settings.inSeasonLeagueId, 'lg_espn_200', 'Sets inSeasonLeagueId on created draft league');
+eq(
+  uiSandbox.state.settings.inSeasonLeagueId,
+  'lg_espn_200',
+  'Sets inSeasonLeagueId on created draft league',
+);
 assert(openedSetup, 'Opens league setup modal after creating draft league');
 
 // 5. Verify HTML Templates Contain League Setup Buttons
@@ -172,13 +184,11 @@ assert(
   'Sub-header contains League Setup button linking to active league',
 );
 assert(
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: raw string match
   managerUiCode.includes("openLeagueSetupForManager('${esc(lg.id)}')"),
   'Leagues cards contain League Setup button linking to each specific league',
 );
-assert(
-  managerUiCode.includes('league-setup-btn'),
-  'Leagues cards use .league-setup-btn class',
-);
+assert(managerUiCode.includes('league-setup-btn'), 'Leagues cards use .league-setup-btn class');
 
 // 6. Verify Draft UI Code Contains In-Season Connection Inputs
 const draftUiCode = readFileSync('js/draft-ui.js', 'utf8');

@@ -785,7 +785,39 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                 settings = body.get("settings", {})
                 my_team_id = body.get("my_team_id")
                 saved = mgr.save_league(lid, platform, name, season, settings, my_team_id)
+                draft_state = body.get("draft_state") or body.get("state")
+                if draft_state and isinstance(draft_state, dict):
+                    mgr.ingest_draft_board_rosters(lid, draft_state)
                 self.send_json({"ok": True, "league": saved})
+                return
+
+            if path == "/api/manager/leagues/batch-add":
+                incoming_leagues = body.get("leagues", [])
+                if not isinstance(incoming_leagues, list):
+                    self.send_json({"ok": False, "error": "leagues must be a list"}, status=400)
+                    return
+                saved_leagues = []
+                for item in incoming_leagues:
+                    if not isinstance(item, dict):
+                        continue
+                    lid = item.get("id") or f"league_{int(time.time() * 1000)}"
+                    name = item.get("name") or "Imported League"
+                    settings = item.get("settings") or {}
+                    platform = item.get("platform") or settings.get("platform") or "manual"
+                    season = str(item.get("season") or settings.get("season") or "2026")
+                    my_team = str(
+                        item.get("my_team_id")
+                        or settings.get("platformUserId")
+                        or settings.get("slot")
+                        or "1"
+                    )
+                    saved = mgr.save_league(lid, platform, name, season, settings, my_team)
+                    draft_state = item.get("draft_state") or item.get("state")
+                    if draft_state and isinstance(draft_state, dict):
+                        mgr.ingest_draft_board_rosters(lid, draft_state)
+                    saved_leagues.append(saved)
+                log_event(f"📥 Batch-registered {len(saved_leagues)} leagues in In-Season Manager")
+                self.send_json({"ok": True, "count": len(saved_leagues), "leagues": saved_leagues})
                 return
 
             if path == "/api/manager/leagues/delete":
@@ -840,6 +872,27 @@ class SyncRelayHandler(http.server.SimpleHTTPRequestHandler):
                                 existing.get("name", "Demo League") if existing else "Demo League"
                             ),
                             "teams_synced": 12,
+                        }
+                    )
+                    return
+
+                # Handle manual or draft board state sync
+                if platform == "manual" or body.get("draft_state"):
+                    draft_state = body.get("draft_state")
+                    if draft_state and isinstance(draft_state, dict):
+                        res = mgr.ingest_draft_board_rosters(
+                            target_league_id or "league_manual", draft_state
+                        )
+                        self.send_json(res)
+                        return
+                    self.send_json(
+                        {
+                            "ok": True,
+                            "league_id": target_league_id,
+                            "name": existing.get("name", "Manual League")
+                            if existing
+                            else "Manual League",
+                            "message": "Manual league roster up to date",
                         }
                     )
                     return

@@ -511,6 +511,234 @@ def save_roster_snapshots(
     return inserted_count
 
 
+def _take_matching_starters(
+    unassigned: list[dict[str, Any]],
+    starters: list[dict[str, Any]],
+    positions: tuple[str, ...],
+    slot_label: str,
+    count: int,
+) -> None:
+    taken = 0
+    remaining_unassigned: list[dict[str, Any]] = []
+    for p in unassigned:
+        p_pos = str(p.get("pos", "")).upper()
+        if taken < count and p_pos in positions:
+            p_copy = dict(p)
+            p_copy["slot"] = slot_label
+            p_copy["lineupSlot"] = slot_label
+            starters.append(p_copy)
+            taken += 1
+        else:
+            remaining_unassigned.append(p)
+    unassigned.clear()
+    unassigned.extend(remaining_unassigned)
+
+
+def ingest_draft_board_rosters(
+    league_id: str,
+    draft_state: dict[str, Any],
+    snapshot_date: str | None = None,
+    db_path: str = DB_PATH,
+) -> dict[str, Any]:
+    """Ingests draft board state (picks, keepers, teams, roster slots) into SQLite roster snapshots.
+
+    Enables manual, offline, and locally-drafted leagues to immediately populate
+    Team View, Waivers matrix, and Power Rankings.
+    """
+    init_db(db_path)
+    load_players_data()
+
+    raw_settings = draft_state.get("settings")
+    settings = dict(raw_settings) if isinstance(raw_settings, dict) else {}
+
+    teams_count = int(settings.get("teams") or draft_state.get("teams") or 12)
+    teams_count = max(2, min(32, teams_count))
+
+    team_names_raw = settings.get("teamNames") or draft_state.get("teamNames") or []
+    team_names = list(team_names_raw) if isinstance(team_names_raw, list) else []
+    while len(team_names) < teams_count:
+        team_names.append(f"Team {len(team_names) + 1}")
+
+    my_slot = int(settings.get("slot") or draft_state.get("slot") or 1)
+    roster_slots_raw = settings.get("rosterSlots") or draft_state.get("rosterSlots") or {}
+    roster_slots = (
+        dict(roster_slots_raw)
+        if isinstance(roster_slots_raw, dict)
+        else {
+            "qb": 1,
+            "rb": 2,
+            "wr": 3,
+            "te": 1,
+            "flex": 1,
+            "superflex": 1,
+            "k": 0,
+            "dst": 0,
+            "bench": 15,
+        }
+    )
+
+    league_name = str(settings.get("leagueName") or draft_state.get("name") or "Draft Board League")
+    platform = str(settings.get("platform") or draft_state.get("platform") or "manual")
+    season = str(settings.get("season") or draft_state.get("season") or "2026")
+
+    # Ensure league record exists before inserting snapshots
+    save_league(
+        league_id=league_id,
+        platform=platform,
+        name=league_name,
+        season=season,
+        settings=settings,
+        my_team_id=str(my_slot),
+        db_path=db_path,
+    )
+
+    log_raw = draft_state.get("log") or draft_state.get("draftLog") or []
+    log = list(log_raw) if isinstance(log_raw, list) else []
+
+    keepers_raw = draft_state.get("keepers") or []
+    keepers = list(keepers_raw) if isinstance(keepers_raw, list) else []
+
+    team_players: dict[int, list[dict[str, Any]]] = {t: [] for t in range(1, teams_count + 1)}
+    rostered_names_norm: set[str] = set()
+
+    def add_player_to_team(t_slot: int, player_data: Any) -> None:
+        if not (1 <= t_slot <= teams_count):
+            return
+        p_name = ""
+        p_pos = ""
+        p_team = ""
+        if isinstance(player_data, dict):
+            p_name = str(player_data.get("name") or player_data.get("player_name") or "")
+            p_pos = str(player_data.get("pos") or player_data.get("position") or "")
+            p_team = str(player_data.get("team") or "")
+        elif isinstance(player_data, str):
+            p_name = player_data
+
+        if not p_name.strip():
+            return
+
+        norm = normalize_name(p_name)
+        if any(
+            normalize_name(existing.get("name", "")) == norm for existing in team_players[t_slot]
+        ):
+            return
+
+        base = get_player_by_name(p_name)
+        if base:
+            p_obj = dict(base)
+            p_obj["name"] = base.get("name", p_name)
+            p_obj["pos"] = base.get("pos", p_pos)
+            p_obj["team"] = base.get("team", p_team)
+        else:
+            p_obj = {
+                "name": p_name,
+                "pos": p_pos.upper() if p_pos else "FLEX",
+                "team": p_team.upper() if p_team else "FA",
+                "rank": 999,
+                "score": 50.0,
+            }
+
+        team_players[t_slot].append(p_obj)
+        rostered_names_norm.add(norm)
+
+    for k in keepers:
+        if isinstance(k, dict):
+            t_slot = int(k.get("team") or k.get("slot") or 1)
+            p_data = k.get("player") if isinstance(k.get("player"), dict) else k
+            add_player_to_team(t_slot, p_data)
+
+    for pick in log:
+        if isinstance(pick, dict):
+            t_slot = int(pick.get("slot") or 1)
+            p_data = pick.get("player") if isinstance(pick.get("player"), dict) else pick
+            add_player_to_team(t_slot, p_data)
+
+    roster_rows: list[dict[str, Any]] = []
+    is_dyn = is_dynasty_league({"settings": settings, "name": league_name})
+
+    for t_slot in range(1, teams_count + 1):
+        t_id = str(t_slot)
+        t_name = team_names[t_slot - 1]
+        owner = "You" if t_slot == my_slot else t_name
+
+        players = team_players[t_slot]
+
+        def player_sort_key(p: dict[str, Any]) -> tuple[float, int]:
+            sc = float(p.get("score") or 0.0)
+            if is_dyn:
+                rk = int(p.get("dyn_sf") or p.get("dyn_1qb") or p.get("rank") or 999)
+            else:
+                rk = int(p.get("redraft") or p.get("red_1qb_ppr") or p.get("rank") or 999)
+            return (-sc, rk)
+
+        players.sort(key=player_sort_key)
+
+        req_qb = int(roster_slots.get("qb", 1) or 0)
+        req_rb = int(roster_slots.get("rb", 2) or 0)
+        req_wr = int(roster_slots.get("wr", 2) or 0)
+        req_te = int(roster_slots.get("te", 1) or 0)
+        req_k = int(roster_slots.get("k", 0) or 0)
+        req_dst = int(roster_slots.get("dst", 0) or 0)
+        req_flex = int(roster_slots.get("flex", 1) or 0)
+        req_sf = int(roster_slots.get("superflex", 0) or 0)
+
+        unassigned = list(players)
+        starters: list[dict[str, Any]] = []
+
+        _take_matching_starters(unassigned, starters, ("QB",), "QB", req_qb)
+        _take_matching_starters(unassigned, starters, ("RB",), "RB", req_rb)
+        _take_matching_starters(unassigned, starters, ("WR",), "WR", req_wr)
+        _take_matching_starters(unassigned, starters, ("TE",), "TE", req_te)
+        _take_matching_starters(unassigned, starters, ("K",), "K", req_k)
+        _take_matching_starters(unassigned, starters, ("DST", "DEF"), "DST", req_dst)
+        _take_matching_starters(unassigned, starters, ("RB", "WR", "TE"), "FLEX", req_flex)
+        _take_matching_starters(unassigned, starters, ("QB", "RB", "WR", "TE"), "SUPERFLEX", req_sf)
+
+        starters = align_starters_to_slots(starters, roster_slots=roster_slots)
+
+        bench: list[dict[str, Any]] = []
+        for p in unassigned:
+            p_copy = dict(p)
+            p_copy["slot"] = "BENCH"
+            p_copy["lineupSlot"] = "BENCH"
+            bench.append(p_copy)
+
+        roster_rows.append(
+            {
+                "team_id": t_id,
+                "owner_name": owner,
+                "team_name": t_name,
+                "starters": starters,
+                "bench": bench,
+                "taxi": [],
+                "ir": [],
+                "wins": 0,
+                "losses": 0,
+                "points": 0.0,
+            }
+        )
+
+    save_roster_snapshots(league_id, roster_rows, snapshot_date=snapshot_date, db_path=db_path)
+
+    all_consensus = load_players_data()
+    available_waivers: list[dict[str, Any] | str] = []
+    for p in all_consensus:
+        p_name = p.get("name") or ""
+        if p_name and normalize_name(p_name) not in rostered_names_norm:
+            available_waivers.append(p)
+
+    save_waiver_snapshot(league_id, available_waivers, snapshot_date=snapshot_date, db_path=db_path)
+
+    return {
+        "ok": True,
+        "league_id": league_id,
+        "teams_synced": len(roster_rows),
+        "total_players_rostered": len(rostered_names_norm),
+        "available_waivers_count": len(available_waivers),
+        "my_team_id": str(my_slot),
+    }
+
+
 def get_roster_snapshots(
     league_id: str,
     snapshot_date: str | None = None,

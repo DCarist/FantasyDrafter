@@ -3,13 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
 import vm from 'node:vm';
-import {
-  assert,
-  eq,
-  finishSuite,
-  printSuiteHeader,
-  resetFailures,
-} from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('Waivers & Market Radar, Need Matching & Team Rooms');
@@ -22,13 +16,9 @@ if (existsSync(TEST_DB)) {
 }
 
 const pyRunner = (script) => {
-  const output = execFileSync(
-    process.execPath ? 'python' : 'python3',
-    ['-c', script],
-    {
-      encoding: 'utf-8',
-    },
-  );
+  const output = execFileSync(process.execPath ? 'python' : 'python3', ['-c', script], {
+    encoding: 'utf-8',
+  });
   return JSON.parse(output.trim());
 };
 
@@ -127,7 +117,9 @@ const res3 = pyRunner(needMatchingScript);
 assert(res3.ok, 'Needs-only query executes');
 assert(res3.count > 0, 'Found waiver recommendations with need matches');
 assert(
-  res3.types_found.some((t) => ['INJURY_SUB', 'UPGRADE', 'BYE_FILLER', 'HANDCUFF', 'EMPTY_SLOT'].includes(t)),
+  res3.types_found.some((t) =>
+    ['INJURY_SUB', 'UPGRADE', 'BYE_FILLER', 'HANDCUFF', 'EMPTY_SLOT'].includes(t),
+  ),
   'Matches at least one authentic need tier (Injury, Upgrade, Bye, Handcuff, Empty Slot)',
 );
 assert(res3.sample_match?.icon != null, 'Need match has icon');
@@ -228,6 +220,7 @@ ctx.global = ctx.window;
 vm.createContext(ctx);
 
 import { readFileSync } from 'node:fs';
+
 const stateCode = readFileSync(resolve('js/roster-manager-state.js'), 'utf-8');
 const uiCode = readFileSync(resolve('js/roster-manager-ui.js'), 'utf-8');
 
@@ -292,13 +285,33 @@ print(json.dumps({
 `;
 
 const res7 = pyRunner(isolationScript);
-assert(!res7.dyn_avail_has_redraft, 'Dynasty waiver matrix contains 0 Redraft leagues in available_in');
-assert(!res7.dyn_need_has_redraft, 'Dynasty waiver matrix contains 0 Redraft leagues in need_matches');
-assert(!res7.red_avail_has_dynasty, 'Redraft waiver matrix contains 0 Dynasty leagues in available_in');
-assert(!res7.red_need_has_dynasty, 'Redraft waiver matrix contains 0 Dynasty leagues in need_matches');
+assert(
+  !res7.dyn_avail_has_redraft,
+  'Dynasty waiver matrix contains 0 Redraft leagues in available_in',
+);
+assert(
+  !res7.dyn_need_has_redraft,
+  'Dynasty waiver matrix contains 0 Redraft leagues in need_matches',
+);
+assert(
+  !res7.red_avail_has_dynasty,
+  'Redraft waiver matrix contains 0 Dynasty leagues in available_in',
+);
+assert(
+  !res7.red_need_has_dynasty,
+  'Redraft waiver matrix contains 0 Dynasty leagues in need_matches',
+);
 eq(res7.college_stash_dyn_rank, 35, 'College prospect has rank 35 in Dynasty SF');
-eq(res7.college_stash_red_rank, 999.0, 'College prospect without redraft rank is unranked in Redraft PPR');
-eq(res7.college_stash_red_score, 0.0, 'College prospect without redraft rank has 0 score in Redraft PPR');
+eq(
+  res7.college_stash_red_rank,
+  999.0,
+  'College prospect without redraft rank is unranked in Redraft PPR',
+);
+eq(
+  res7.college_stash_red_score,
+  0.0,
+  'College prospect without redraft rank has 0 score in Redraft PPR',
+);
 
 // 8. Frontend Auto-Sync & Scope Isolation in Sandbox
 state.leagues = [
@@ -309,17 +322,29 @@ state.leagues = [
 // Selecting redraft league auto-switches format to red_ppr
 await ctx.window.onWaiverLeagueFilter('lg_red_1');
 eq(state.waiverFilters.leagueId, 'lg_red_1', 'Selected redraft league');
-eq(state.waiverFilters.format, 'red_ppr', 'Auto-switched format to red_ppr on redraft league selection');
+eq(
+  state.waiverFilters.format,
+  'red_ppr',
+  'Auto-switched format to red_ppr on redraft league selection',
+);
 
 // Selecting dynasty league auto-switches format to dyn_sf
 await ctx.window.onWaiverLeagueFilter('lg_dyn_1');
 eq(state.waiverFilters.leagueId, 'lg_dyn_1', 'Selected dynasty league');
-eq(state.waiverFilters.format, 'dyn_sf', 'Auto-switched format to dyn_sf on dynasty league selection');
+eq(
+  state.waiverFilters.format,
+  'dyn_sf',
+  'Auto-switched format to dyn_sf on dynasty league selection',
+);
 
 // Switching format to red_ppr while on dynasty league auto-resets leagueId to 'all'
 await ctx.window.onWaiverFormatFilter('red_ppr');
 eq(state.waiverFilters.format, 'red_ppr', 'Switched format to red_ppr');
-eq(state.waiverFilters.leagueId, 'all', 'Auto-reset leagueId to all when switching format category');
+eq(
+  state.waiverFilters.leagueId,
+  'all',
+  'Auto-reset leagueId to all when switching format category',
+);
 
 // 9. Standard Scoring Resolution, Needs-Only Differentiation & Instant Star Toggle
 const stdAndNeedsScript = `
@@ -356,7 +381,11 @@ print(json.dumps({
 `;
 
 const res9 = pyRunner(stdAndNeedsScript);
-eq(res9.std_format, 'red_std', 'get_league_format_key correctly resolves red_std for standard scoring league');
+eq(
+  res9.std_format,
+  'red_std',
+  'get_league_format_key correctly resolves red_std for standard scoring league',
+);
 eq(res9.rb_std_rank, 12, 'Standard format resolves red_1qb_std rank (12)');
 eq(res9.rb_ppr_rank, 25, 'PPR format resolves red_1qb_ppr rank (25)');
 assert(res9.all_needs_have_matches, '100% of candidates in needs_only query match team needs');
@@ -368,12 +397,23 @@ state.waivers = [
 ];
 
 await ctx.window.toggleWaiverWatchlist('Kyren Williams');
-eq(state.waivers[0].is_watchlisted, true, 'Kyren Williams is_watchlisted is immediately true after toggle');
+eq(
+  state.waivers[0].is_watchlisted,
+  true,
+  'Kyren Williams is_watchlisted is immediately true after toggle',
+);
 assert(state.watchlist['kyren williams'] !== undefined, 'Kyren Williams in state.watchlist');
 
 await ctx.window.toggleWaiverWatchlist('Kyren Williams');
-eq(state.waivers[0].is_watchlisted, false, 'Kyren Williams is_watchlisted is immediately false after toggle off');
-assert(state.watchlist['kyren williams'] === undefined, 'Kyren Williams removed from state.watchlist');
+eq(
+  state.waivers[0].is_watchlisted,
+  false,
+  'Kyren Williams is_watchlisted is immediately false after toggle off',
+);
+assert(
+  state.watchlist['kyren williams'] === undefined,
+  'Kyren Williams removed from state.watchlist',
+);
 
 // League selection with format_key auto-selects red_std
 state.leagues.push({
@@ -383,7 +423,11 @@ state.leagues.push({
   format_key: 'red_std',
 });
 await ctx.window.onWaiverLeagueFilter('lg_std_1');
-eq(state.waiverFilters.format, 'red_std', 'Selecting standard league auto-switches format to red_std');
+eq(
+  state.waiverFilters.format,
+  'red_std',
+  'Selecting standard league auto-switches format to red_std',
+);
 
 // Clean up test DB
 if (existsSync(TEST_DB)) {
@@ -396,4 +440,3 @@ const suitePassed = finishSuite('Waivers & Market Radar, Need Matching & Team Ro
 if (!suitePassed) {
   process.exit(1);
 }
-

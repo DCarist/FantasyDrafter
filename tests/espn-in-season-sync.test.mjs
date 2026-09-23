@@ -2,13 +2,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  assert,
-  eq,
-  finishSuite,
-  printSuiteHeader,
-  resetFailures,
-} from './test-helper.mjs';
+import { assert, eq, finishSuite, printSuiteHeader, resetFailures } from './test-helper.mjs';
 
 resetFailures();
 printSuiteHeader('ESPN In-Season League Sync & Cookie Authorization');
@@ -21,13 +15,9 @@ if (existsSync(TEST_DB)) {
 }
 
 const pyRunner = (script) => {
-  const output = execFileSync(
-    process.execPath ? 'python' : 'python3',
-    ['-c', script],
-    {
-      encoding: 'utf-8',
-    },
-  );
+  const output = execFileSync(process.execPath ? 'python' : 'python3', ['-c', script], {
+    encoding: 'utf-8',
+  });
   return JSON.parse(output.trim());
 };
 
@@ -162,7 +152,11 @@ eq(res3.preserved_scoring, 'ppr', 'Preserves custom settings during in-place lea
 eq(res3.teams_synced, 12, 'Synced all 12 teams in ESPN league');
 assert(res3.my_team_matched, 'Matched user team by SWID to team 3');
 eq(res3.my_team_owner, 'DougC1995', 'User owner matched to DougC1995');
-eq(res3.my_team_name, 'Corrective and Preventative TDs', 'User team name matches Corrective and Preventative TDs');
+eq(
+  res3.my_team_name,
+  'Corrective and Preventative TDs',
+  'User team name matches Corrective and Preventative TDs',
+);
 assert(res3.starters_count > 0, 'Starters populated from ESPN roster');
 assert(res3.bench_count > 0, 'Bench populated from ESPN lineupSlotId 20');
 assert(res3.has_named_starters, 'All starters resolved to full player names');

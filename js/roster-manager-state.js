@@ -227,7 +227,9 @@ if (typeof window !== 'undefined' && !window.global) {
   }
 
   function normalizePlayerName(name) {
-    let s = String(name || '').toLowerCase().trim();
+    let s = String(name || '')
+      .toLowerCase()
+      .trim();
     for (const ch of ['.', "'", '’', '-', ',', '/', '`']) {
       s = s.replaceAll(ch, '');
     }
@@ -380,6 +382,131 @@ if (typeof window !== 'undefined' && !window.global) {
     }
   }
 
+  function getUnsyncedDraftLeagues() {
+    let manifest = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('fantasy_drafter_leagues_manifest');
+        if (raw) manifest = JSON.parse(raw);
+      }
+    } catch (_e) {}
+
+    const draftList = manifest && Array.isArray(manifest.leagues) ? manifest.leagues : [];
+    if (draftList.length === 0) return [];
+
+    const inSeasonIds = new Set((inSeasonState.leagues || []).map((l) => l.id));
+    const inSeasonNames = new Set(
+      (inSeasonState.leagues || []).map((l) => (l.name || '').toLowerCase().trim()),
+    );
+
+    const unsynced = [];
+    for (const dl of draftList) {
+      let st = null;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const rawState = localStorage.getItem(`fantasy_drafter_league_${dl.id}`);
+          if (rawState) st = JSON.parse(rawState);
+        }
+      } catch (_e) {}
+
+      const s = st?.settings || {};
+      const targetId = s.inSeasonLeagueId || dl.id;
+      const lName = (s.leagueName || dl.name || '').trim();
+      const isAlreadyLinked =
+        inSeasonIds.has(targetId) ||
+        inSeasonIds.has(dl.id) ||
+        (lName && inSeasonNames.has(lName.toLowerCase()));
+
+      if (!isAlreadyLinked) {
+        unsynced.push({
+          id: dl.id,
+          name: lName || 'Draft League',
+          platform: s.platform || 'manual',
+          teams: s.teams || 12,
+          season: s.season || '2026',
+          state: st,
+        });
+      }
+    }
+    return unsynced;
+  }
+
+  async function pullDraftLeagues(leagueIds = null) {
+    let manifest = null;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem('fantasy_drafter_leagues_manifest');
+        if (raw) manifest = JSON.parse(raw);
+      }
+    } catch (_e) {}
+
+    const draftList = manifest && Array.isArray(manifest.leagues) ? manifest.leagues : [];
+    if (draftList.length === 0) return { ok: true, count: 0 };
+
+    const targetSet = Array.isArray(leagueIds) ? new Set(leagueIds) : null;
+    const batchPayload = [];
+
+    for (const dl of draftList) {
+      if (targetSet && !targetSet.has(dl.id)) continue;
+
+      let st = null;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const rawState = localStorage.getItem(`fantasy_drafter_league_${dl.id}`);
+          if (rawState) st = JSON.parse(rawState);
+        }
+      } catch (_e) {}
+
+      if (dl.id === manifest?.activeLeagueId && global.state) {
+        st = global.state;
+      }
+
+      if (st) {
+        const s = st.settings || {};
+        const defSeason =
+          typeof global.getDefaultSeason === 'function' ? global.getDefaultSeason() : '2026';
+        batchPayload.push({
+          id: dl.id,
+          name: s.leagueName || dl.name || 'Draft League',
+          platform: s.platform || 'manual',
+          season: s.season || defSeason,
+          my_team_id: s.platformUserId || String(s.slot || 1),
+          settings: s,
+          draft_state: st,
+        });
+      }
+    }
+
+    if (batchPayload.length === 0) return { ok: true, count: 0 };
+
+    inSeasonState.loading = true;
+    try {
+      const res = await apiRequest('/api/manager/leagues/batch-add', 'POST', {
+        leagues: batchPayload,
+      });
+      inSeasonState.loading = false;
+      if (res?.ok) {
+        await fetchLeagues();
+        if (!inSeasonState.activeLeagueId && inSeasonState.leagues.length > 0) {
+          inSeasonState.activeLeagueId = inSeasonState.leagues[0].id;
+        }
+        if (inSeasonState.activeLeagueId) {
+          if (inSeasonState.currentView === 'team') await fetchTeamView();
+          else if (inSeasonState.currentView === 'waivers') await fetchWaivers();
+          else if (inSeasonState.currentView === 'rankings') await fetchPowerRankings();
+        }
+        saveLocalCache();
+        if (typeof global.renderManagerView === 'function') {
+          global.renderManagerView();
+        }
+      }
+      return res;
+    } catch (err) {
+      inSeasonState.loading = false;
+      return { ok: false, error: err.message };
+    }
+  }
+
   async function seedDemoData() {
     inSeasonState.loading = true;
     const res = await apiRequest('/api/manager/seed-demo', 'POST', {});
@@ -491,5 +618,7 @@ if (typeof window !== 'undefined' && !window.global) {
     normalizePlayerName,
     seedDemoData,
     saveLocalCache,
+    getUnsyncedDraftLeagues,
+    pullDraftLeagues,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

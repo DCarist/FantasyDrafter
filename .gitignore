@@ -25,6 +25,7 @@ players-data.json
 data/players-data.js
 data/players-data.json
 data/*.db*
+tests/fixtures/*.db*
 data/sleeper_players_cache.json
 
 # Local data cache and inspection files
