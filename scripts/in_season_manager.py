@@ -8,9 +8,12 @@ matrix calculation, lineup optimization, and league power rankings with trade ma
 
 import datetime
 import json
+import math
 import os
 import re
 import sqlite3
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,8 +30,15 @@ _PLAYER_BY_NAME: dict[str, dict[str, Any]] | None = None
 _DEPTH_CHARTS_CACHE: dict[str, Any] | None = None
 _SCHEDULES_CACHE: dict[str, Any] | None = None
 _BYES_CACHE: dict[str, Any] | None = None
+_INJURIES_UPDATED_DATE: str | None = None
 _SLEEPER_PLAYERS_CACHE: dict[str, dict[str, Any]] | None = None
 _SLEEPER_ID_BY_NORM_NAME: dict[str, str] | None = None
+_SLEEPER_IDS_BY_NAME_POS_TEAM: dict[tuple[str, str, str], list[str]] = {}
+
+# In-memory weekly projection cache (TTL 30 min)
+_PROJECTIONS_CACHE_LOCK = threading.Lock()
+_PROJECTIONS_CACHE: dict[tuple[str, int], dict[str, Any]] = {}
+_NFL_STATE_CACHE: dict[str, Any] = {}
 
 
 def get_db_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
@@ -173,17 +183,19 @@ def load_players_data() -> list[dict[str, Any]]:
                 _DEPTH_CHARTS_CACHE = data.get("depthCharts", {})
                 _SCHEDULES_CACHE = data.get("schedules", {})
                 _BYES_CACHE = data.get("byes", {})
+                _INJURIES_UPDATED_DATE = data.get("injuriesUpdated") or data.get("generated")
         except Exception:
             _PLAYERS_CACHE = []
             _DEPTH_CHARTS_CACHE = {}
             _SCHEDULES_CACHE = {}
             _BYES_CACHE = {}
+            _INJURIES_UPDATED_DATE = None
     else:
         _PLAYERS_CACHE = []
         _DEPTH_CHARTS_CACHE = {}
         _SCHEDULES_CACHE = {}
         _BYES_CACHE = {}
-
+        _INJURIES_UPDATED_DATE = None
     _PLAYER_BY_NAME = {}
     for p in _PLAYERS_CACHE:
         n = normalize_name(p.get("name", ""))
@@ -195,7 +207,7 @@ def load_players_data() -> list[dict[str, Any]]:
 
 def load_sleeper_players_cache() -> dict[str, dict[str, Any]]:
     """Loads Sleeper player cache mapping player_id to metadata."""
-    global _SLEEPER_PLAYERS_CACHE, _SLEEPER_ID_BY_NORM_NAME
+    global _SLEEPER_PLAYERS_CACHE, _SLEEPER_ID_BY_NORM_NAME, _SLEEPER_IDS_BY_NAME_POS_TEAM
     if _SLEEPER_PLAYERS_CACHE is not None:
         return _SLEEPER_PLAYERS_CACHE
     path = os.path.join(DATA_DIR, "sleeper_players_cache.json")
@@ -209,14 +221,25 @@ def load_sleeper_players_cache() -> dict[str, dict[str, Any]]:
         _SLEEPER_PLAYERS_CACHE = {}
 
     _SLEEPER_ID_BY_NORM_NAME = {}
+    _SLEEPER_IDS_BY_NAME_POS_TEAM = {}
     if isinstance(_SLEEPER_PLAYERS_CACHE, dict):
         for pid, pdata in _SLEEPER_PLAYERS_CACHE.items():
             if isinstance(pdata, dict):
-                fn = pdata.get("full_name")
+                fn = (
+                    pdata.get("full_name")
+                    or pdata.get("name")
+                    or f"{pdata.get('first_name', '')} {pdata.get('last_name', '')}".strip()
+                )
                 if fn:
                     norm = normalize_name(fn)
                     if norm and norm not in _SLEEPER_ID_BY_NORM_NAME:
                         _SLEEPER_ID_BY_NORM_NAME[norm] = str(pid)
+                    pos = str(pdata.get("position") or "").upper()
+                    if pos in ("DEF", "D/ST"):
+                        pos = "DST"
+                    team = str(pdata.get("team") or "").upper()
+                    k = (norm, pos, team)
+                    _SLEEPER_IDS_BY_NAME_POS_TEAM.setdefault(k, []).append(str(pid))
     return _SLEEPER_PLAYERS_CACHE
 
 
@@ -237,6 +260,899 @@ def get_player_by_name(name: str) -> dict[str, Any] | None:
     if not _PLAYER_BY_NAME:
         return None
     return _PLAYER_BY_NAME.get(normalize_name(name))
+
+
+def clear_projection_cache() -> None:
+    """Clears in-process weekly projection and NFL state cache."""
+    with _PROJECTIONS_CACHE_LOCK:
+        _PROJECTIONS_CACHE.clear()
+        _NFL_STATE_CACHE.clear()
+
+
+def resolve_sleeper_player_id(player: dict[str, Any], platform: str = "sleeper") -> str | None:
+    """Resolves a player to their unique Sleeper player ID."""
+    pos = str(player.get("pos") or "").upper()
+    if pos in ("DEF", "DST", "D/ST"):
+        team = str(player.get("team") or "").upper()
+        if team and team not in ("FA", "NONE", ""):
+            return team
+
+    plat = str(platform or "sleeper").lower()
+    if plat == "sleeper":
+        pid = player.get("id")
+        if pid is not None and str(pid).strip() not in ("", "0", "None"):
+            return str(pid).strip()
+        load_sleeper_players_cache()
+        name = player.get("name")
+        if name and _SLEEPER_ID_BY_NORM_NAME:
+            return _SLEEPER_ID_BY_NORM_NAME.get(normalize_name(name))
+        return None
+    elif plat == "espn":
+        load_sleeper_players_cache()
+        name = player.get("name")
+        team = player.get("team")
+        if not (name and pos and team):
+            return None
+        norm_name = normalize_name(name)
+        norm_pos = "DST" if str(pos).upper() in ("DEF", "DST", "D/ST") else str(pos).upper()
+        norm_team = str(team).upper()
+        matches = _SLEEPER_IDS_BY_NAME_POS_TEAM.get((norm_name, norm_pos, norm_team), [])
+        if len(matches) == 1:
+            return matches[0]
+        return None
+    return None
+
+
+# Categorized scoring keys and constants
+KNOWN_DST_KEYS = {
+    "sack",
+    "int",
+    "fum_rec",
+    "ff",
+    "def_td",
+    "def_st_td",
+    "st_td",
+    "safe",
+    "blk_kick",
+    "def_st_ff",
+    "def_st_fum_rec",
+    "st_ff",
+    "st_fum_rec",
+    "def_pr_yd",
+    "def_kr_yd",
+    "pts_allow",
+    "pts_allow_0",
+    "pts_allow_1_6",
+    "pts_allow_7_13",
+    "pts_allow_14_20",
+    "pts_allow_21_27",
+    "pts_allow_28_34",
+    "pts_allow_35p",
+    "yds_allow",
+    "yds_allow_0_100",
+    "yds_allow_100_199",
+    "yds_allow_200_299",
+    "yds_allow_300_349",
+    "yds_allow_350_399",
+    "yds_allow_400_449",
+    "yds_allow_450_499",
+    "yds_allow_500p",
+    "tkl_loss",
+}
+KNOWN_K_KEYS = {
+    "fgm",
+    "fga",
+    "fgmiss",
+    "fgm_0_19",
+    "fgm_20_29",
+    "fgm_30_39",
+    "fgm_40_49",
+    "fgm_50p",
+    "fgm_50_59",
+    "fgm_60p",
+    "fgm_yds",
+    "fgmiss_0_19",
+    "fgmiss_20_29",
+    "fgmiss_30_39",
+    "fgmiss_40_49",
+    "fgmiss_50p",
+    "xpm",
+    "xpa",
+    "xpmiss",
+}
+KNOWN_OFFENSE_BASE_KEYS = {
+    "pass_yd",
+    "pass_td",
+    "pass_2pt",
+    "pass_int",
+    "pass_int_td",
+    "pass_att",
+    "pass_cmp",
+    "pass_inc",
+    "pass_sack",
+    "rush_yd",
+    "rush_td",
+    "rush_2pt",
+    "rush_att",
+    "rec",
+    "rec_yd",
+    "rec_td",
+    "rec_2pt",
+    "rec_tgt",
+    "fum_lost",
+    "fum",
+    "fum_rec_td",
+}
+KNOWN_OFFENSE_ONCE_BONUSES = {
+    "bonus_rush_yd_100",
+    "bonus_rush_yd_200",
+    "bonus_rush_att_20",
+    "bonus_rec_yd_100",
+    "bonus_rec_yd_200",
+    "bonus_rush_rec_yd_100",
+    "bonus_rush_rec_yd_200",
+    "bonus_pass_yd_300",
+    "bonus_pass_yd_400",
+}
+KNOWN_OFFENSE_TD_BONUSES = {
+    "rush_td_40p": "rush_td",
+    "rush_td_50p": "rush_td",
+    "rec_td_40p": "rec_td",
+    "rec_td_50p": "rec_td",
+    "pass_td_40p": "pass_td",
+    "pass_td_50p": "pass_td",
+}
+KNOWN_OFFENSE_POS_BONUSES = {
+    "bonus_rec_te": "TE",
+    "bonus_rec_rb": "RB",
+    "bonus_rec_wr": "WR",
+}
+
+ESPN_OFFENSE_BASE_MAP = {
+    3: "pass_yd",
+    4: "pass_td",
+    19: "pass_2pt",
+    20: "pass_int",
+    24: "rush_yd",
+    25: "rush_td",
+    26: "rush_2pt",
+    42: "rec_yd",
+    43: "rec_td",
+    44: "rec_2pt",
+    53: "rec",
+    63: "fum_rec_td",
+    72: "fum_lost",
+}
+ESPN_OFFENSE_BONUSES_MAP = {
+    16: ("pass_td_50p", "pass_td"),
+    36: ("rush_td_50p", "rush_td"),
+    46: ("rec_td_50p", "rec_td"),
+    17: ("bonus_pass_yd_300", None),
+    18: ("bonus_pass_yd_400", None),
+    37: ("bonus_rush_yd_100", None),
+    38: ("bonus_rush_yd_200", None),
+    56: ("bonus_rec_yd_100", None),
+    57: ("bonus_rec_yd_200", None),
+}
+ESPN_KNOWN_K_STAT_IDS = {74, 75, 76, 77, 80, 83, 85, 86, 87, 88, 198, 199, 200, 201, 202, 203}
+ESPN_KNOWN_DST_STAT_IDS = {
+    89,
+    90,
+    91,
+    92,
+    93,
+    95,
+    96,
+    97,
+    98,
+    99,
+    101,
+    102,
+    103,
+    104,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    127,
+    128,
+    129,
+    130,
+    132,
+    133,
+    134,
+    135,
+    136,
+    206,
+    209,
+}
+
+
+def get_weekly_projection_context(league: dict[str, Any] | None) -> dict[str, Any]:
+    """Resolves one live, explicitly dated weekly projection snapshot for the requested league."""
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    lg_dict = league if isinstance(league, dict) else {}
+    league_season = str(
+        lg_dict.get("season")
+        or (
+            lg_dict.get("settings", {}).get("season")
+            if isinstance(lg_dict.get("settings"), dict)
+            else None
+        )
+        or "2026"
+    )
+
+    with _PROJECTIONS_CACHE_LOCK:
+        nfl_state = None
+        if "timestamp" in _NFL_STATE_CACHE and time.time() - _NFL_STATE_CACHE["timestamp"] < 1800:
+            nfl_state = _NFL_STATE_CACHE.get("data")
+        else:
+            try:
+                req = urllib.request.Request(
+                    "https://api.sleeper.app/v1/state/nfl",
+                    headers={"User-Agent": "Mozilla/5.0"},
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    nfl_state = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(nfl_state, dict):
+                        _NFL_STATE_CACHE["timestamp"] = time.time()
+                        _NFL_STATE_CACHE["data"] = nfl_state
+            except Exception:
+                nfl_state = None
+
+        if not isinstance(nfl_state, dict):
+            return {
+                "status": "unavailable",
+                "reason": "SOURCE_UNAVAILABLE",
+                "season": league_season,
+                "week": None,
+                "source": "Sleeper",
+                "fetched_at": now_iso,
+                "projections_by_player_id": {},
+            }
+
+        season_type = str(nfl_state.get("season_type") or "").lower()
+        if season_type != "regular":
+            return {
+                "status": "unavailable",
+                "reason": "SOURCE_UNAVAILABLE",
+                "season": league_season,
+                "week": None,
+                "source": "Sleeper",
+                "fetched_at": now_iso,
+                "projections_by_player_id": {},
+            }
+
+        try:
+            state_week = int(nfl_state.get("week", 0))
+        except (ValueError, TypeError):
+            state_week = 0
+
+        if not (1 <= state_week <= 18):
+            return {
+                "status": "unavailable",
+                "reason": "SOURCE_UNAVAILABLE",
+                "season": league_season,
+                "week": None,
+                "source": "Sleeper",
+                "fetched_at": now_iso,
+                "projections_by_player_id": {},
+            }
+
+        state_season = str(nfl_state.get("season") or "")
+        if state_season != league_season:
+            return {
+                "status": "unavailable",
+                "reason": "SEASON_MISMATCH",
+                "season": league_season,
+                "week": state_week,
+                "source": "Sleeper",
+                "fetched_at": now_iso,
+                "projections_by_player_id": {},
+            }
+
+        cache_key = (state_season, state_week)
+        if cache_key in _PROJECTIONS_CACHE:
+            entry = _PROJECTIONS_CACHE[cache_key]
+            if time.time() - entry["timestamp"] < 1800:
+                return entry["context"]
+
+        projections_list = None
+        try:
+            proj_url = f"https://api.sleeper.app/projections/nfl/{state_season}/{state_week}?season_type=regular"
+            req = urllib.request.Request(proj_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                projections_list = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            projections_list = None
+
+        if not isinstance(projections_list, list) or len(projections_list) == 0:
+            return {
+                "status": "unavailable",
+                "reason": "SOURCE_UNAVAILABLE",
+                "season": state_season,
+                "week": state_week,
+                "source": "Sleeper",
+                "fetched_at": now_iso,
+                "projections_by_player_id": {},
+            }
+
+        by_pid: dict[str, dict[str, Any]] = {}
+        for row in projections_list:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("season")) != state_season or row.get("season_type") != "regular":
+                continue
+            try:
+                if int(row.get("week", 0)) != state_week:
+                    continue
+            except (ValueError, TypeError):
+                continue
+            pid = str(row.get("player_id") or "").strip()
+            stats = row.get("stats")
+            if not pid or not isinstance(stats, dict):
+                continue
+            by_pid[pid] = row
+
+        if not by_pid:
+            return {
+                "status": "unavailable",
+                "reason": "SOURCE_UNAVAILABLE",
+                "season": state_season,
+                "week": state_week,
+                "source": "Sleeper",
+                "fetched_at": now_iso,
+                "projections_by_player_id": {},
+            }
+
+        ctx = {
+            "status": "ready",
+            "reason": None,
+            "season": state_season,
+            "week": state_week,
+            "source": "Sleeper",
+            "fetched_at": now_iso,
+            "projections_by_player_id": by_pid,
+        }
+        _PROJECTIONS_CACHE[cache_key] = {"timestamp": time.time(), "context": ctx}
+        return ctx
+
+
+def get_default_sleeper_scoring_settings(scoring_type: str = "half") -> dict[str, float]:
+    """Provides standard Sleeper scoring weights when a league has format label without custom dictionary."""
+    sc = str(scoring_type or "half").lower()
+    rec_val = (
+        1.0 if sc in ("ppr", "full_ppr") else (0.0 if sc in ("std", "standard", "non_ppr") else 0.5)
+    )
+    return {
+        "pass_yd": 0.04,
+        "pass_td": 4.0,
+        "pass_int": -2.0,
+        "pass_2pt": 2.0,
+        "rush_yd": 0.1,
+        "rush_td": 6.0,
+        "rush_2pt": 2.0,
+        "rec": rec_val,
+        "rec_yd": 0.1,
+        "rec_td": 6.0,
+        "rec_2pt": 2.0,
+        "fum_lost": -2.0,
+        "sack": 1.0,
+        "int": 2.0,
+        "fum_rec": 2.0,
+        "def_td": 6.0,
+        "safe": 2.0,
+        "blk_kick": 2.0,
+        "xpm": 1.0,
+        "fgm_20_29": 3.0,
+        "fgm_30_39": 3.0,
+        "fgm_40_49": 4.0,
+        "fgm_50p": 5.0,
+        "fgmiss": -1.0,
+        "xpmiss": -1.0,
+    }
+
+
+def score_weekly_projection(
+    stats: dict[str, Any] | None,
+    league: dict[str, Any] | None,
+    pos: str,
+) -> tuple[float, float, float] | None:
+    """Calculates conservative lower and upper weekly projection bounds for a player under league rules.
+
+    Returns (lower_bound, upper_bound) or None when unsupported / missing required stats.
+    """
+    if not isinstance(stats, dict) or not stats:
+        return None
+    if not isinstance(league, dict):
+        return None
+
+    norm_pos = "DST" if str(pos).upper() in ("DEF", "DST", "D/ST") else str(pos).upper()
+    if norm_pos not in ("QB", "RB", "WR", "TE", "K", "DST"):
+        return None
+
+    settings = league.get("settings")
+    if not isinstance(settings, dict):
+        settings = {}
+    platform = str(league.get("platform") or "sleeper").lower()
+
+    if platform == "sleeper":
+        scoring_settings = settings.get("scoring_settings")
+        if not isinstance(scoring_settings, dict) or not scoring_settings:
+            scoring_settings = get_default_sleeper_scoring_settings(settings.get("scoring", "half"))
+
+        if norm_pos in ("QB", "RB", "WR", "TE"):
+            # Check for unknown nonzero keys applicable to offense
+            for k, w in scoring_settings.items():
+                try:
+                    w_val = float(w or 0.0)
+                except (ValueError, TypeError):
+                    return None
+                if w_val == 0.0:
+                    continue
+                if k in KNOWN_DST_KEYS or k in KNOWN_K_KEYS or str(k).startswith("idp_"):
+                    continue
+                if (
+                    k not in KNOWN_OFFENSE_BASE_KEYS
+                    and k not in KNOWN_OFFENSE_ONCE_BONUSES
+                    and k not in KNOWN_OFFENSE_TD_BONUSES
+                    and k not in KNOWN_OFFENSE_POS_BONUSES
+                ):
+                    return None  # Unknown applicable offensive scoring rule -> abstain
+
+            # Check required numeric stats
+            req_stats: list[str] = []
+            if norm_pos == "QB":
+                req_stats = ["pass_yd", "pass_td", "pass_int", "rush_yd", "rush_td"]
+            elif norm_pos == "RB":
+                req_stats = ["rush_yd", "rush_td", "rec", "rec_yd", "rec_td"]
+            elif norm_pos in ("WR", "TE"):
+                req_stats = ["rec", "rec_yd", "rec_td"]
+
+            for rk in req_stats:
+                val = stats.get(rk)
+                if val is None or not isinstance(val, (int, float)) or not math.isfinite(val):
+                    return None
+
+            base_pts = 0.0
+            bonus_min = 0.0
+            bonus_max = 0.0
+
+            for k, w in scoring_settings.items():
+                try:
+                    weight = float(w or 0.0)
+                except (ValueError, TypeError):
+                    continue
+                if weight == 0.0:
+                    continue
+                if k in KNOWN_DST_KEYS or k in KNOWN_K_KEYS or str(k).startswith("idp_"):
+                    continue
+
+                if k in KNOWN_OFFENSE_POS_BONUSES:
+                    if KNOWN_OFFENSE_POS_BONUSES[k] == norm_pos:
+                        rec_val = stats.get("rec", 0.0)
+                        if not isinstance(rec_val, (int, float)) or not math.isfinite(rec_val):
+                            return None
+                        base_pts += float(rec_val) * weight
+                    continue
+
+                if k in KNOWN_OFFENSE_BASE_KEYS:
+                    s_val = stats.get(k)
+                    if s_val is None:
+                        s_val = 0.0
+                    elif not isinstance(s_val, (int, float)) or not math.isfinite(s_val):
+                        return None
+                    base_pts += float(s_val) * weight
+                elif k in KNOWN_OFFENSE_ONCE_BONUSES:
+                    if "pass" in k and norm_pos != "QB":
+                        continue
+                    if ("rush" in k and "rec" not in k) and norm_pos not in ("QB", "RB"):
+                        continue
+                    if ("rec" in k and "rush" not in k) and norm_pos == "QB":
+                        continue
+                    if "rush_rec" in k and norm_pos == "QB":
+                        continue
+                    if "rush_att" in k and norm_pos != "RB":
+                        continue
+                    bonus_min += min(0.0, weight)
+                    bonus_max += max(0.0, weight)
+                elif k in KNOWN_OFFENSE_TD_BONUSES:
+                    td_key = KNOWN_OFFENSE_TD_BONUSES[k]
+                    if "pass" in k and norm_pos != "QB":
+                        continue
+                    if (
+                        "rush" in k
+                        and norm_pos not in ("QB", "RB")
+                        and stats.get("rush_td") is None
+                    ):
+                        continue
+                    if "rec" in k and norm_pos == "QB" and stats.get("rec_td") is None:
+                        continue
+                    td_val = stats.get(td_key)
+                    if (
+                        td_val is None
+                        or not isinstance(td_val, (int, float))
+                        or not math.isfinite(td_val)
+                    ):
+                        return None
+                    bonus_min += min(0.0, weight * float(td_val))
+                    bonus_max += max(0.0, weight * float(td_val))
+
+            return (
+                round(base_pts + bonus_min, 2),
+                round(base_pts + bonus_max, 2),
+                round(base_pts, 2),
+            )
+
+        elif norm_pos == "K":
+            k_req = ["xpm", "fgm_20_29", "fgm_30_39", "fgm_40_49", "fgm_50p"]
+            for rk in k_req:
+                val = stats.get(rk)
+                if val is None or not isinstance(val, (int, float)) or not math.isfinite(val):
+                    return None
+            fg50_w = float(
+                scoring_settings.get("fgm_50p", 0.0)
+                or scoring_settings.get("fgm_50_59", 0.0)
+                or 5.0
+            )
+            fg60_w = float(scoring_settings.get("fgm_60p", 0.0) or fg50_w)
+            base_k = (
+                stats.get("xpm", 0.0) * float(scoring_settings.get("xpm", 0.0) or 1.0)
+                + stats.get("fgm_20_29", 0.0) * float(scoring_settings.get("fgm_20_29", 0.0) or 3.0)
+                + stats.get("fgm_30_39", 0.0) * float(scoring_settings.get("fgm_30_39", 0.0) or 3.0)
+                + stats.get("fgm_40_49", 0.0) * float(scoring_settings.get("fgm_40_49", 0.0) or 4.0)
+                + stats.get("xpmiss", 0.0) * float(scoring_settings.get("xpmiss", 0.0) or 0.0)
+                + stats.get("fgmiss", 0.0) * float(scoring_settings.get("fgmiss", 0.0) or 0.0)
+            )
+            fg50_cnt = float(stats.get("fgm_50p", 0.0) or 0.0)
+            k_lower = round(base_k + fg50_cnt * min(fg50_w, fg60_w), 2)
+            k_upper = round(base_k + fg50_cnt * max(fg50_w, fg60_w), 2)
+            k_base = round(base_k + fg50_cnt * fg50_w, 2)
+            return (k_lower, k_upper, k_base)
+
+        elif norm_pos == "DST":
+            d_pts = float(stats.get("pts_std", 0.0) or stats.get("pts_half_ppr", 0.0) or 0.0)
+            if d_pts == 0.0 and stats.get("sack") is not None:
+                d_pts = (
+                    stats.get("sack", 0.0) * float(scoring_settings.get("sack", 1.0) or 1.0)
+                    + stats.get("int", 0.0) * float(scoring_settings.get("int", 2.0) or 2.0)
+                    + stats.get("fum_rec", 0.0) * float(scoring_settings.get("fum_rec", 2.0) or 2.0)
+                    + stats.get("def_td", 0.0) * float(scoring_settings.get("def_td", 6.0) or 6.0)
+                    + stats.get("blk_kick", 0.0)
+                    * float(scoring_settings.get("blk_kick", 2.0) or 2.0)
+                    + stats.get("safe", 0.0) * float(scoring_settings.get("safe", 2.0) or 2.0)
+                )
+            d_round = round(d_pts, 2)
+            return (d_round, d_round, d_round)
+
+    elif platform == "espn":
+        scoring_settings = settings.get("scoring_settings")
+        if not isinstance(scoring_settings, dict):
+            scoring_settings = {}
+        scoring_items = scoring_settings.get("scoringItems")
+        if not isinstance(scoring_items, list) or not scoring_items:
+            rec_val = (
+                1.0
+                if str(settings.get("scoring", "ppr")).lower() == "ppr"
+                else (0.5 if str(settings.get("scoring")).lower() == "half" else 0.0)
+            )
+            scoring_items = [
+                {"statId": 3, "points": 0.04, "pointsOverrides": {}},
+                {"statId": 4, "points": 4.0, "pointsOverrides": {}},
+                {"statId": 19, "points": 2.0, "pointsOverrides": {}},
+                {"statId": 20, "points": -2.0, "pointsOverrides": {}},
+                {"statId": 24, "points": 0.1, "pointsOverrides": {}},
+                {"statId": 25, "points": 6.0, "pointsOverrides": {}},
+                {"statId": 26, "points": 2.0, "pointsOverrides": {}},
+                {"statId": 42, "points": 0.1, "pointsOverrides": {}},
+                {"statId": 43, "points": 6.0, "pointsOverrides": {}},
+                {"statId": 44, "points": 2.0, "pointsOverrides": {}},
+                {"statId": 53, "points": rec_val, "pointsOverrides": {}},
+                {"statId": 72, "points": -2.0, "pointsOverrides": {}},
+            ]
+
+        espn_pos_map = {"QB": 0, "RB": 2, "WR": 4, "TE": 6, "DST": 16, "K": 17}
+        pos_id = espn_pos_map.get(norm_pos)
+        if pos_id is None:
+            return None
+
+        def get_espn_item_weight(it: dict[str, Any], p_id: int) -> tuple[int | None, float]:
+            sid_raw = it.get("statId")
+            if not isinstance(sid_raw, int):
+                return (None, 0.0)
+            ov = it.get("pointsOverrides")
+            ov_dict = ov if isinstance(ov, dict) else {}
+            p_key = str(p_id)
+            if p_key in ov_dict:
+                try:
+                    return (sid_raw, float(ov_dict[p_key] or 0.0))
+                except (ValueError, TypeError):
+                    return (sid_raw, 0.0)
+            try:
+                return (sid_raw, float(it.get("points", 0.0) or 0.0))
+            except (ValueError, TypeError):
+                return (sid_raw, 0.0)
+
+        if norm_pos in ("QB", "RB", "WR", "TE"):
+            # Check for unknown nonzero scoring items
+            for item in scoring_items:
+                if not isinstance(item, dict):
+                    continue
+                sid, w_val = get_espn_item_weight(item, pos_id)
+                if sid is None or w_val == 0.0:
+                    continue
+                if sid in ESPN_KNOWN_K_STAT_IDS or sid in ESPN_KNOWN_DST_STAT_IDS:
+                    continue
+                if sid not in ESPN_OFFENSE_BASE_MAP and sid not in ESPN_OFFENSE_BONUSES_MAP:
+                    return None  # Unknown applicable offensive statId -> abstain
+
+            # Check required numeric stats
+            req_stats = []
+            if norm_pos == "QB":
+                req_stats = ["pass_yd", "pass_td", "pass_int", "rush_yd", "rush_td"]
+            elif norm_pos == "RB":
+                req_stats = ["rush_yd", "rush_td", "rec", "rec_yd", "rec_td"]
+            elif norm_pos in ("WR", "TE"):
+                req_stats = ["rec", "rec_yd", "rec_td"]
+
+            for rk in req_stats:
+                val = stats.get(rk)
+                if val is None or not isinstance(val, (int, float)) or not math.isfinite(val):
+                    return None
+
+            base_pts = 0.0
+            bonus_min = 0.0
+            bonus_max = 0.0
+
+            for item in scoring_items:
+                if not isinstance(item, dict):
+                    continue
+                sid, weight = get_espn_item_weight(item, pos_id)
+                if sid is None or weight == 0.0:
+                    continue
+                if sid in ESPN_KNOWN_K_STAT_IDS or sid in ESPN_KNOWN_DST_STAT_IDS:
+                    continue
+
+                if sid in ESPN_OFFENSE_BASE_MAP:
+                    s_name = ESPN_OFFENSE_BASE_MAP[sid]
+                    s_val = stats.get(s_name)
+                    if s_val is None:
+                        s_val = 0.0
+                    elif not isinstance(s_val, (int, float)) or not math.isfinite(s_val):
+                        return None
+                    base_pts += float(s_val) * weight
+                elif sid in ESPN_OFFENSE_BONUSES_MAP:
+                    b_name, td_dep = ESPN_OFFENSE_BONUSES_MAP[sid]
+                    if td_dep:
+                        if "pass" in b_name and norm_pos != "QB":
+                            continue
+                        if (
+                            "rush" in b_name
+                            and norm_pos not in ("QB", "RB")
+                            and stats.get("rush_td") is None
+                        ):
+                            continue
+                        if "rec" in b_name and norm_pos == "QB" and stats.get("rec_td") is None:
+                            continue
+                        td_cnt = stats.get(td_dep)
+                        if (
+                            td_cnt is None
+                            or not isinstance(td_cnt, (int, float))
+                            or not math.isfinite(td_cnt)
+                        ):
+                            return None
+                        bonus_min += min(0.0, weight * float(td_cnt))
+                        bonus_max += max(0.0, weight * float(td_cnt))
+                    else:
+                        if "pass" in b_name and norm_pos != "QB":
+                            continue
+                        if ("rush" in b_name and "rec" not in b_name) and norm_pos not in (
+                            "QB",
+                            "RB",
+                        ):
+                            continue
+                        if ("rec" in b_name and "rush" not in b_name) and norm_pos == "QB":
+                            continue
+                        bonus_min += min(0.0, weight)
+                        bonus_max += max(0.0, weight)
+
+            return (
+                round(base_pts + bonus_min, 2),
+                round(base_pts + bonus_max, 2),
+                round(base_pts, 2),
+            )
+
+        elif norm_pos == "K":
+            k_req = ["xpm", "fgm_20_29", "fgm_30_39", "fgm_40_49", "fgm_50p"]
+            for rk in k_req:
+                val = stats.get(rk)
+                if val is None or not isinstance(val, (int, float)) or not math.isfinite(val):
+                    return None
+            k_pts = 0.0
+            fg50_weights: list[float] = []
+            for item in scoring_items:
+                if not isinstance(item, dict):
+                    continue
+                sid, w_val = get_espn_item_weight(item, 17)
+                if sid is None or w_val == 0.0:
+                    continue
+                if sid == 86:
+                    k_pts += stats.get("xpm", 0.0) * w_val
+                elif sid == 75:
+                    k_pts += stats.get("fgm_20_29", 0.0) * w_val
+                elif sid == 76:
+                    k_pts += stats.get("fgm_30_39", 0.0) * w_val
+                elif sid == 77:
+                    k_pts += stats.get("fgm_40_49", 0.0) * w_val
+                elif sid in (80, 198, 201):
+                    fg50_weights.append(w_val)
+                elif sid in (83, 85):
+                    k_pts += stats.get("fgmiss", 0.0) * w_val
+                elif sid == 88:
+                    k_pts += stats.get("xpmiss", 0.0) * w_val
+
+            fg50_cnt = float(stats.get("fgm_50p", 0.0) or 0.0)
+            k_min_w = min(fg50_weights) if fg50_weights else 5.0
+            k_max_w = max(fg50_weights) if fg50_weights else 5.0
+            k_lower = round(k_pts + fg50_cnt * k_min_w, 2)
+            k_upper = round(k_pts + fg50_cnt * k_max_w, 2)
+            k_base = round(k_pts + fg50_cnt * k_min_w, 2)
+            return (k_lower, k_upper, k_base)
+
+        elif norm_pos == "DST":
+            d_pts = float(stats.get("pts_std", 0.0) or stats.get("pts_half_ppr", 0.0) or 0.0)
+            d_round = round(d_pts, 2)
+            return (d_round, d_round, d_round)
+    return None
+
+
+def is_slot_eligible(bench_player: dict[str, Any], starter_player: dict[str, Any]) -> bool:
+    """Checks if a bench player is eligible to directly swap into the starter's assigned slot."""
+    b_pos = str(bench_player.get("pos") or "").upper()
+    if b_pos in ("DEF", "D/ST"):
+        b_pos = "DST"
+
+    slot_id = starter_player.get("lineupSlotId")
+    if slot_id is not None:
+        try:
+            sid = int(slot_id)
+            if sid == 3:  # ESPN RB/WR restricted flex
+                return b_pos in ("RB", "WR")
+            elif sid == 5:  # ESPN WR/TE restricted flex
+                return b_pos in ("WR", "TE")
+        except (ValueError, TypeError):
+            pass
+
+    slot = str(starter_player.get("slot") or starter_player.get("lineupSlot") or "").upper()
+    if slot in ("DEF", "D/ST"):
+        slot = "DST"
+    elif slot in ("SUPER_FLEX", "OP"):
+        slot = "SUPERFLEX"
+
+    allowed_by_slot = {
+        "QB": {"QB"},
+        "RB": {"RB"},
+        "WR": {"WR"},
+        "TE": {"TE"},
+        "FLEX": {"RB", "WR", "TE"},
+        "SUPERFLEX": {"QB", "RB", "WR", "TE"},
+        "K": {"K"},
+        "DST": {"DST"},
+    }
+    return b_pos in allowed_by_slot.get(slot, set())
+
+
+def resolve_player_injury_status(
+    player: dict[str, Any],
+    proj_row: dict[str, Any] | None = None,
+) -> tuple[str | None, str]:
+    """Resolves injury status and source confidence ('feed', 'dated', 'roster_unconfirmed').
+
+    Returns (normalized_status, confidence).
+    Normalized status is in ('OUT', 'IR', 'QUESTIONABLE', 'DOUBTFUL', None).
+    """
+    # 1. Prefer current feed injury status
+    if proj_row and isinstance(proj_row, dict):
+        p_info = proj_row.get("player")
+        feed_status = (
+            p_info.get("injury_status") if isinstance(p_info, dict) else proj_row.get("status")
+        )
+        if feed_status and isinstance(feed_status, str):
+            clean = feed_status.strip().upper()
+            if clean in ("OUT", "IR", "QUESTIONABLE", "DOUBTFUL"):
+                return (clean, "feed")
+            elif clean in ("ACTIVE", "HEALTHY", "CLEAR"):
+                return (None, "feed")
+
+    # 2. Dated players-data.json if current-day
+    load_players_data()
+    global _INJURIES_UPDATED_DATE, _PLAYER_BY_NAME
+    today_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+    if (
+        _INJURIES_UPDATED_DATE
+        and str(_INJURIES_UPDATED_DATE).startswith(today_str)
+        and _PLAYER_BY_NAME
+    ):
+        norm = normalize_name(player.get("name", ""))
+        p_master = _PLAYER_BY_NAME.get(norm)
+        if p_master and isinstance(p_master.get("injury"), dict):
+            m_status = p_master["injury"].get("status")
+            if m_status and isinstance(m_status, str):
+                clean = m_status.strip().upper()
+                if clean in ("OUT", "IR", "QUESTIONABLE", "DOUBTFUL"):
+                    return (clean, "dated")
+                elif clean in ("ACTIVE", "HEALTHY", "CLEAR"):
+                    return (None, "dated")
+
+    # 3. Roster injury as an unconfirmed warning
+    inj = player.get("injury")
+    if isinstance(inj, dict):
+        r_status = inj.get("status")
+        if r_status and isinstance(r_status, str):
+            clean = r_status.strip().upper()
+            if clean in ("OUT", "IR", "QUESTIONABLE", "DOUBTFUL"):
+                return (clean, "roster_unconfirmed")
+            elif clean in ("ACTIVE", "HEALTHY", "CLEAR"):
+                return (None, "roster_unconfirmed")
+
+    return (None, "none")
+
+
+def get_nfl_schedule_context(
+    season: str | int,
+    current_week: int | None,
+    db_path: str = DB_PATH,
+) -> tuple[set[str], set[str]]:
+    """Returns (bye_teams, locked_teams) for the given season and week."""
+    if not current_week:
+        return (set(), set())
+
+    conn = get_db_connection(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT team, schedule_json FROM nfl_team_schedules WHERE season=?",
+            (int(season) if str(season).isdigit() else season,),
+        ).fetchall()
+    except Exception:
+        rows = []
+
+    bye_teams: set[str] = set()
+    locked_teams: set[str] = set()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+    for r in rows:
+        team = str(r["team"]).upper()
+        sched_raw = r["schedule_json"]
+        if not sched_raw:
+            continue
+        try:
+            games = json.loads(sched_raw)
+        except Exception:
+            continue
+        if not isinstance(games, list):
+            continue
+
+        matching_game = next(
+            (g for g in games if isinstance(g, dict) and int(g.get("week", 0)) == current_week),
+            None,
+        )
+        if not matching_game:
+            bye_teams.add(team)
+        else:
+            g_date = matching_game.get("game_date") or matching_game.get("date")
+            if g_date and isinstance(g_date, str):
+                try:
+                    dt_str = g_date.replace("Z", "+00:00")
+                    game_dt = datetime.datetime.fromisoformat(dt_str)
+                    if game_dt.tzinfo is None:
+                        game_dt = game_dt.replace(tzinfo=datetime.timezone.utc)
+                    if now_utc >= game_dt:
+                        locked_teams.add(team)
+                except Exception:
+                    pass
+    return (bye_teams, locked_teams)
 
 
 # ==============================================================================
@@ -1557,57 +2473,279 @@ def get_team_view_data(
     taxi = [enrich_player(p) for p in my_roster.get("taxi", [])]
     ir = [enrich_player(p) for p in my_roster.get("ir", [])]
 
-    # 1. Start/Sit Optimization Advice
-    start_sit_advice = []
-    # Identify bench players who outrank or outscore starting players at same pos / flex
-    for b in bench:
-        b_pos = b.get("pos", "")
-        b_score = float(b.get("score") or (1000 - int(b.get("rank", 999))))
-        b_status = b.get("injury", {}).get("status") if isinstance(b.get("injury"), dict) else None
+    # 1. Weekly Start/Sit Optimization Advice
+    proj_ctx = get_weekly_projection_context(cur_league)
+    projections_by_pid = proj_ctx.get("projections_by_player_id") or {}
+    cur_league_dict = cur_league if isinstance(cur_league, dict) else {}
+    proj_season = proj_ctx.get("season") or cur_league_dict.get("season") or "2026"
+    proj_week = proj_ctx.get("week")
+    platform = str(cur_league_dict.get("platform") or "sleeper").lower()
 
-        if b_status in ("OUT", "IR"):
+    bye_teams, locked_teams = get_nfl_schedule_context(
+        season=proj_season,
+        current_week=proj_week,
+        db_path=db_path,
+    )
+
+    def evaluate_player_context(p: dict[str, Any]) -> dict[str, Any]:
+        p_team = str(p.get("team") or "").upper()
+        p_pos = str(p.get("pos") or "").upper()
+        p_bye = p.get("bye")
+        is_bye = (p_team in bye_teams) or (
+            proj_week is not None and p_bye is not None and int(p_bye) == proj_week
+        )
+        is_locked = p_team in locked_teams
+
+        sleeper_id = resolve_sleeper_player_id(p, platform=platform)
+        proj_row = projections_by_pid.get(sleeper_id) if sleeper_id else None
+
+        inj_status, inj_conf = resolve_player_injury_status(p, proj_row)
+
+        bounds = None
+        if proj_row and isinstance(proj_row.get("stats"), dict):
+            bounds = score_weekly_projection(proj_row["stats"], cur_league, p_pos)
+
+        return {
+            "player": p,
+            "sleeper_id": sleeper_id,
+            "proj_row": proj_row,
+            "injury_status": inj_status,
+            "injury_confidence": inj_conf,
+            "is_bye": is_bye,
+            "is_locked": is_locked,
+            "bounds": bounds,
+        }
+
+    starters_ctx = [evaluate_player_context(s) for s in starters]
+    bench_ctx = [evaluate_player_context(b) for b in bench]
+
+    has_missing_starter_projection = False
+    for s_ctx in starters_ctx:
+        p = s_ctx["player"]
+        p_team = str(p.get("team") or "").upper()
+        if p_team not in ("", "FA", "NONE") and not s_ctx["is_bye"] and s_ctx["bounds"] is None:
+            has_missing_starter_projection = True
+
+    all_bounds_none = all(
+        p_ctx["bounds"] is None
+        for p_ctx in starters_ctx + bench_ctx
+        if str(p_ctx["player"].get("team") or "").upper() not in ("", "FA", "NONE")
+        and not p_ctx["is_bye"]
+    )
+    hazard_cards: list[dict[str, Any]] = []
+    used_bench_for_hazard: set[str] = set()
+
+    for s_ctx in starters_ctx:
+        s = s_ctx["player"]
+        s_name = s.get("name") or "Unknown"
+        s_slot = str(s.get("slot") or s.get("lineupSlot") or s.get("pos") or "FLEX")
+        s_inj = s_ctx["injury_status"]
+        s_bye = s_ctx["is_bye"]
+
+        is_hazard = s_bye or (s_inj in ("OUT", "IR"))
+        if not is_hazard:
             continue
 
-        for s in starters:
-            s_pos = s.get("pos", "")
-            s_score = float(s.get("score") or (1000 - int(s.get("rank", 999))))
-            s_status = (
-                s.get("injury", {}).get("status") if isinstance(s.get("injury"), dict) else None
+        hazard_reason = "BYE" if s_bye else (s_inj or "OUT")
+        card_type = "BYE_SUB" if s_bye else "INJURY_SUB"
+
+        s_bounds = s_ctx["bounds"]
+        s_lower = s_bounds[0] if s_bounds else 0.0
+        s_upper = s_bounds[1] if s_bounds else 0.0
+
+        eligible_candidates = []
+        for b_ctx in bench_ctx:
+            b = b_ctx["player"]
+            b_name = b.get("name") or "Unknown"
+            if b_name in used_bench_for_hazard:
+                continue
+            if b_ctx["is_bye"] or b_ctx["is_locked"]:
+                continue
+            if b_ctx["injury_status"] in ("OUT", "IR"):
+                continue
+            b_team = str(b.get("team") or "").upper()
+            if b_team in ("", "FA", "NONE"):
+                continue
+            if not is_slot_eligible(b, s):
+                continue
+
+            b_bounds = b_ctx["bounds"]
+            if b_bounds is not None:
+                eligible_candidates.append((b_bounds[0], b_bounds[1], b, b_ctx))
+            elif proj_ctx.get("status") != "ready":
+                b_score = float(b.get("score") if b.get("score") is not None else 0.0)
+                eligible_candidates.append((b_score, b_score, b, b_ctx))
+
+        if eligible_candidates:
+            eligible_candidates.sort(key=lambda item: item[0], reverse=True)
+            best_cand_lower, best_cand_upper, cand_b, cand_b_ctx = eligible_candidates[0]
+            used_bench_for_hazard.add(cand_b.get("name"))
+
+            gain = (
+                round(best_cand_lower - s_upper, 1) if s_bounds and cand_b_ctx["bounds"] else None
+            )
+            hazard_cards.append(
+                {
+                    "type": card_type,
+                    "severity": "high",
+                    "starter_player": s_name,
+                    "starter_slot": s_slot,
+                    "bench_player": cand_b.get("name"),
+                    "starter_points": {"lower": s_lower, "upper": s_upper} if s_bounds else None,
+                    "bench_points": {"lower": best_cand_lower, "upper": best_cand_upper}
+                    if cand_b_ctx["bounds"]
+                    else None,
+                    "guaranteed_gain": gain,
+                    "reason": hazard_reason,
+                    "message": (
+                        f"🚨 Starter {s_name} is {hazard_reason}! Swap in {cand_b.get('name')} from bench"
+                        + (f" ({best_cand_lower} projected pts)." if cand_b_ctx["bounds"] else ".")
+                    ),
+                }
+            )
+        else:
+            hazard_cards.append(
+                {
+                    "type": "LINEUP_HAZARD",
+                    "severity": "high",
+                    "starter_player": s_name,
+                    "starter_slot": s_slot,
+                    "bench_player": None,
+                    "starter_points": {"lower": s_lower, "upper": s_upper} if s_bounds else None,
+                    "bench_points": None,
+                    "guaranteed_gain": None,
+                    "reason": hazard_reason,
+                    "message": f"🚨 Starter {s_name} is {hazard_reason} in slot {s_slot} with no eligible bench replacement.",
+                }
             )
 
-            # High alert: Starter is OUT/IR while bench player is active
-            if s_status in ("OUT", "IR"):
-                start_sit_advice.append(
-                    {
-                        "type": "INJURY_SUB",
-                        "severity": "high",
-                        "bench_player": b.get("name"),
-                        "bench_pos": b_pos,
-                        "starter_player": s.get("name"),
-                        "starter_pos": s_pos,
-                        "message": f"🚨 Starter {s.get('name')} is {s_status}! Swap in {b.get('name')} from bench.",
-                    }
-                )
-                break
+    upgrade_candidates: list[dict[str, Any]] = []
+    if proj_ctx.get("status") == "ready":
+        for s_ctx in starters_ctx:
+            s = s_ctx["player"]
+            s_name = s.get("name") or "Unknown"
+            s_slot = str(s.get("slot") or s.get("lineupSlot") or s.get("pos") or "FLEX")
+            s_inj = s_ctx["injury_status"]
+            s_bye = s_ctx["is_bye"]
 
-            # Upgrade recommendation: Bench player has significantly higher rank/score
-            if (b_pos == s_pos or s_pos in ("FLEX", "SUPERFLEX")) and b_score > (s_score + 15):
-                start_sit_advice.append(
-                    {
-                        "type": "UPGRADE_START",
-                        "severity": "medium",
-                        "bench_player": b.get("name"),
-                        "starter_player": s.get("name"),
-                        "message": f"💡 Consider starting {b.get('name')} ({b_pos}) over {s.get('name')} based on score/matchup edge.",
-                    }
+            if s_bye or (s_inj in ("OUT", "IR")):
+                continue
+            if s_ctx["is_locked"]:
+                continue
+            s_bounds = s_ctx["bounds"]
+            if not s_bounds:
+                continue
+            s_lower = s_bounds[0]
+            s_upper = s_bounds[1]
+            s_base = s_bounds[2] if len(s_bounds) > 2 else s_lower
+
+            for b_ctx in bench_ctx:
+                b = b_ctx["player"]
+                b_name = b.get("name") or "Unknown"
+                if b_name in used_bench_for_hazard:
+                    continue
+                if b_ctx["is_bye"] or b_ctx["is_locked"]:
+                    continue
+                if b_ctx["injury_status"] in ("OUT", "IR"):
+                    continue
+                b_team = str(b.get("team") or "").upper()
+                if b_team in ("", "FA", "NONE"):
+                    continue
+                if not is_slot_eligible(b, s):
+                    continue
+
+                b_bounds = b_ctx["bounds"]
+                if not b_bounds:
+                    continue
+                b_lower = b_bounds[0]
+                b_upper = b_bounds[1]
+                b_base = b_bounds[2] if len(b_bounds) > 2 else b_lower
+
+                base_gain = round(b_base - s_base, 1)
+                guaranteed_floor_gain = round(b_lower - s_upper, 1)
+
+                is_upgrade = guaranteed_floor_gain >= 3.0 or (
+                    base_gain >= 2.0 and b_lower >= s_lower and b_upper >= s_upper
                 )
-                break
+                if is_upgrade:
+                    display_gain = (
+                        guaranteed_floor_gain if guaranteed_floor_gain >= 3.0 else base_gain
+                    )
+                    upgrade_candidates.append(
+                        {
+                            "type": "UPGRADE_START",
+                            "severity": "medium",
+                            "starter_player": s_name,
+                            "starter_slot": s_slot,
+                            "bench_player": b_name,
+                            "starter_points": {"lower": s_lower, "upper": s_upper},
+                            "bench_points": {"lower": b_lower, "upper": b_upper},
+                            "guaranteed_gain": display_gain,
+                            "reason": "PROJECTED_EDGE",
+                            "message": (
+                                f"💡 Consider starting {b_name} ({b_base} pts) over {s_name} ({s_base} pts)"
+                                f" in {s_slot} (+{display_gain} pt projected edge)."
+                            ),
+                        }
+                    )
+    upgrade_candidates.sort(
+        key=lambda item: (
+            -float(item["guaranteed_gain"] or 0.0),
+            item["starter_player"],
+            item["bench_player"],
+        )
+    )
+
+    used_starters = {h["starter_player"] for h in hazard_cards}
+    used_bench = {h["bench_player"] for h in hazard_cards if h.get("bench_player")}
+    remaining_upgrade_room = max(0, 5 - len(hazard_cards))
+
+    selected_upgrades: list[dict[str, Any]] = []
+    for u in upgrade_candidates:
+        if len(selected_upgrades) >= remaining_upgrade_room:
+            break
+        if u["starter_player"] in used_starters or u["bench_player"] in used_bench:
+            continue
+        used_starters.add(u["starter_player"])
+        used_bench.add(u["bench_player"])
+        selected_upgrades.append(u)
+
+    all_advice = hazard_cards if len(hazard_cards) > 5 else hazard_cards + selected_upgrades
+
+    if proj_ctx.get("status") == "unavailable":
+        rec_status = "unavailable"
+        rec_reason = proj_ctx.get("reason") or "SOURCE_UNAVAILABLE"
+    elif all_bounds_none and (starters or bench):
+        rec_status = "unavailable"
+        rec_reason = "UNSUPPORTED_SCORING"
+    elif has_missing_starter_projection:
+        rec_status = "partial"
+        rec_reason = "MISSING_PLAYER_PROJECTION"
+    elif len(all_advice) == 0:
+        rec_status = "ready"
+        rec_reason = "NO_SAFE_EDGE"
+    else:
+        rec_status = "ready"
+        rec_reason = None
+
+    recommendation_context = {
+        "season": proj_ctx.get("season"),
+        "week": proj_ctx.get("week"),
+        "source": proj_ctx.get("source", "Sleeper"),
+        "fetched_at": proj_ctx.get("fetched_at"),
+        "status": rec_status,
+        "reason": rec_reason,
+    }
 
     # 2. Drop Candidates (lowest score bench assets with no keeper/dynasty upside)
-    bench_ranked = sorted(
-        bench,
-        key=lambda x: float(x.get("score") or (1000 - int(x.get("rank", 999)))),
-    )
+    def _drop_score_key(x: dict[str, Any]) -> tuple[float, float]:
+        score = x.get("score")
+        s_val = float(score) if score is not None else 0.0
+        rank = x.get("rank")
+        r_val = float(rank) if rank is not None else 999.0
+        return (s_val, -r_val)
+
+    bench_ranked = sorted(bench, key=_drop_score_key)
     drop_candidates = []
     for cand in bench_ranked[:3]:
         drop_candidates.append(
@@ -1671,9 +2809,10 @@ def get_team_view_data(
         "taxi": taxi,
         "ir": ir,
         "position_rooms": position_rooms,
-        "start_sit_advice": start_sit_advice[:5],
+        "start_sit_advice": all_advice,
         "drop_candidates": drop_candidates,
         "news": team_news,
+        "recommendation_context": recommendation_context,
     }
 
 

@@ -3184,16 +3184,31 @@ div.setup-field select {
 }
 
 /* Advice & Alert Cards */
+.advice-section-container {
+  margin-bottom: 16px;
+}
+
+.advice-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.advice-section-title {
+  margin: 0;
+  font-size: 15px;
+}
+
 .advice-card-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
 }
 
 .advice-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 10px 14px;
   border-radius: 6px;
@@ -3212,8 +3227,87 @@ div.setup-field select {
   color: #9ac2ff;
 }
 
+.advice-card.alert-neutral {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--fg2);
+}
+
+.advice-card.alert-good {
+  background: rgba(61, 220, 132, 0.12);
+  border: 1px solid rgba(61, 220, 132, 0.4);
+  color: #7de8a9;
+}
+
 .advice-icon {
   font-size: 18px;
+  line-height: 1.2;
+}
+
+.advice-content {
+  flex: 1;
+}
+
+.advice-header-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.advice-type-badge {
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.advice-reason-badge {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 100, 112, 0.2);
+  color: #ff9da4;
+}
+
+.advice-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+}
+
+.advice-swap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swap-arrow {
+  color: var(--fg3);
+}
+
+.pts-pill {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.advice-gain-badge {
+  background: rgba(61, 220, 132, 0.15);
+  color: var(--good);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.advice-message {
+  color: var(--fg2);
+  font-size: 12px;
 }
 
 /* Drop Candidates Bar */

@@ -240,6 +240,111 @@ assert(openedSetup, 'Opens league setup modal after creating draft league');
 
 eq(uiSandbox.state.settings.inSeasonConnected, true, 'Created draft league is marked connected');
 
+// 3b. Team View Start/Sit Advice & League Switch Freshness Tests
+uiSandbox.inSeasonState.currentView = 'team';
+uiSandbox.inSeasonState.activeLeagueId = 'lg_sleeper_100';
+uiSandbox.inSeasonState.isServerOnline = true;
+uiSandbox.inSeasonState.rosterData = {
+  league_id: 'lg_sleeper_100',
+  team_name: 'Team Alpha',
+  starters: [{ name: 'Justin Herbert', pos: 'QB', slot: 'QB', score: 96, rank: 12 }],
+  bench: [{ name: 'Patrick Mahomes', pos: 'QB', slot: 'BENCH', score: 98, rank: 5 }],
+  recommendation_context: {
+    week: 3,
+    source: 'Sleeper',
+    status: 'ready',
+    fetched_at: '2026-09-24T12:00:00Z',
+  },
+  start_sit_advice: [
+    {
+      type: 'UPGRADE_START',
+      severity: 'medium',
+      starter_player: 'Justin Herbert',
+      starter_slot: 'QB',
+      bench_player: 'Patrick Mahomes',
+      starter_points: { lower: 15.0, upper: 16.0 },
+      bench_points: { lower: 20.0, upper: 22.0 },
+      guaranteed_gain: 4.0,
+      reason: 'PROJECTED_EDGE',
+      message: 'Consider starting Patrick Mahomes over Justin Herbert in QB (+4.0 pt safe gain).',
+    },
+  ],
+  drop_candidates: [],
+};
+
+uiSandbox.renderManagerView();
+let teamHtml = managerView.innerHTML;
+assert(teamHtml.includes('Week 3'), 'Renders week in recommendation header');
+assert(teamHtml.includes('Projections via Sleeper'), 'Renders projection source provenance');
+assert(teamHtml.includes('Patrick Mahomes'), 'Renders recommended bench player');
+assert(teamHtml.includes('+4 pt safe gain'), 'Renders guaranteed point gain badge');
+assert(teamHtml.includes('Rank Score'), 'Roster table headers label long-term Rank Score');
+
+// Optimal lineup confirmation when status is ready and no swaps needed
+uiSandbox.inSeasonState.rosterData.recommendation_context = {
+  week: 3,
+  source: 'Sleeper',
+  status: 'ready',
+  reason: 'NO_SAFE_EDGE',
+  fetched_at: '2026-09-24T12:00:00Z',
+};
+uiSandbox.inSeasonState.rosterData.start_sit_advice = [];
+uiSandbox.renderManagerView();
+teamHtml = managerView.innerHTML;
+assert(
+  teamHtml.includes('Starting Lineup Optimal'),
+  'Shows positive Starting Lineup Optimal banner when lineup is optimal',
+);
+assert(teamHtml.includes('alert-good'), 'Uses alert-good styling for optimal lineup banner');
+
+// Non-projectable roster with unsupported scoring shows abstention
+uiSandbox.inSeasonState.rosterData.recommendation_context = {
+  week: 3,
+  source: 'Sleeper',
+  status: 'unavailable',
+  reason: 'UNSUPPORTED_SCORING',
+  fetched_at: '2026-09-24T12:00:00Z',
+};
+uiSandbox.inSeasonState.rosterData.start_sit_advice = [];
+uiSandbox.renderManagerView();
+teamHtml = managerView.innerHTML;
+assert(
+  teamHtml.includes('Weekly Projections Unavailable'),
+  'Shows explicit unavailable header on abstention',
+);
+assert(
+  teamHtml.includes('League uses custom scoring rules or unprojected bonuses'),
+  'Explains unsupported scoring rule reason code',
+);
+assert(
+  !teamHtml.includes('Start/Sit Upgrade'),
+  'Does not render bogus upgrade cards when abstaining',
+);
+
+// League switch mismatch: switching league hides previous league advice
+uiSandbox.inSeasonState.activeLeagueId = 'lg_espn_200';
+uiSandbox.renderManagerView();
+teamHtml = managerView.innerHTML;
+assert(
+  teamHtml.includes('No Roster Data Available'),
+  'League mismatch renders empty state instead of stale roster',
+);
+assert(
+  !teamHtml.includes('Weekly Start/Sit Intelligence'),
+  'Stale advice is never shown for a mismatched league',
+);
+
+// Offline mode renders offline banner
+uiSandbox.inSeasonState.activeLeagueId = 'lg_sleeper_100';
+uiSandbox.inSeasonState.isServerOnline = false;
+uiSandbox.renderManagerView();
+teamHtml = managerView.innerHTML;
+assert(teamHtml.includes('Offline Mode'), 'Offline mode renders offline notice banner');
+assert(
+  teamHtml.includes('Live weekly start/sit recommendations unavailable'),
+  'Offline mode informs user live advice is unavailable',
+);
+
 // Open the real draft setup modal; test the user-visible connection fields and provider transition.
 const inputs = new Map();
 const getInput = (id) => {

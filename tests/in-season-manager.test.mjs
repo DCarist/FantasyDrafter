@@ -111,6 +111,287 @@ print(json.dumps({
   eq(res3.advice[0].type, 'INJURY_SUB', 'First advice flags INJURY_SUB for injured starter');
   assert(res3.drop_candidates.length > 0, 'Drop candidates identified for bench cuts');
 
+  // 3b. Start/Sit Weekly Projections & Mixed-Scale Regression Test Suite
+  const startSitRegressionScript = `
+import json, sys, os
+sys.path.insert(0, os.path.abspath('.'))
+from scripts import in_season_manager as mgr
+
+db = os.environ["TEST_DB"]
+
+# Seed mock projection context for deterministic test execution
+with mgr._PROJECTIONS_CACHE_LOCK:
+    mgr._PROJECTIONS_CACHE.clear()
+    mgr._PROJECTIONS_CACHE[("2026", 3)] = {
+        "timestamp": 9999999999.0,
+        "context": {
+            "status": "ready",
+            "reason": None,
+            "season": "2026",
+            "week": 3,
+            "source": "Sleeper",
+            "fetched_at": "2026-09-24T00:00:00Z",
+            "projections_by_player_id": {
+                "9221": {"player_id": "9221", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "rush_yd": 97.65, "rush_td": 0.72, "rec": 4.33, "rec_yd": 30.45, "rec_td": 0.28, "fum_lost": 0.1
+                }},
+                "11237": {"player_id": "11237", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "rush_yd": 4.9, "rush_td": 0.03, "rec": 0.34, "rec_yd": 2.76, "rec_td": 0.02, "fum_lost": 0.01
+                }},
+                "6797": {"player_id": "6797", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "pass_yd": 260.0, "pass_td": 2.0, "pass_int": 1.0, "rush_yd": 20.0, "rush_td": 0.0
+                }},
+                "13404": {"player_id": "13404", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "adp": 1000.0
+                }},
+                "w_low": {"player_id": "w_low", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "rec": 3.0, "rec_yd": 30.0, "rec_td": 0.0
+                }},
+                "w_high": {"player_id": "w_high", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "rec": 8.0, "rec_yd": 110.0, "rec_td": 1.0
+                }},
+                "4984": {"player_id": "4984", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "pass_yd": 280.0, "pass_td": 2.5, "pass_int": 0.5, "rush_yd": 30.0, "rush_td": 0.5
+                }},
+                "9488": {"player_id": "9488", "season": "2026", "week": 3, "season_type": "regular", "stats": {
+                    "rec": 8.0, "rec_yd": 90.0, "rec_td": 1.0
+                }},
+            }
+        }
+    }
+    mgr._NFL_STATE_CACHE["timestamp"] = 9999999999.0
+    mgr._NFL_STATE_CACHE["data"] = {"season": "2026", "week": 3, "season_type": "regular"}
+
+# 1. Mixed-Scale League: We Like Sportz regression scenario
+league_mixed = {
+    "scoring": "half",
+    "scoring_settings": {
+        "pass_yd": 0.04, "pass_td": 4.0, "pass_int": -2.0, "rush_yd": 0.1, "rush_td": 6.0,
+        "rec": 1.0, "rec_yd": 0.1, "rec_td": 6.0, "fum_lost": -2.0, "bonus_rush_yd_100": 1.0
+    }
+}
+mgr.save_league("test_mixed_league", "sleeper", "We Like Sportz Test", season="2026", settings=league_mixed, my_team_id="4", db_path=db)
+starters_mixed = [
+    {"id": "6797", "name": "Justin Herbert", "pos": "QB", "slot": "QB", "rank": 12.0, "score": 96.3},
+    {"id": "9221", "name": "Jahmyr Gibbs", "pos": "RB", "slot": "RB", "rank": 9.0, "score": 97.3},
+    {"id": "w_low", "name": "Starter Low WR", "pos": "WR", "slot": "WR", "rank": 100.0, "score": 60.0},
+]
+bench_mixed = [
+    {"id": "11237", "name": "Jacob Saylors", "pos": "RB", "rank": 347.0, "score": 0.0, "team": "NYG"},
+    {"id": "13404", "name": "Garrett Nussmeier", "pos": "QB", "rank": 353.3, "score": 0.0, "team": "KC"},
+    {"id": "iosivas", "name": "Andrei Iosivas", "pos": "WR", "rank": 287.0, "score": 4.7, "team": "CIN"},
+    {"id": "w_high", "name": "Bench High WR", "pos": "WR", "rank": 40.0, "score": 85.0, "team": "LAR"},
+]
+mgr.save_roster_snapshots("test_mixed_league", [{
+    "team_id": "4", "owner_name": "Test", "team_name": "Team 4",
+    "starters": starters_mixed, "bench": bench_mixed, "taxi": [], "ir": [], "points": 100.0, "wins": 1, "losses": 0
+}], snapshot_date="2026-09-24", db_path=db)
+tv_mixed = mgr.get_team_view_data("test_mixed_league", team_id="4", db_path=db)
+
+# 2. Unsupported Scoring Rule League
+league_unsupported = {
+    "scoring": "half",
+    "scoring_settings": {
+        "pass_yd": 0.04, "rush_yd": 0.1, "rec": 0.5, "custom_super_td_bonus": 10.0
+    }
+}
+mgr.save_league("test_unsupported", "sleeper", "Unsupported Scoring League", season="2026", settings=league_unsupported, my_team_id="1", db_path=db)
+mgr.save_roster_snapshots("test_unsupported", [{
+    "team_id": "1", "owner_name": "Test", "team_name": "Team 1",
+    "starters": starters_mixed, "bench": bench_mixed, "taxi": [], "ir": [], "points": 100.0, "wins": 1, "losses": 0
+}], snapshot_date="2026-09-24", db_path=db)
+tv_unsupported = mgr.get_team_view_data("test_unsupported", team_id="1", db_path=db)
+
+# 3. ESPN Restricted FLEX and Availability Hazards
+espn_settings = {
+    "scoring": "ppr",
+    "rosterSlots": {"qb": 1, "rb": 1, "wr": 1, "te": 1, "flex": 1},
+    "scoring_settings": {
+        "scoringItems": [
+            {"statId": 3, "points": 0.04, "pointsOverrides": {}},
+            {"statId": 4, "points": 4.0, "pointsOverrides": {}},
+            {"statId": 24, "points": 0.1, "pointsOverrides": {}},
+            {"statId": 25, "points": 6.0, "pointsOverrides": {}},
+            {"statId": 42, "points": 0.1, "pointsOverrides": {}},
+            {"statId": 43, "points": 6.0, "pointsOverrides": {}},
+            {"statId": 53, "points": 1.0, "pointsOverrides": {}},
+        ]
+    }
+}
+mgr.save_league("test_espn_hazards", "espn", "ESPN Hazards League", season="2026", settings=espn_settings, my_team_id="1", db_path=db)
+
+conn = mgr.get_db_connection(db)
+sched_rows = [
+    ("DET", 2026, json.dumps([{"week": 3, "game_date": "2026-09-27T17:00Z"}])),
+    ("KC", 2026, json.dumps([{"week": 3, "game_date": "2026-09-27T17:00Z"}])),
+    ("BUF", 2026, json.dumps([{"week": 3, "game_date": "2026-09-27T17:00Z"}])),
+    ("DAL", 2026, json.dumps([{"week": 4, "game_date": "2026-10-04T17:00Z"}])),
+]
+with conn:
+    for team, s_year, s_json in sched_rows:
+        conn.execute("INSERT OR REPLACE INTO nfl_team_schedules (team, season, schedule_json, updated_at) VALUES (?, ?, ?, '2026-09-24')", (team, s_year, s_json))
+
+starters_espn = [
+    {"name": "Dak Prescott", "pos": "QB", "team": "DAL", "slot": "SUPERFLEX"},
+    {"name": "Jahmyr Gibbs", "pos": "RB", "team": "DET", "slot": "FLEX", "lineupSlotId": 3, "injury": {"status": "OUT"}},
+    {"name": "Christian McCaffrey", "pos": "RB", "team": "SF", "slot": "RB", "injury": {"status": "QUESTIONABLE"}},
+]
+bench_espn = [
+    {"name": "Josh Allen", "pos": "QB", "team": "BUF", "slot": "BENCH"},
+    {"name": "Sam LaPorta", "pos": "TE", "team": "DET", "slot": "BENCH"},
+]
+mgr.save_roster_snapshots("test_espn_hazards", [{
+    "team_id": "1", "owner_name": "Test", "team_name": "Team 1",
+    "starters": starters_espn, "bench": bench_espn, "taxi": [], "ir": [], "points": 100.0, "wins": 1, "losses": 0
+}], snapshot_date="2026-09-24", db_path=db)
+tv_espn = mgr.get_team_view_data("test_espn_hazards", team_id="1", db_path=db)
+
+print(json.dumps({
+    "mixed_advice": tv_mixed.get("start_sit_advice", []),
+    "mixed_drops": tv_mixed.get("drop_candidates", []),
+    "mixed_ctx": tv_mixed.get("recommendation_context", {}),
+    "unsupported_ctx": tv_unsupported.get("recommendation_context", {}),
+    "espn_advice": tv_espn.get("start_sit_advice", []),
+}))
+`;
+
+  const res3b = pyRunner(startSitRegressionScript);
+  const mixedAdvice = res3b.mixed_advice;
+  const mixedDrops = res3b.mixed_drops;
+  const mixedCtx = res3b.mixed_ctx;
+  const unsupportedCtx = res3b.unsupported_ctx;
+  const espnAdvice = res3b.espn_advice;
+
+  eq(mixedCtx.status, 'ready', 'Mixed league with all starters projected has ready status');
+  eq(mixedCtx.reason, null, 'No missing projection warning when all starters are projected');
+  // 1. Assert neither reported bogus swap is present
+  assert(
+    !mixedAdvice.some(
+      (a) => a.bench_player === 'Jacob Saylors' && a.starter_player === 'Jahmyr Gibbs',
+    ),
+    'Regression fix: Jacob Saylors is never recommended over Jahmyr Gibbs',
+  );
+  assert(
+    !mixedAdvice.some(
+      (a) => a.bench_player === 'Garrett Nussmeier' && a.starter_player === 'Justin Herbert',
+    ),
+    'Regression fix: Garrett Nussmeier is never recommended over Justin Herbert',
+  );
+
+  // 2. Assert zero-score, low-ranked bench player is prioritized in drop candidates over positive-score asset
+  assert(mixedDrops.length >= 2, 'Drop candidates populated');
+  const saylorsDrop = mixedDrops.find((d) => d.name === 'Jacob Saylors');
+  const iosivasDrop = mixedDrops.find((d) => d.name === 'Andrei Iosivas');
+  assert(saylorsDrop != null, 'Jacob Saylors (score 0.0) is flagged as a drop candidate');
+  assert(
+    iosivasDrop == null,
+    'Andrei Iosivas (score 4.7) is not in bottom drop candidates ahead of zero-score players',
+  );
+
+  // 3. Assert verified legal upgrade with guaranteed edge >= 3.0
+  const upgradeAdv = mixedAdvice.find((a) => a.type === 'UPGRADE_START');
+  assert(upgradeAdv != null, 'Legal upgrade advice generated for guaranteed gain >= 3.0');
+  eq(
+    upgradeAdv.bench_player,
+    'Bench High WR',
+    'Upgrade selects eligible bench player with higher points',
+  );
+  eq(
+    upgradeAdv.starter_player,
+    'Starter Low WR',
+    'Upgrade replaces starter with lower projected points',
+  );
+  assert(upgradeAdv.guaranteed_gain >= 3.0, 'Upgrade guarantees at least 3.0 pt safe gain');
+  assert(
+    upgradeAdv.starter_points.lower != null && upgradeAdv.starter_points.upper != null,
+    'Provides starter point bounds',
+  );
+  assert(
+    upgradeAdv.bench_points.lower != null && upgradeAdv.bench_points.upper != null,
+    'Provides bench point bounds',
+  );
+
+  // 4. Assert unsupported scoring marks status='unavailable' with reason='UNSUPPORTED_SCORING'
+  eq(unsupportedCtx.status, 'unavailable', 'Unsupported scoring sets status to unavailable');
+  eq(
+    unsupportedCtx.reason,
+    'UNSUPPORTED_SCORING',
+    'Unsupported scoring sets reason code to UNSUPPORTED_SCORING',
+  );
+
+  // 5. Assert ESPN restricted flex & hazard handling
+  const byeSub = espnAdvice.find((a) => a.type === 'BYE_SUB');
+  assert(byeSub != null, 'BYE starter Dak Prescott triggers BYE_SUB');
+  eq(byeSub.bench_player, 'Josh Allen', 'Eligible active bench QB substitutes for BYE starter');
+
+  const restrictedHazard = espnAdvice.find((a) => a.starter_player === 'Jahmyr Gibbs');
+  assert(restrictedHazard != null, 'OUT starter Jahmyr Gibbs has an alert card');
+  eq(
+    restrictedHazard.type,
+    'LINEUP_HAZARD',
+    'Restricted flex prevents ineligible bench TE from substituting',
+  );
+  eq(
+    restrictedHazard.bench_player,
+    null,
+    'No illegal substitution made into restricted flex slotId 3',
+  );
+
+  const cmcAdv = espnAdvice.find((a) => a.starter_player === 'Christian McCaffrey');
+  eq(cmcAdv, undefined, 'Questionable starter Christian McCaffrey does not trigger auto-sit');
+
+  // 3c. Live Database League Coverage: Nifty Fifty's & We Like Sportz
+  const liveDbRegressionScript = `
+import json, sys, os
+sys.path.insert(0, os.path.abspath('.'))
+from scripts import in_season_manager as mgr
+
+# Clear projection cache to ensure live execution
+mgr.clear_projection_cache()
+
+nifty_tv = mgr.get_team_view_data('league_1789304413980_1ml7l')
+sportz_tv = mgr.get_team_view_data('league_1789957409670_oqnz8')
+
+print(json.dumps({
+    "nifty_ctx": nifty_tv.get("recommendation_context", {}),
+    "nifty_advice": nifty_tv.get("start_sit_advice", []),
+    "nifty_starters_count": len(nifty_tv.get("starters", [])),
+    "sportz_ctx": sportz_tv.get("recommendation_context", {}),
+    "sportz_advice": sportz_tv.get("start_sit_advice", []),
+}))
+`;
+
+  const res3c = pyRunner(liveDbRegressionScript);
+  const niftyCtx = res3c.nifty_ctx;
+  const niftyAdvice = res3c.nifty_advice;
+  const sportzCtx = res3c.sportz_ctx;
+  const sportzAdvice = res3c.sportz_advice;
+
+  // Nifty Fifty's standard ESPN league
+  eq(niftyCtx.status, 'ready', 'Nifty Fiftys league has ready status');
+  eq(niftyCtx.reason, 'NO_SAFE_EDGE', 'Nifty Fiftys optimal lineup reports NO_SAFE_EDGE reason');
+  eq(niftyAdvice.length, 0, 'Nifty Fiftys optimal lineup has 0 swap recommendations');
+  eq(res3c.nifty_starters_count, 9, 'All 9 starters present in Nifty Fiftys');
+
+  // We Like Sportz dynasty Sleeper league
+  eq(sportzCtx.status, 'ready', 'We Like Sportz league has ready status');
+  assert(
+    sportzAdvice.some(
+      (a) =>
+        a.type === 'UPGRADE_START' &&
+        a.bench_player === 'Travis Kelce' &&
+        a.starter_player === 'Pat Freiermuth',
+    ),
+    'Recommends Travis Kelce over Pat Freiermuth for projected edge',
+  );
+  assert(
+    !sportzAdvice.some((a) => a.bench_player === 'Jacob Saylors'),
+    'Never recommends Jacob Saylors',
+  );
+  assert(
+    !sportzAdvice.some((a) => a.bench_player === 'Garrett Nussmeier'),
+    'Never recommends Garrett Nussmeier',
+  );
   // 4. Player News Aggregator & Filtering
   const newsScript = `
 import json, sys, os

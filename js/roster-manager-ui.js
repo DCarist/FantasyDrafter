@@ -100,7 +100,7 @@ if (typeof window !== 'undefined' && !window.global) {
   function renderTeamView() {
     const s = global.inSeasonState;
     const data = s.rosterData;
-    if (!data) {
+    if (!data || (data.league_id && s.activeLeagueId && data.league_id !== s.activeLeagueId)) {
       return `
         ${renderSubHeader()}
         <div class="empty-state-panel">
@@ -111,22 +111,142 @@ if (typeof window !== 'undefined' && !window.global) {
       `;
     }
 
-    // Start/Sit Alerts
+    // Start/Sit Alerts & Weekly Projection Context
+    const recCtx = data.recommendation_context || {};
+    const isOnline = s.isServerOnline !== false;
     let adviceHtml = '';
-    if (Array.isArray(data.start_sit_advice) && data.start_sit_advice.length > 0) {
-      adviceHtml = '<div class="advice-card-group">';
-      for (const adv of data.start_sit_advice) {
-        const isHigh = adv.severity === 'high';
-        adviceHtml += `
-          <div class="advice-card ${isHigh ? 'alert-high' : 'alert-tip'}">
-            <span class="advice-icon">${isHigh ? '🚨' : '💡'}</span>
+
+    if (!isOnline) {
+      adviceHtml = `
+        <div class="advice-section-container">
+          <div class="advice-card-group">
+            <div class="advice-card alert-tip">
+              <span class="advice-icon">⚠️</span>
+              <div class="advice-content">
+                <b>Offline Mode:</b> Live weekly start/sit recommendations unavailable (showing offline cached roster).
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      const recWeek = recCtx.week != null ? `Week ${recCtx.week}` : '';
+      const recSource = recCtx.source || 'Sleeper';
+      const recTime = recCtx.fetched_at
+        ? new Date(recCtx.fetched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '';
+      const recMetaStr = [recWeek, `Projections via ${recSource}`, recTime]
+        .filter(Boolean)
+        .join(' · ');
+
+      let cardsHtml = '';
+      if (Array.isArray(data.start_sit_advice) && data.start_sit_advice.length > 0) {
+        for (const adv of data.start_sit_advice) {
+          const isHigh = adv.severity === 'high';
+          const typeLabel =
+            adv.type === 'INJURY_SUB'
+              ? 'Injury Replacement'
+              : adv.type === 'BYE_SUB'
+                ? 'Bye Week Replacement'
+                : adv.type === 'LINEUP_HAZARD'
+                  ? 'Lineup Hazard'
+                  : 'Start/Sit Upgrade';
+
+          let detailsHtml = '';
+          if (adv.bench_player && adv.starter_player) {
+            const starterPts = adv.starter_points
+              ? adv.starter_points.lower === adv.starter_points.upper
+                ? `${adv.starter_points.lower} pts`
+                : `${adv.starter_points.lower}–${adv.starter_points.upper} pts`
+              : null;
+            const benchPts = adv.bench_points
+              ? adv.bench_points.lower === adv.bench_points.upper
+                ? `${adv.bench_points.lower} pts`
+                : `${adv.bench_points.lower}–${adv.bench_points.upper} pts`
+              : null;
+            const gainText =
+              adv.guaranteed_gain != null ? `+${adv.guaranteed_gain} pt safe gain` : null;
+
+            detailsHtml = `
+              <div class="advice-details">
+                <span class="advice-swap">
+                  <span class="swap-bench">Bench: <b>${esc(adv.bench_player)}</b>${benchPts ? ` <small class="pts-pill">(${esc(benchPts)})</small>` : ''}</span>
+                  <span class="swap-arrow">➔</span>
+                  <span class="swap-starter">Starter: <b>${esc(adv.starter_player)}</b> <small>(${esc(adv.starter_slot)})</small>${starterPts ? ` <small class="pts-pill">(${esc(starterPts)})</small>` : ''}</span>
+                </span>
+                ${gainText ? `<span class="advice-gain-badge">${esc(gainText)}</span>` : ''}
+              </div>
+            `;
+          } else if (adv.starter_player) {
+            detailsHtml = `
+              <div class="advice-details">
+                <span class="swap-starter">Starter: <b>${esc(adv.starter_player)}</b> <small>(${esc(adv.starter_slot)})</small></span>
+              </div>
+            `;
+          }
+
+          cardsHtml += `
+            <div class="advice-card ${isHigh ? 'alert-high' : 'alert-tip'}">
+              <span class="advice-icon">${isHigh ? '🚨' : '💡'}</span>
+              <div class="advice-content">
+                <div class="advice-header-line">
+                  <span class="advice-type-badge">${esc(typeLabel)}</span>
+                  ${adv.reason ? `<span class="advice-reason-badge">${esc(adv.reason)}</span>` : ''}
+                </div>
+                ${detailsHtml}
+                <div class="advice-message">${esc(adv.message)}</div>
+              </div>
+            </div>
+          `;
+        }
+      } else {
+        let noticeText = `Starting Lineup Optimal: All active starters project higher than your bench for ${recWeek || 'this week'}.`;
+        let noticeIcon = '✅';
+        let cardClass = 'alert-good';
+        let headerLabel = 'Starting Lineup Optimal';
+
+        if (recCtx.status === 'unavailable') {
+          noticeIcon = 'ℹ️';
+          cardClass = 'alert-neutral';
+          headerLabel = 'Weekly Projections Unavailable';
+          if (recCtx.reason === 'UNSUPPORTED_SCORING') {
+            noticeText =
+              'Weekly recommendations unavailable: League uses custom scoring rules or unprojected bonuses that cannot be safely evaluated against weekly projections.';
+          } else if (recCtx.reason === 'SEASON_MISMATCH') {
+            noticeText =
+              'Weekly projections unavailable: Connected league season does not match current NFL regular season.';
+          } else {
+            noticeText =
+              'Weekly projections unavailable: Live NFL projection feed is currently offline or unreachable.';
+          }
+        } else if (recCtx.status === 'partial') {
+          noticeIcon = 'ℹ️';
+          cardClass = 'alert-neutral';
+          headerLabel = 'Lineup Status';
+          noticeText = 'No verified weekly swaps. Some player projections were unavailable.';
+        }
+
+        cardsHtml = `
+          <div class="advice-card ${cardClass}">
+            <span class="advice-icon">${noticeIcon}</span>
             <div class="advice-content">
-              <b>${isHigh ? 'Lineup Hazard' : 'Matchup Recommendation'}:</b> ${esc(adv.message)}
+              <b>${esc(headerLabel)}:</b> ${esc(noticeText)}
             </div>
           </div>
         `;
       }
-      adviceHtml += '</div>';
+
+      adviceHtml = `
+        <div class="advice-section-container">
+          <div class="advice-section-header">
+            <h3 class="advice-section-title">📊 Weekly Start/Sit Intelligence</h3>
+            ${recMetaStr ? `<span class="advice-meta meta">${esc(recMetaStr)}</span>` : ''}
+          </div>
+          <div class="advice-card-group">
+            ${cardsHtml}
+          </div>
+        </div>
+      `;
     }
 
     // Drop candidates
@@ -287,7 +407,7 @@ if (typeof window !== 'undefined' && !window.global) {
                   <th style="width:50px">Team</th>
                   <th style="width:60px">Bye</th>
                   <th class="num" style="width:55px">Rank</th>
-                  <th class="num" style="width:55px">Score</th>
+                  <th class="num" style="width:65px" title="Long-term rank score (0-100)">Rank Score</th>
                   <th style="width:65px"></th>
                 </tr>
               </thead>
@@ -309,7 +429,7 @@ if (typeof window !== 'undefined' && !window.global) {
                   <th style="width:50px">Team</th>
                   <th style="width:60px">Bye</th>
                   <th class="num" style="width:55px">Rank</th>
-                  <th class="num" style="width:55px">Score</th>
+                  <th class="num" style="width:65px" title="Long-term rank score (0-100)">Rank Score</th>
                   <th style="width:65px"></th>
                 </tr>
               </thead>

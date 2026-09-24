@@ -140,6 +140,11 @@ if (typeof window !== 'undefined' && !window.global) {
   }
 
   async function selectLeague(leagueId) {
+    if (inSeasonState.activeLeagueId !== leagueId) {
+      if (inSeasonState.rosterData && inSeasonState.rosterData.league_id !== leagueId) {
+        inSeasonState.rosterData = null;
+      }
+    }
     inSeasonState.activeLeagueId = leagueId;
     saveLocalCache();
     if (inSeasonState.currentView === 'team') {
@@ -162,6 +167,11 @@ if (typeof window !== 'undefined' && !window.global) {
       inSeasonState.rosterData = res.data;
       inSeasonState.activeTeamId = res.data.team_id || null;
       saveLocalCache();
+    } else {
+      if (inSeasonState.rosterData && inSeasonState.rosterData.league_id !== leagueId) {
+        inSeasonState.rosterData = null;
+        saveLocalCache();
+      }
     }
     return inSeasonState.rosterData;
   }
